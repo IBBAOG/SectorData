@@ -48,7 +48,7 @@ import {
   BRAND_ORANGE,
   FIXED_COMPANIES,
   type Granularity,
-  type CompanyFieldAggregate,
+  type CompanyDailyOilMatrix,
   type CompanyFieldNoData,
 } from "../useAnpCdpDiariaData";
 
@@ -74,7 +74,7 @@ export default function DesktopView(): React.ReactElement | null {
     // Company level
     selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
-    companyFieldAggregates, companyFieldsNoData,
+    companyDailyOilMatrix, companyFieldsNoData,
     companyPetroleoChart, companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
@@ -145,7 +145,7 @@ export default function DesktopView(): React.ReactElement | null {
                   selectedEmpresa={selectedEmpresa}
                   serieLoading={serieLoading}
                   companySerieRows={companySerieRows}
-                  companyFieldAggregates={companyFieldAggregates}
+                  companyDailyOilMatrix={companyDailyOilMatrix}
                   companyFieldsNoData={companyFieldsNoData}
                   companyPetroleoChart={companyPetroleoChart}
                   companyMonthlyOilChart={companyMonthlyOilChart}
@@ -583,12 +583,12 @@ function ExploreFilter({
 
 // ─── Company-level content (verbatim from the previous build) ───────────────
 
-/** Main content for the Company level: net charts + per-field net table + coverage note. */
+/** Main content for the Company level: net charts + daily net-oil matrix + coverage note. */
 function CompanyContent({
   selectedEmpresa,
   serieLoading,
   companySerieRows,
-  companyFieldAggregates,
+  companyDailyOilMatrix,
   companyFieldsNoData,
   companyPetroleoChart,
   companyMonthlyOilChart,
@@ -596,7 +596,7 @@ function CompanyContent({
   selectedEmpresa: string | null;
   serieLoading: boolean;
   companySerieRows: unknown[];
-  companyFieldAggregates: CompanyFieldAggregate[];
+  companyDailyOilMatrix: CompanyDailyOilMatrix;
   companyFieldsNoData: CompanyFieldNoData[];
   companyPetroleoChart: { data: PlotData[]; layout: Partial<Layout> };
   companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
@@ -657,47 +657,21 @@ function CompanyContent({
         </div>
       </div>
 
-      {/* Per-field net table */}
+      {/* Daily net-oil matrix: columns = CAMPO (stake%), rows = one per day desc */}
       <div className="row mb-2">
         <div className="col-12">
-          <ChartSection title={`Net production by field — ${selectedEmpresa}`} loading={serieLoading}>
-            <div style={{ overflowX: "auto", border: "1px solid #eee", borderRadius: 6 }}>
-              <table className="table table-sm" style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0 }}>
-                <thead style={{ background: "#fff", borderBottom: "2px solid #1a1a1a" }}>
-                  <tr>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Field</th>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Basin</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Stake %</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Net Oil avg (kbpd)</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Net Gas avg (Mm³/d)</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Latest Net Oil</th>
-                    <th style={{ padding: "8px 12px", textAlign: "right" }}>Latest Net Gas</th>
-                    <th style={{ padding: "8px 12px", textAlign: "left" }}>Latest date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {companyFieldAggregates.map(f => (
-                    <tr key={f.campo}>
-                      <td style={{ padding: "6px 12px" }}>{f.campo}</td>
-                      <td style={{ padding: "6px 12px" }}>{f.bacia ?? "—"}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{formatStakePct(f.stakePct)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.avgOilNet / 1000, 1)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.avgGasNet, 3)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.latestOilNet == null ? null : f.latestOilNet / 1000, 1)}</td>
-                      <td style={{ padding: "6px 12px", textAlign: "right" }}>{fmtNumber(f.latestGasNet, 3)}</td>
-                      <td style={{ padding: "6px 12px" }}>{f.latestDate ?? "—"}</td>
-                    </tr>
-                  ))}
-                  {companyFieldAggregates.length === 0 && (
-                    <tr>
-                      <td colSpan={8} style={{ padding: "16px 12px", color: "#888", textAlign: "center" }}>
-                        No data for the current period.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+          <ChartSection
+            title={
+              <span>
+                Daily net oil by field — {selectedEmpresa}
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
+                  Net oil (kbpd), stake-weighted · one row per day
+                </span>
+              </span>
+            }
+            loading={serieLoading}
+          >
+            <CompanyDailyOilMatrixTable matrix={companyDailyOilMatrix} />
 
             {/* Coverage note: stake-held fields without daily data */}
             {companyFieldsNoData.length > 0 && (
@@ -713,6 +687,94 @@ function CompanyContent({
         </div>
       </div>
     </>
+  );
+}
+
+// ─── Daily net-oil matrix table (fields × days) ─────────────────────────────
+
+/**
+ * Wide daily matrix: a sticky-left "Date" column + one column per field
+ * ("CAMPO (stake%)"), one row per day (latest first). Cells are net oil in
+ * kbpd (1 decimal, pt-BR); a field with no datum that day renders "—". The
+ * container scrolls in BOTH axes (Petrobras has ~37 field columns × ~204 days);
+ * the header row is sticky-top and the Date column sticky-left so neither is
+ * lost while scrolling. Desktop-only — too wide for a phone.
+ */
+function CompanyDailyOilMatrixTable({
+  matrix,
+}: {
+  matrix: CompanyDailyOilMatrix;
+}): React.ReactElement {
+  const { fields, rows } = matrix;
+  const dateColWidth = 110;
+
+  if (fields.length === 0 || rows.length === 0) {
+    return (
+      <div style={{
+        padding: "24px 16px", color: "#888", textAlign: "center",
+        fontFamily: "Arial", fontSize: 13, border: "1px dashed #ddd", borderRadius: 6,
+      }}>
+        No daily oil data for the current period.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 480, border: "1px solid #eee", borderRadius: 6 }}>
+      <table
+        className="table table-sm"
+        style={{ fontFamily: "Arial", fontSize: 12, marginBottom: 0, borderCollapse: "separate", borderSpacing: 0 }}
+      >
+        <thead>
+          <tr>
+            <th
+              style={{
+                position: "sticky", top: 0, left: 0, zIndex: 3,
+                background: "#fff", borderBottom: "2px solid #1a1a1a",
+                padding: "8px 12px", textAlign: "left", whiteSpace: "nowrap",
+                minWidth: dateColWidth,
+              }}
+            >
+              Date
+            </th>
+            {fields.map(f => (
+              <th
+                key={f.campo}
+                style={{
+                  position: "sticky", top: 0, zIndex: 2,
+                  background: "#fff", borderBottom: "2px solid #1a1a1a",
+                  padding: "8px 12px", textAlign: "right", whiteSpace: "nowrap",
+                }}
+              >
+                {f.label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.data}>
+              <th
+                scope="row"
+                style={{
+                  position: "sticky", left: 0, zIndex: 1,
+                  background: "#fff", borderRight: "1px solid #eee",
+                  padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap",
+                  fontWeight: 400, minWidth: dateColWidth,
+                }}
+              >
+                {r.data}
+              </th>
+              {fields.map(f => (
+                <td key={f.campo} style={{ padding: "6px 12px", textAlign: "right", whiteSpace: "nowrap" }}>
+                  {fmtNumber(r.values[f.campo], 1)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

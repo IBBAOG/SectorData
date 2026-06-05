@@ -128,6 +128,33 @@ export interface CompanyFieldNoData {
   stakePct: number;
 }
 
+/** One stake-labeled field column header in the daily net-oil matrix. */
+export interface CompanyDailyOilField {
+  campo: string;
+  stakePct: number;
+  /** "PEREGRINO (80%)" — what the column header renders. */
+  label: string;
+}
+
+/** One day-row in the daily net-oil matrix. */
+export interface CompanyDailyOilMatrixRow {
+  data: string;
+  /** Net oil in **kbpd** (÷1000) keyed by field name; null = the field had no data that day. */
+  values: Record<string, number | null>;
+}
+
+/**
+ * Daily net-oil matrix for the Company level: fields × days. Columns are the
+ * company's fields (stake-decorated label), ordered by the SAME canonical order
+ * as the company charts (`orderCompanyFieldDims`, avg net oil desc). Rows are
+ * one per calendar day present in the serie, sorted **descending** (most recent
+ * first). Cell = the field's net oil for that day, already converted to kbpd.
+ */
+export interface CompanyDailyOilMatrix {
+  fields: CompanyDailyOilField[];
+  rows: CompanyDailyOilMatrixRow[];
+}
+
 /**
  * Monthly average net-oil-by-field, bucketed for the stacked bar. The value of
  * (month, field) is the field's net oil DAILY average over the days it reported
@@ -494,6 +521,63 @@ export function buildCompanyFieldAggregates(
     );
 }
 
+/**
+ * Daily net-oil matrix (fields × days) for the Company level. Columns are the
+ * company's fields, ordered by `orderCompanyFieldDims` (avg net oil desc) so the
+ * left-to-right column order matches the company charts' legend/stack order.
+ * Each column header carries the stake ("PEREGRINO (80%)"). Rows are one per day
+ * present in the serie, sorted descending (latest first); each cell is the
+ * field's net oil for that day converted to **kbpd** (÷1000), or null when the
+ * field reported nothing that day. Oil only — gas is excluded by design.
+ */
+export function buildCompanyDailyOilMatrix(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): CompanyDailyOilMatrix {
+  // Map each field (campo) to its stake + decorated label. The serie carries a
+  // single stake per field, so first sighting wins.
+  const fieldMeta: Record<string, CompanyDailyOilField> = {};
+  // Net oil (kbpd) keyed by [date][campo].
+  const cells: Record<string, Record<string, number>> = {};
+
+  for (const r of rows) {
+    if (!fieldMeta[r.campo]) {
+      fieldMeta[r.campo] = {
+        campo:    r.campo,
+        stakePct: r.stake_pct,
+        label:    fieldLabelWithStake(r.campo, r.stake_pct),
+      };
+    }
+    if (r.petroleo_bbl_dia_net == null) continue;
+    if (!cells[r.data]) cells[r.data] = {};
+    // Sum defensively (the serie is 1 row per (data, campo), but be safe).
+    cells[r.data][r.campo] =
+      (cells[r.data][r.campo] ?? 0) + bblDiaToKbpd(r.petroleo_bbl_dia_net);
+  }
+
+  // Canonical column order = same as the charts (avg net oil desc). The order
+  // helper works on the stake-decorated dimension, so resolve each ordered
+  // dimension label back to its campo.
+  const orderedDims = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
+  const labelToCampo: Record<string, string> = {};
+  for (const m of Object.values(fieldMeta)) labelToCampo[m.label] = m.campo;
+  const fields: CompanyDailyOilField[] = orderedDims
+    .map(dim => fieldMeta[labelToCampo[dim]])
+    .filter((f): f is CompanyDailyOilField => f != null);
+
+  // One row per day, descending (latest first).
+  const days = Object.keys(cells).sort((a, b) => b.localeCompare(a));
+  const matrixRows: CompanyDailyOilMatrixRow[] = days.map(data => {
+    const values: Record<string, number | null> = {};
+    for (const f of fields) {
+      const v = cells[data]?.[f.campo];
+      values[f.campo] = v == null ? null : v;
+    }
+    return { data, values };
+  });
+
+  return { fields, rows: matrixRows };
+}
+
 /** Last calendar day (1-31) of the given 0-based month/year (UTC-safe). */
 function lastDayOfMonth(year: number, monthIndex0: number): number {
   // Day 0 of the next month = last day of this month.
@@ -779,8 +863,10 @@ export interface UseAnpCdpDiariaData {
   setSelectedEmpresa: (e: string | null) => void;
   empresaCampos: AnpCdpDiariaEmpresaCampo[];
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
-  /** Per-field net aggregates (ranking + desktop table), sorted by active product. */
+  /** Per-field net aggregates (mobile ranking cards), sorted by active product. */
   companyFieldAggregates: CompanyFieldAggregate[];
+  /** Daily net-oil matrix (fields × days) for the desktop table. */
+  companyDailyOilMatrix: CompanyDailyOilMatrix;
   /** Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO). */
   companyFieldsNoData: CompanyFieldNoData[];
   /** Company net oil line chart (headline total + per-field lines, kbpd). */
@@ -1172,10 +1258,17 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [companyMonthlyOil],
   );
 
-  // Per-field net aggregates (ranking + desktop table), sorted by active product.
+  // Per-field net aggregates (mobile ranking cards), sorted by active product.
   const companyFieldAggregates = useMemo(
     () => buildCompanyFieldAggregates(companySerieRows, product),
     [companySerieRows, product],
+  );
+
+  // Daily net-oil matrix (fields × days) — the desktop "Daily net oil by field"
+  // table. Columns ordered like the charts; rows one per day, latest first.
+  const companyDailyOilMatrix = useMemo(
+    () => buildCompanyDailyOilMatrix(companySerieRows),
+    [companySerieRows],
   );
 
   // Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO).
@@ -1449,6 +1542,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     empresaCampos,
     companySerieRows,
     companyFieldAggregates,
+    companyDailyOilMatrix,
     companyFieldsNoData,
     companyPetroleoChart,
     companyMonthlyOilChart,
