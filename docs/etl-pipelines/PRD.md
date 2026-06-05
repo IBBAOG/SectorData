@@ -304,6 +304,187 @@ ON CONFLICT (collected_at, porto, navio) DO NOTHING;
 Applied via service-role on 2026-06-03 (2 rows deleted, ids 28241 / 28240;
 Santos distinct 20 → 18; the 3 + 8 real-IMO rows preserved).
 
+### Itaqui scraper — diesel quantity over-count (root cause + sanity guard, 2026-06-05)
+
+**Symptom.** A ComexStat-URF backtest showed Porto de Itaqui over-counting diesel
+by **2.38×** vs the official São Luís clearance. The smoking gun in `navios_diesel`
+was **HAFNIA LARISSA** (April 2026, Itaqui) with `quantidade = 125,194 t` →
+`quantidade_convertida = 149,933 m³`, `produto = 'Óleo Diesel'`. That single row
+exceeded the entire official monthly diesel clearance of São Luís (~135,250 m³)
+and, combined Apr+May, accounted for **exactly the 2.38× anomaly** (it was 48% of
+the two-month official diesel volume by itself).
+
+**Root cause = corrupt SOURCE value, not a parsing bug.** Investigated live
+against the real Itaqui page (`portodoitaqui.com.br/porto-agora/navios/esperados`,
+fetched via the scraper's own requests-Session path — HTTP 200, 60 KB):
+
+- The Itaqui lineup table carries BOTH a `DWT` column **and** a `Qtd.Carga`
+  column. `buscar_itaqui()` reads `Qtd.Carga` (via `_col("Qtd")`, which matches
+  only that column) — and `Qtd.Carga` IS the correct cargo **parcel**, validated
+  on live rows: `HORIZON THETIS` "DIESEL S500" `Qtd.Carga=15,980 t` with
+  `DWT=49,999`; `VELOS POLARIS` "DIESEL" `Qtd.Carga=34,220 t` with `DWT=50,000`
+  (realistic diesel parcels, well below each ship's deadweight). So the column
+  choice, the BR-thousands parsing (`_parse_numero("125.194") → 125194`), the
+  unit (`t`) and the m³ conversion are all correct.
+- The `produto='Óleo Diesel'` tag is legitimate: the source `Carga` cell for
+  HAFNIA LARISSA said DIESEL; `consolidar()` then normalises the label to
+  "Óleo Diesel". Not a default-tagging artefact.
+- HAFNIA LARISSA is a crude/oil tanker of **109,990 t DWT** (IMO 9800300). A
+  125,194 t cargo is **physically impossible** — it exceeds the ship's own
+  deadweight by ~15 kt. The Itaqui portal simply published a corrupt `Qtd.Carga`
+  value for that vessel (cumulative/throughput or a data-entry error). It flowed
+  straight into the DB because there was **no sanity check** on parcel size.
+
+**Fix — physical sanity guard** (`01_lineup_scrape.py`):
+
+- Constants `_MAX_DIESEL_PARCEL_T = 90_000 t` (≈ `_MAX_DIESEL_PARCEL_M3 ≈ 107,784 m³`).
+  Threshold rationale: across the whole `navios_diesel` history, the **only** row
+  above 90 kt was the HAFNIA LARISSA outlier; the next-highest plausible parcel
+  was 67,972 t. 90 kt cleanly isolates impossible values without false-tripping
+  any legitimate large LR1/LR2 parcel.
+- `_sanity_check_parcel_t(valor_t, navio, porto)` **rejects** (drops the quantity,
+  returns `None`) any parcel above the ceiling and logs a loud `[WARN][sanity]`.
+  Rejection — not capping — is deliberate: a corrupt source value carries no
+  information about the true parcel size, so any cap would be a fabrication. The
+  ship still appears as a lineup row, but contributes **zero** inflated volume.
+- Applied at **two layers**: (1) inside `buscar_itaqui()` right after the
+  `Qtd.Carga` rename (per-ship, with the vessel name); (2) a unit-agnostic
+  backstop in `_aplicar_conversao()` (post-conversion, on m³) that protects
+  **every** tonne/volume-reporting port (Santos, Paranaguá, Maceió, São Sebastião,
+  Suape) — so a future corrupt value above the ceiling can never silently inflate
+  a month again. **Never soften this guard back to "trust any Qtd.Carga".**
+
+**Historical data correction** (service role, idempotent, reversible). Only
+**HAFNIA LARISSA** breached the ceiling — it was the single offending vessel
+across the entire table (19 snapshot rows, all `quantidade=125194`, April 2026,
+ids 5023–8000; no other port affected). Applied via PATCH on 2026-06-05, setting
+`quantidade = NULL` and `quantidade_convertida = NULL` on exactly those rows
+(mirrors the new scraper behaviour: reject → quantity dropped, ship row kept).
+The PATCH filters on `porto='Porto de Itaqui' AND navio='HAFNIA LARISSA' AND
+quantidade=125194`, so it is a **no-op on re-run**. Pre-change snapshot of all 19
+rows saved to `scripts/pipelines/navios/output/itaqui_hafnia_reversal.json` for
+exact reversal. **Reversal:**
+
+```sql
+UPDATE public.navios_diesel
+SET quantidade = 125194, quantidade_convertida = 149932.93
+WHERE porto = 'Porto de Itaqui'
+  AND navio = 'HAFNIA LARISSA'
+  AND quantidade IS NULL
+  AND collected_at >= '2026-04-01' AND collected_at < '2026-04-06';
+```
+
+**Validation (Itaqui diesel volume, RPC `get_nd_volume_mensal_historico`
+last-seen-per-discharged-ship method):**
+
+| Month | Before (m³) | After (m³) | Official ComexStat (m³) | Before/off | After/off |
+|-------|------------:|-----------:|------------------------:|-----------:|----------:|
+| 2026-04 | 465,776 | 315,843 | 135,250 | 3.44× | 2.34× |
+| 2026-05 | 271,587 | 271,587 | 175,000 | 1.55× | 1.55× (HAFNIA not in May) |
+| **Apr+May combined** | **737,363** | **587,430** | **310,250** | **2.38×** | **1.89×** |
+
+The headline **2.38× anomaly is gone** (combined ratio drops to 1.89×). The
+residual ~1.9× is the expected structural gap between a lineup-snapshot estimate
+and official desembaraço (timing of clearance-vs-discharge + the discharged-volume
+attribution heuristic), **not** a parsing defect — no other vessel breaches a
+physically plausible parcel size.
+
+### ComexStat backtest harness (offline validation, 2026-06)
+
+**Purpose.** `scripts/pipelines/navios/comex_backtest.py` is an **offline** harness
+that validates the `/navios-diesel` monthly diesel-volume methodology (derived from
+the port lineup) against the official **ComexStat-by-URF** ruler, for **closed months
+only**. It is a validation tool, **not** an ingestion pipeline: it READS
+`navios_diesel` (service-role) and READS the ComexStat public API, and writes ONLY a
+local parquet/CSV in `DADOS/` (gitignored). It NEVER writes to Supabase.
+
+**Lag caveat — desembaraço ≠ descarga.** ComexStat counts **customs clearance**
+(desembaraço aduaneiro), which lags **physical discharge** at the berth by days to
+weeks (a cargo discharged at the end of month M is often cleared in M+1). Therefore
+ComexStat is **useless as a live feed** and is used here **only** to backtest closed
+past months, where the lag has washed out. CTO decision (2026-06): ComexStat is the
+backtest ruler, never the dashboard feed. **The harness must not feed the dashboard.**
+
+**What it computes.** A per-port × month bias table:
+
+| field | meaning |
+|---|---|
+| `ours_m3` (a) | our methodology: discharged m³ from the lineup, **per port** |
+| `comex_m3` (b) | ComexStat-URF cleared kg → m³, summed over URFs mapping to that port |
+| `diff_b_minus_a` | absolute gap `b − a` |
+| `ratio_a_over_b` | `a / b` — `>1` over-count, `<1` under-count |
+| `covered` | whether the port is one we scrape into `navios_diesel` |
+
+**Methodology replication.** The per-port `ours_m3` faithfully replicates the
+discharged logic of `supabase/migrations/20260527700000_nd_volume_mensal_historico_past_only_discharged.sql`,
+broken down per port (the RPC returns only the month total): anchor = last snapshot
+whose SP-local month == target month; exclude `error_ports` (ERRO_COLETA at anchor)
+and `anchor_set` (vessels still pending at anchor); sum the last row per
+(navio, porto) ≤ anchor, with the `attribution_month` filter (vessel's last-seen
+SP-month == target). A built-in **sanity check** asserts the per-port sum equals the
+RPC discharged total for each month (the script exits 3 if it drifts). Validated
+2026-06: May 2026 per-port sum = **960,343.02** = RPC, April = RPC, both exact.
+
+**Density (832 vs 835).** ComexStat reports mass; we convert kg → m³ with **832
+kg/m³** — the production-side density in `ncm_densidade_kg_m3` for NCM `27101921`,
+the same density the production/imports pipelines use. The `/navios-diesel` lineup
+itself uses **835 kg/m³** when converting tonnes to m³ during scraping; we align the
+ComexStat side to 832 so both sides of the ratio sit on the same ruler. The 832 vs
+835 spread is `< 0.4 %` and does not move the bias verdict. Our `quantidade_convertida`
+is already stored in m³ and is used as-is.
+
+**URF → canonical port map (15 entries).** ComexStat returns URF as
+`"<code> - <NAME>"` with inconsistent dashes/accents (e.g. `0317903 - IRF SAO LUIS`,
+`0417902 - IRF - PORTO DE SUAPE`, `0217800 - ALF - BELÉM`); a normalizer strips the
+code, drops accents, uppercases and collapses dashes/whitespace before lookup.
+
+| URF (normalized) | Canonical port | Covered |
+|---|---|---|
+| IRF SÃO LUÍS | Porto de Itaqui | yes |
+| PORTO DE SANTOS | Porto de Santos | yes |
+| PORTO DE PARANAGUÁ | Porto de Paranaguá | yes |
+| SÃO SEBASTIÃO | Porto de São Sebastião | yes |
+| IRF PORTO DE SUAPE | Porto de Suape | yes |
+| MACEIÓ | Porto de Maceió | yes |
+| PORTO DE MANAUS | Manaus | no |
+| ALF BELÉM | Belém/Vila do Conde | no |
+| ALF SALVADOR | Salvador | no |
+| ALF FORTALEZA | Fortaleza/Mucuripe | no |
+| IRF CAMPOS DOS GOYTACAZES | Açu-RJ | no |
+| PORTO DE RIO GRANDE | Rio Grande | no |
+| IRF NATAL | Natal | no |
+| PORTO DO RIO DE JANEIRO | Rio de Janeiro | no |
+
+Unmapped URFs are recorded (prefixed `(unmapped)`) for visibility but never gate the
+exit code.
+
+**Bias monitor / thresholds.** Covered ports whose `a/b > 1.5` (over-count, e.g.
+Itaqui) or `< 0.6` (under-count) are flagged; a breach persisting `≥ 2` consecutive
+closed months is the real signal of a scraper/methodology bug. A single covered-port
+breach in the run trips a **non-zero exit (code 4)** so a future workflow/CI can gate
+on it; uncovered ports never affect the exit code. Validated 2026-06: **Itaqui flagged
+as a persistent over-count (a/b 2.33 in Apr, 1.55 in May)** — exactly the known Itaqui
+scraper super-count that the parallel scraper fix addresses (see "Itaqui scraper").
+
+**Output (in-place upsert).** Writes `DADOS/navios_comex_backtest.parquet` (+ sibling
+`.csv`), **appended/upserted by (mes, porto)** — never deleted and rebuilt, preserving
+the running history (project standard). De-duped on `(mes, porto)` before write.
+
+**How to run.**
+
+```bash
+python scripts/pipelines/navios/comex_backtest.py                       # all closed months (baseline 2026-04 ..)
+python scripts/pipelines/navios/comex_backtest.py --from 2026-04 --to 2026-05
+python scripts/pipelines/navios/comex_backtest.py --dry-run             # print + monitor, no file write
+python scripts/pipelines/navios/comex_backtest.py --quiet               # suppress progress chatter
+```
+
+Credentials: `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (env or a `.env` walked up the
+tree — works from a worktree). The ComexStat API 429s aggressively; the harness reuses
+`mdic_comex_sync.py`'s backoff and spaces month legs ~13 s apart. **No GitHub Actions
+workflow yet** (CTO decides whether to schedule it); the script is written so a future
+job only needs `pip install -r requirements.txt` and one call, gating on the exit code.
+
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
 Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.

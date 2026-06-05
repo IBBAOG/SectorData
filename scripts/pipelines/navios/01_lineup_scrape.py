@@ -98,6 +98,63 @@ _STATUS_EXCLUIR = {"REATRACÁVEL", "REATRACAVEL", "DESATRACADO"}
 # Densidade média do diesel S-10 (kg/L = t/m³)
 _DIESEL_DENSITY = 0.835   # t/m³  → 1 t = 1/0.835 ≈ 1.198 m³
 
+# ---------------------------------------------------------------------------
+# Physical sanity ceiling for a single-ship diesel parcel
+# ---------------------------------------------------------------------------
+#
+# A single diesel parcel on a tanker cannot physically exceed the carrying
+# capacity of the largest product/oil tanker that calls at these berths. The
+# biggest LR2 / Aframax product tankers top out around 110k DWT and load at
+# most ~90k t of cargo per parcel; most diesel parcels here are 8k–60k t.
+#
+# This guard exists because Porto de Itaqui published a corrupt `Qtd.Carga`
+# value of 125,194 t for HAFNIA LARISSA (Apr 2026). HAFNIA LARISSA is a
+# crude/oil tanker of only 109,990 t DWT — a 125,194 t cargo is impossible
+# (it exceeds the ship's own deadweight). That single row converted to
+# 149,933 m³ and, on its own, exceeded the entire official monthly diesel
+# clearance of São Luís (~135k m³), driving Itaqui to over-count diesel by
+# ~2.38× vs official ComexStat-URF. There was no sanity check, so the corrupt
+# source value flowed straight into navios_diesel.
+#
+# Threshold rationale: across the whole navios_diesel history, the ONLY row
+# above 90,000 t was the HAFNIA LARISSA outlier; the next-highest plausible
+# parcel was 67,972 t. So 90,000 t cleanly isolates impossible values without
+# false-tripping any legitimate large parcel.
+_MAX_DIESEL_PARCEL_T = 90_000.0          # t  — hard physical ceiling per ship
+_MAX_DIESEL_PARCEL_M3 = round(_MAX_DIESEL_PARCEL_T / _DIESEL_DENSITY, 0)  # ≈ 107,784 m³
+
+
+def _sanity_check_parcel_t(valor_t, navio: str = "", porto: str = "") -> float | None:
+    """Reject an implausible single-ship diesel tonnage.
+
+    Returns the value unchanged when it is within the physical ceiling, or
+    ``None`` (drop the quantity) when it exceeds it. A rejected quantity keeps
+    the ship visible as a lineup row but contributes ZERO inflated volume —
+    rejecting is safer than capping because a corrupt source value carries no
+    information about the true parcel size, so any cap would be a fabrication.
+
+    Logs a loud WARN so a corrupt source value is never swallowed silently
+    again (the 125,194 t HAFNIA LARISSA failure mode).
+    """
+    if valor_t is None or pd.isna(valor_t):
+        return valor_t
+    try:
+        v = float(valor_t)
+    except (ValueError, TypeError):
+        return valor_t
+    if v > _MAX_DIESEL_PARCEL_T:
+        who = f"{navio or '?'}".strip()
+        where = f"{porto or '?'}".strip()
+        print(
+            f"    [WARN][sanity] {where}: implausible diesel parcel "
+            f"{v:,.0f} t for '{who}' exceeds physical ceiling "
+            f"{_MAX_DIESEL_PARCEL_T:,.0f} t — REJECTED (quantity dropped). "
+            f"Likely a corrupt source value (e.g. cumulative/throughput or a "
+            f"data-entry error). No single tanker parcel can be this large."
+        )
+        return None
+    return v
+
 # Fatores: 1 <unidade> = ? m³
 _FATOR_M3: dict[str, float] = {
     # Toneladas (métrica)
@@ -670,9 +727,30 @@ def buscar_itaqui() -> pd.DataFrame:
             f = f.rename(columns={c_berco: "Terminal"})
 
         # Qtd.Carga → Quantidade (m³) (ainda em t; será convertida no consolidar)
+        #
+        # NOTE on column choice: the Itaqui table carries BOTH a `DWT` column
+        # and a `Qtd.Carga` column. `Qtd.Carga` is the cargo PARCEL (validated:
+        # HORIZON THETIS "DIESEL S500" Qtd.Carga=15,980 t with DWT=49,999;
+        # VELOS POLARIS "DIESEL" Qtd.Carga=34,220 t with DWT=50,000 — realistic
+        # diesel parcels well below the ship's deadweight). We deliberately read
+        # `Qtd.Carga`, NOT `DWT`. `_col("Qtd")` matches only "Qtd.Carga" here.
         c_qtd = _col(df, "Qtd", required=False)
         if c_qtd:
             f = f.rename(columns={c_qtd: "Quantidade (m³)"})
+            # Physical sanity guard (per ship). Reject corrupt source values
+            # like the 125,194 t HAFNIA LARISSA outlier so they never reach the
+            # DB again. Parse in t, gate on the ceiling, blank out if rejected.
+            f["Quantidade (m³)"] = f.apply(
+                lambda row: (
+                    "" if _sanity_check_parcel_t(
+                        _parse_numero(row.get("Quantidade (m³)")),
+                        navio=str(row.get("Navio", "")),
+                        porto="Porto de Itaqui",
+                    ) is None
+                    else row.get("Quantidade (m³)")
+                ),
+                axis=1,
+            )
 
         # Prev Chegada → Chegada
         c_cheg = next(
@@ -1141,6 +1219,21 @@ def _aplicar_conversao(resultado: pd.DataFrame) -> pd.DataFrame:
         valor   = _parse_numero(raw)
         unidade = _inferir_unidade(raw, hint=hint)
         m3      = _para_m3(valor, unidade)
+
+        # Central, unit-agnostic sanity guard (defense in depth). The per-port
+        # guard in buscar_itaqui() already drops corrupt Itaqui parcels; this
+        # backstop protects EVERY tonne/volume-reporting port (Santos,
+        # Paranaguá, Maceió, São Sebastião, Suape) so a future corrupt source
+        # value above the physical ceiling can never inflate a month silently.
+        if m3 is not None and not pd.isna(m3) and m3 > _MAX_DIESEL_PARCEL_M3:
+            print(
+                f"    [WARN][sanity] {row.get('Porto', '?')}: implausible diesel "
+                f"volume {m3:,.0f} m³ for '{row.get('Navio', '?')}' exceeds "
+                f"physical ceiling {_MAX_DIESEL_PARCEL_M3:,.0f} m³ — REJECTED "
+                f"(quantity dropped). Likely a corrupt source value."
+            )
+            valor = None
+            m3    = None
 
         return pd.Series({
             "Quantidade Original": valor,
