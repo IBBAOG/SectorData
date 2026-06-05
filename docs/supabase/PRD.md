@@ -59,6 +59,7 @@ supabase/
 | `profiles`, `module_visibility` | dash-admin | App (RPC). Desde `20260522000001`: `module_visibility.is_visible_for_public` + trigger self-healing |
 | `app_events` | dash-admin (`/admin-analytics`) | RPC `track_event()` (SECURITY DEFINER). Desde `20260522000001`: dual-actor (`user_id` OR `visitor_id`) |
 | `imports_product_map`, `importer_group_map`, `ncm_densidade_kg_m3` | dash-imports-exports | Service role (DML em migration). Aux tables criadas em `20260525000010_imports_exports_enrichment.sql`. `importer_group_map` intencionalmente vazia ao seed time — populada por DML follow-up após Worktree B ETL backfill (T11 CTO). |
+| `stock_guide_companies`, `stock_guide_drivers`, `stock_guide_sensitivities`, `stock_guide_config` (`stock_guide_sensitivity` dormante) | dash-stock-guide (read via SECURITY DEFINER RPCs) + dash-admin (write via `is_admin()`-guarded RPCs) | Admin via RPCs. RLS habilitada **sem policies** (hide-aware reads only). `stock_guide_companies` carrega os fundamentals (`net_debt_y1/y2`, `ebitda_y1/y2`, `net_income_y1/y2`, opcional `net_income_adj_y1/y2` adicionado `20260610000000`, `fcfe_y1/y2`, `dividends_y1/y2`, `volumes_y1/y2`) — multiplos derivados live no browser. Schema completo + contrato RPC em [`docs/app/stock-guide.md`](../app/stock-guide.md). |
 
 ### App Analytics (adicionada 2026-05-07, expandida 2026-05-22)
 
