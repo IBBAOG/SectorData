@@ -1018,7 +1018,10 @@ export function buildCompanyMonthlyOilStacked(
         tickvals: months,
         ticktext: tickText,
       },
-      legend: { orientation: "h", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
+      // `traceorder: "normal"` lists the legend in trace order (base→top of the
+      // stack: BÚZIOS … Others) instead of Plotly's default reversed order for
+      // stacked bars. This only changes the legend listing, not the stacking.
+      legend: { orientation: "h", traceorder: "normal", yanchor: "bottom", y: 1.01, xanchor: "left", x: 0 },
     },
   };
 }
