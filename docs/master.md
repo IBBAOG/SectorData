@@ -95,7 +95,7 @@ Reforma cross-cutting (Ondas 1–3, range `fac9e522..4ccca2b8`, ~30 commits) que
 |---|---|---|---|
 | APP (Subgerente) | [`worker_subgerente-app`](../.claude/agents/worker_subgerente-app.md) | `src/` (infra compartilhada), `public/`, `.vercel/`, configs Next/TS | [`docs/app/PRD.md`](app/PRD.md) |
 | Supabase / DB | [`worker_supabase`](../.claude/agents/worker_supabase.md) | `supabase/migrations/`, `supabase/config.toml`, `sql/` (legado), `supabase_deploy.yml` | [`docs/supabase/PRD.md`](supabase/PRD.md) |
-| Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/dg_margins_upload.py`, `scripts/manual/price_bands_upload.py` | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
+| Dados Locais | [`worker_dados-locais`](../.claude/agents/worker_dados-locais.md) | `data/`, `scripts/manual/price_bands_upload.py`, `scripts/manual/field_stakes_upload.py` (`dg_margins_upload.py` retirado 2026-06-05 — `d_g_margins` migrou para ETL computado, dono `worker_etl-pipelines`) | [`docs/dados-locais/PRD.md`](dados-locais/PRD.md) |
 | ETL / Pipelines | [`worker_etl-pipelines`](../.claude/agents/worker_etl-pipelines.md) | `DADOS/`, `output/`, `scripts/pipelines/` (todos os scrapers), `.github/workflows/` dos scrapers | [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) |
 | Alertas (legado, local-only — **RETIRED** 2026-06: `alertas_monitor.yml` desabilitado; capacidades re-homed em `freshness_monitor.yml` + `workflow_failure_monitor.yml`) | [`worker_alertas`](../.claude/agents/worker_alertas.md) | `alertas/` (autocontido, gitignored) | [`docs/alertas/PRD.md`](alertas/PRD.md) |
 | Client Alerts (cloud, só-logado — rebuild 2026-06-02) | [`worker_alerts-product`](../.claude/agents/worker_alerts-product.md) | `scripts/client_alerts/`, `.github/workflows/client_alerts_digest.yml` + hook step nos ~15 ETLs, email templates. (Produto antigo `scripts/alerts/` + `alerts_*.yml` deletado.) Delivery via Gmail SMTP (`GMAIL_APP_PASSWORD`). | [`docs/app/alerts.md`](app/alerts.md) + [`docs/etl-pipelines/PRD.md`](etl-pipelines/PRD.md) § "Client Alerts" |
@@ -149,8 +149,8 @@ São os pontos onde um departamento depende de outro. Mudanças nestes contratos
 | Quem consome | Como |
 |---|---|
 | APP | Lê via supabase-js (anon key) chamando RPCs. Wrappers em `src/lib/rpc.ts` (este código é do APP, mas as RPCs em si pertencem ao Supabase). Também **escreve** `app_events` via RPC `track_event` (fire-and-forget, auth.uid() capturado no SQL). |
-| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`, `anp_subsidy_commercialization` (HTML scrape stage adicionado em 2026-05-27). `anp_subsidy_caps` é mantida manualmente (cardinalidade muito baixa). |
-| Dados Locais | Escreve via supabase-py (service key) — popula `d_g_margins`, `price_bands` |
+| ETL | Escreve via supabase-py (service key) — popula `vendas`, `navios_diesel`, `news_articles`, `mdic_comex`, `anp_precos_produtores`, `anp_glp`, `anp_daie`, `anp_desembaracos` (enriquecida com `importador`, `cnpj`, `uf_cnpj`), `anp_lpc`, `anp_cdp_producao`, `anp_precos_distribuicao`, `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`, `anp_voip`, `anp_subsidy_diesel_reference`, `anp_subsidy_commercialization` (HTML scrape stage adicionado em 2026-05-27), `cepea_etanol_anidro`, `anp_producao_derivados` (D&G Margins automation, 2026-06-05) e (computado via RPC `recompute_dg_margins`) `d_g_margins`. `anp_subsidy_caps`, `fuel_tax_reference`, `fuel_blend_ratio` são mantidas manualmente (cardinalidade muito baixa). |
+| Dados Locais | Escreve via supabase-py (service key) — popula `price_bands` (`d_g_margins` migrou para ETL computado em 2026-06-05) |
 | Alertas | Lê via supabase-py — verifica mudanças em fontes monitoradas |
 
 **Tabela de eventos de uso (`app_events`):** criada pela feature Admin Analytics. Ingestão exclusivamente via RPC `track_event(event_type, route, payload, visitor_id)` — o SQL captura `auth.uid()` internamente; INSERT direto do frontend é bloqueado por RLS. SELECT restrito a Admin via RLS. Admins são excluídos dos agregados pelo filtro `role <> 'Admin'` dentro das RPCs read. **Dual-actor:** desde `20260522000001`, `app_events.user_id` é nullable; nova coluna `visitor_id TEXT` cobre visitantes anônimos. CHECK `(user_id IS NOT NULL OR visitor_id IS NOT NULL)` garante atribuição. Analytics RPCs usam `COUNT(DISTINCT COALESCE(user_id::text, visitor_id))` para contar atores únicos atravessando ambos os tiers.
@@ -374,9 +374,11 @@ Componente compartilhado para CTA de upgrade: `src/components/AnonCTA.tsx` (bann
 
 | Arquivo | Tabela alvo |
 |---|---|
-| `data/d_g_margins.xlsx` | `d_g_margins` |
 | `data/price_bands.xlsx` | `price_bands` |
+| `data/field_stakes_brasil.xlsx` | `field_stakes` (seed) |
 | `data/Liquidos_Vendas_Atual.csv` | (verificar uso atual) |
+
+> `data/d_g_margins.xlsx` foi retirado em 2026-06-05 — `d_g_margins` agora é computado pelo `etl_dg_margins.yml` (dono `worker_etl-pipelines`), não mais manual.
 
 ETL **não toca** em `data/` — esses arquivos são manuais por design.
 
@@ -677,4 +679,4 @@ Resolvido:
 
 Tech debt conhecido (não resolvido):
 - **`sql/` na raiz contém DDL aplicado direto no Supabase Dashboard, NÃO versionado em `supabase/migrations/`.** Tabelas afetadas: `price_bands`, `profiles`, `module_visibility` (colunas: `module_slug PK`, `is_visible_for_clients`, `is_visible_on_home DEFAULT true`). Recriar o DB apenas das migrations resultaria em DB incompleto. **Ação futura**: APP deve converter os 3 arquivos em migrations próprias, depois remover `sql/`.
-- **Scripts Python na raiz** (`ais_*.py`, `pipelines/navios/01_lineup_scrape.py`, `vessel_*.py`, `pipelines/navios/04_cabotage_cleanup.py`, `pipelines/anp/vendas_watch.py`, `scripts/manual/dg_margins_upload.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.
+- **Scripts Python na raiz** (`ais_*.py`, `pipelines/navios/01_lineup_scrape.py`, `vessel_*.py`, `pipelines/navios/04_cabotage_cleanup.py`, `pipelines/anp/vendas_watch.py`) convivem com `scripts/`. Mover requer atualizar workflows correspondentes — feito quando houver janela.

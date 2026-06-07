@@ -635,6 +635,18 @@ export default function MobileView(): React.ReactElement {
               />
             </div>
           )}
+
+          {/* Source attribution — CEPEA/ESALQ credit required (CC BY-NC) */}
+          <div style={{
+            padding:    "16px 16px 0",
+            fontSize:   11,
+            lineHeight: 1.5,
+            color:      "var(--mobile-text-muted, #6b6b73)",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            textAlign:  "center",
+          }}>
+            Sources: ANP · CEPEA/ESALQ · CONFAZ — automated weekly composition
+          </div>
         </>
       )}
 

@@ -50,7 +50,11 @@ supabase/
 | `vendas` | dash-market-share (sole consumer since 2026-05-26 — `/sales-volumes` was folded into `/market-share` via the % Share ↔ thousand m³ toggle) | ETL (`pipelines/anp/vendas_watch.py`) |
 | `navios_diesel` | dash-navios-diesel | ETL (`pipelines/navios/01_lineup_scrape.py` → `pipelines/navios/02_diesel_import.mjs`) |
 | `vessel_registry`, `vessel_positions`, `port_arrivals`, `import_candidates` | dash-navios-diesel | ETL (`ais_*.py`, `vessel_*.py`) |
-| `d_g_margins` | dash-margins | Dados Locais (manual via `scripts/manual/dg_margins_upload.py`) |
+| `d_g_margins` | dash-margins | **ETL (computed)** via RPC `recompute_dg_margins(week_start, week_end)`, chamada pelo `etl_dg_margins.yml`. Era upload manual (`scripts/manual/dg_margins_upload.py`) até 2026-06-05; arquivo manual arquivado em `d_g_margins_manual_bak`. |
+| `cepea_etanol_anidro` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/cepea/cepea_etanol_anidro_sync.py`) — preço semanal R$/L do etanol anidro (CEPEA/ESALQ, 2002→presente; CC BY-NC) |
+| `anp_producao_derivados` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/anp/producao/anp_producao_derivados_sync.py`) — produção mensal nacional m³ (Gasolina A / Óleo Diesel, 1990→presente) |
+| `fuel_tax_reference` | input do `recompute_dg_margins` (D&G Margins) | Imposto federal + ICMS R$/L por período — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS) |
+| `fuel_blend_ratio` | input do `recompute_dg_margins` (D&G Margins) | % de mandato de etanol/biodiesel por período |
 | `field_stakes` | future `/production` dashboard (read) + dash-admin "Field Stakes" editor (write via SECURITY DEFINER + `is_admin()`) | Admin via `admin_upsert_field_stakes(p_campo, p_stakes jsonb)` — replace-all-in-1-tx with `SUM(stake_pct)=100` validation. Migration `20260527600000_field_stakes.sql`. |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
@@ -855,7 +859,7 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 |---|---|---|
 | Market Share (absorveu Sales Volumes em 2026-05-26) | `get_ms_*` (sole family in use). `get_sv_*` legacy RPCs dropped in migration `20260526400000_drop_sv_rpcs.sql`. | dash-market-share |
 | Navios | `get_nd_*` | dash-navios-diesel |
-| D&G Margins | `get_dg_*` | dash-margins |
+| D&G Margins | `get_dg_*` (read, anon/authenticated) + `recompute_dg_margins(p_week_start text, p_week_end text)` — **SECURITY DEFINER, `EXECUTE` only `service_role`** (recompute job chamado pelo `etl_dg_margins.yml`; recalcula `d_g_margins` a partir das tabelas-fonte de preço/produção/etanol/imposto/blend) | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
 | Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | dash-admin |
 | News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (retrocompat — retorna `text[]`), `get_default_news_keywords_with_flags` (retorna `keyword, match_type` — consumido pelo scanner repo). Writes admin via `admin_*_default_news_keyword*` listados em Profile/Admin | dash-news-hunter |
@@ -1285,7 +1289,7 @@ A migration `20260525250000_default_news_keywords_match_type.sql` aplica esse pa
 | Dept | Pede o quê |
 |---|---|
 | ETL | Tabelas pra dados scrape, colunas novas em `vendas`, `navios_diesel`, etc. Mudanças de schema típicas: nova coluna no parquet → solicita coluna correspondente |
-| Dados Locais | Tabelas pra Excel manual. Hoje: `d_g_margins`, `price_bands`. Mudanças quando CEO adiciona coluna no Excel |
+| Dados Locais | Tabelas pra Excel manual. Hoje: `price_bands` apenas (`d_g_margins` migrou pra ETL computado em 2026-06-05). Mudanças quando CEO adiciona coluna no Excel |
 | APP / Subgerente | RPCs novas, ajustes, RLS pra módulos novos. Geralmente disparado ao criar dashboard novo |
 | Alertas | Quase nada — Alertas só lê do schema existente |
 

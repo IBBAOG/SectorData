@@ -570,7 +570,8 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 | slug | tableName | conflictColumns | partitionBy |
 |---|---|---|---|
 | `price-bands` | `price_bands` | `['product', 'date']` | `product` (Diesel / Gasoline) |
-| `d-g-margins` | `d_g_margins` | `['fuel_type', 'week']` | — |
+
+> **`d-g-margins` retirado do registry em 2026-06-05** (D&G Margins automation). A tabela `d_g_margins` agora é **computada** pelo `etl_dg_margins.yml` (RPC `recompute_dg_margins`), não mais editada via Data Input. O editor inline e o bulk-upload de D&G Margins foram desativados; só `price-bands` permanece editável aqui.
 
 ### Como adicionar uma nova tabela
 
@@ -585,19 +586,21 @@ Arquitetura extensível baseada em registry. Substitui o workflow de editar `dat
 
 ### RLS
 
-As políticas de escrita para `price_bands` e `d_g_margins` são criadas pela migration
+As políticas de escrita para `price_bands` (e historicamente `d_g_margins`, agora não mais editável aqui) são criadas pela migration
 `supabase/migrations/20260512000000_data_input_admin_policies.sql` (worker_supabase, branch paralela).
 Sem a migration, writes retornam 403 — a UI renderiza mas não persiste.
 
 ### Bulk .xlsx upload (upsert + preview) — 2026-06-03
 
-The Data Input editor now lets an admin upload the **same multi-sheet `.xlsx`** they used to feed to `scripts/manual/price_bands_upload.py` / `scripts/manual/dg_margins_upload.py`, directly from the browser — no local Python run needed. Excel-only (no CSV, no paste). **Desktop-only** (the whole `/admin-panel` is desktop-only — no dual-view sync).
+The Data Input editor lets an admin upload the **same multi-sheet `.xlsx`** they used to feed to `scripts/manual/price_bands_upload.py`, directly from the browser — no local Python run needed. Excel-only (no CSV, no paste). **Desktop-only** (the whole `/admin-panel` is desktop-only — no dual-view sync).
 
-**Where:** a "Bulk upload (.xlsx)" button appears in the editor toolbar whenever the active table's registry config declares a `bulkUpload` spec. Currently both registered tables have one (`price-bands`, `d-g-margins`).
+> **D&G Margins bulk-upload retired 2026-06-05.** Originally both `price-bands` and `d-g-margins` had a `bulkUpload` spec. With the D&G Margins automation, `d_g_margins` is computed (not editable) and its registry entry + bulk-upload spec were removed. Only `price-bands` remains. The D&G Margins header maps below are kept for historical reference only.
+
+**Where:** a "Bulk upload (.xlsx)" button appears in the editor toolbar whenever the active table's registry config declares a `bulkUpload` spec. Currently only `price-bands` has one.
 
 **Flow (modal):** choose file → parse → **preview** → confirm.
 - **Preview** shows: sheets found (expected sheets highlighted), total rows parsed, **N to insert / M to update** (diff computed against the rows currently loaded in the editor, by the conflict-key tuple), plus a scrollable list of validation errors and warnings (each tagged with sheet + Excel row number). Hard errors disable the Confirm button.
-- **Merge semantics:** upsert on `conflictColumns` (`product+date` for Price Bands, `fuel_type+week` for D&G Margins). Existing keys are updated, new keys inserted; **nothing is deleted**. Written in chunks of 500.
+- **Merge semantics:** upsert on `conflictColumns` (`product+date` for Price Bands; `fuel_type+week` was used for the retired D&G Margins). Existing keys are updated, new keys inserted; **nothing is deleted**. Written in chunks of 500.
 
 **Per-sheet header maps** (declared in `registry.ts` under `bulkUpload.sheets[].headerMap`, mirroring the Python scripts):
 
