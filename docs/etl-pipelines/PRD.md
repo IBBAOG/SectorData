@@ -34,7 +34,13 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
     vendas_watch.py                 ANP vendas combustíveis (vintage anp-watcher)
 
   cepea/                            (workflow etl_dg_margins.yml — input D&G Margins)
-    cepea_etanol_anidro_sync.py     CEPEA/ESALQ preço semanal do etanol anidro (R$/L, full history) → cepea_etanol_anidro
+    cepea_etanol_anidro_sync.py     CEPEA/ESALQ preço semanal do etanol anidro (R$/L) → cepea_etanol_anidro.
+                                    Weekly path is browser-free (requests-only): widget oficial CEPEA
+                                    (id_indicador 104, Anidro-SP R$/L, 4 casas) → fallback HTML/JSON
+                                    noticiasagricolas. Guards: range [1.5,5.0], precision sniff (≥3 dec),
+                                    Saturday/ISO-week invariant, staleness >14d (loud exit), cross-source
+                                    agreement. Deep history (2002→) só via `--backfill` (Chrome+Excel,
+                                    lazy import, NUNCA em CI).
 
   navios/                           chain de 5 stages (3 workflows traversam)
     01_lineup_scrape.py             Scrape portos → CSV (era navios_esperados.py)
