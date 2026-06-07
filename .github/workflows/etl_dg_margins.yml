@@ -42,9 +42,12 @@ jobs:
       # (id_indicador 104) → noticiasagricolas HTML/JSON fallbacks. No Chrome /
       # Selenium setup is needed (the legacy deep-history Chrome+Excel path lives
       # behind the manual --backfill flag and is never run here).
+      # continue-on-error: a transient failure in EITHER scraper must not halt the
+      # job — recompute below runs as long as AT LEAST ONE source succeeded.
       - name: Sync CEPEA anhydrous ethanol → cepea_etanol_anidro
         id: cepea
         if: always()
+        continue-on-error: true
         run: python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
@@ -54,6 +57,7 @@ jobs:
       - name: Sync ANP refined-product production → anp_producao_derivados
         id: producao
         if: always()
+        continue-on-error: true
         run: python scripts/pipelines/anp/producao/anp_producao_derivados_sync.py
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
@@ -61,11 +65,18 @@ jobs:
 
       # ── 3) Recompute d_g_margins from all sources ──────────────────────────
       # SECURITY DEFINER RPC granted to service_role; UPSERTs d_g_margins on
-      # (fuel_type, week). Runs only if at least one source sync succeeded, so a
-      # transient source outage does not skip a margins refresh on the other.
+      # (fuel_type, week). Runs as long as AT LEAST ONE source sync actually
+      # succeeded, so a transient outage on one source does not skip a margins
+      # refresh built on the other. The recompute is idempotent off the DB.
+      #
+      # NOTE: the scrapers above use continue-on-error, so their `conclusion`
+      # is forced to 'success' (the failure is tolerated). We therefore gate on
+      # `.outcome`, which preserves the REAL result ('success'/'failure'). This
+      # explicit `if:` also stops GitHub Actions from auto-skipping the step
+      # after a tolerated upstream failure.
       - name: Recompute d_g_margins (recompute_dg_margins)
         id: recompute
-        if: steps.cepea.conclusion == 'success' || steps.producao.conclusion == 'success'
+        if: steps.cepea.outcome == 'success' || steps.producao.outcome == 'success'
         run: |
           python - <<'PY'
           import os, sys
