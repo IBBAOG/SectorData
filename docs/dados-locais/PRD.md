@@ -10,11 +10,13 @@ data/
   d_g_margins_backup.xlsx       Backup anterior do d_g_margins
   price_bands.xlsx              Bandas de preço (paridade import/export, Petrobras)
   field_stakes_brasil.xlsx      Stakes (working interest) por campo × empresa — ANP Anuário 2025 (seed inicial)
+  stock_guide_brent_grid.xlsx   Malha 1-D Brent → target price por papel (/stock-guide)
   Liquidos_Vendas_Atual.csv     Vendas líquidos (snapshot)
 
-scripts/manual/dg_margins_upload.py     Upload de d_g_margins → Supabase
-scripts/manual/price_bands_upload.py    Upload de price_bands → Supabase
-scripts/manual/field_stakes_upload.py   Upload (seed) de field_stakes → Supabase
+scripts/manual/dg_margins_upload.py             Upload de d_g_margins → Supabase
+scripts/manual/price_bands_upload.py            Upload de price_bands → Supabase
+scripts/manual/field_stakes_upload.py           Upload (seed) de field_stakes → Supabase
+scripts/manual/stock_guide_brent_grid_upload.py Upload (snapshot) da malha Brent → stock_guide_scenario_grid
 ```
 
 ## Tabelas-alvo no Supabase
@@ -26,6 +28,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 | `data/d_g_margins.xlsx` | `d_g_margins` | `(fuel_type, week)` |
 | `data/price_bands.xlsx` | `price_bands` | `(date, product)` |
 | `data/field_stakes_brasil.xlsx` | `field_stakes` | `(campo, empresa)` (one-shot seed; edits via Admin Panel) |
+| `data/stock_guide_brent_grid.xlsx` | `stock_guide_scenario_grid` | `(sensitivity_id, ticker, x_value)` (replace-total snapshot por `sensitivity_id`) |
 | `data/Liquidos_Vendas_Atual.csv` | (verificar uso atual) | — |
 
 ## Fluxo padrão
@@ -182,6 +185,79 @@ FIELD_STAKES_XLSX=path/to/alternate.xlsx python scripts/manual/field_stakes_uplo
 ```
 
 Important: re-running is idempotent at the campo level (DELETE + INSERT per campo). Any campos NOT in the Excel are left untouched in the DB — that is intentional, because Admin Panel edits for campos beyond the Anuário scope (PSA unitizations, exploration blocks) must not be wiped by a future re-seed.
+
+---
+
+## Stock Guide — Brent scenario grid (manual upload)
+
+### O que é
+
+`data/stock_guide_brent_grid.xlsx` — malha 1-D que o analista gera no modelo dele: para cada nível de Brent (US$/bbl) e cada papel, o target price (R$/ação) correspondente. O `/stock-guide` lê essa malha e **interpola ao vivo** contra o nível de Brent atual. Substitui a camada linear de "compose" no lado do dashboard.
+
+Cada malha pertence a uma "casca" (shell) que o analista cria no Admin Panel — uma linha em `stock_guide_sensitivities` marcada por `definition.grid` (metadados de eixo apenas, sem valores). Os valores por papel ficam na tabela relacional `stock_guide_scenario_grid`, não no jsonb.
+
+### Formato do Excel (WIDE)
+
+Sheet única (a 1ª sheet é lida):
+
+| Coluna | Conteúdo |
+|---|---|
+| `brent` (1ª coluna) | Níveis de Brent em US$/bbl (pode ter milhares de linhas) |
+| demais colunas | header = ticker (`PETR4`, `PRIO3`, …); célula = target price (R$/ação) naquele Brent |
+
+Exemplo:
+
+```
+brent | PETR4 | PRIO3 | RECV3
+60    | 28.10 | 32.40 | 18.90
+65    | 30.05 | 35.10 | 20.15
+...
+```
+
+Melt wide→long: cada célula `(brent, ticker)` com valor numérico não-nulo vira 1 linha. Células vazias são puladas.
+
+### Alvo
+
+| Tabela | Colunas | PK | Escrita por |
+|---|---|---|---|
+| `stock_guide_scenario_grid` | `sensitivity_id`, `ticker`, `x_value`, `primary_value` | `(sensitivity_id, ticker, x_value)` | Este script (service role, bypassa RLS) |
+
+Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`. RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id)`; escritas só via service role.
+
+### Script
+
+`scripts/manual/stock_guide_brent_grid_upload.py` — loader **replace-total** (snapshot, não série temporal). Cada run apaga TODAS as linhas do `sensitivity_id` alvo e reinsere o conteúdo do Excel. Idempotente (rodar 2× = mesmo estado). A regra "nunca deletar mês parcial" **não se aplica** aqui — replace-total é o correto.
+
+Alvo selecionado por **exatamente um** de:
+- `--sensitivity-id N` — id da linha em `stock_guide_sensitivities` (preferido, inequívoco).
+- `--table-title "..."` — lookup do id por `title`; erro claro se 0 ou >1 match.
+
+Validações:
+- `brent` numérico (linhas não-numéricas descartadas com warning), ordenado asc, avisa duplicatas.
+- células de ticker numéricas (NaN/não-numéricas descartadas com warning).
+- tickers ausentes em `stock_guide_companies` → warning (não aborta).
+- loga contagem de pontos por ticker + total; **total=0 = ERRO** (silent-empty é bug, pegadinha #12 do CLAUDE.md).
+
+### Como rodar
+
+```bash
+# Por id (preferido):
+python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7
+
+# Por título (deve ser único):
+python scripts/manual/stock_guide_brent_grid_upload.py --table-title "Brent scenarios (avg 2026)"
+
+# Excel alternativo:
+python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7 --excel path/to/grid.xlsx
+# ou via env var:
+STOCK_GUIDE_BRENT_GRID_XLSX=path/to/grid.xlsx python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7
+```
+
+Caminho default do Excel: `$STOCK_GUIDE_BRENT_GRID_XLSX` → `C:\Users\eduar\dashboard_projeto\data\stock_guide_brent_grid.xlsx`. O Excel é gitignored (não commitar).
+
+### Refresh cadence
+
+Ad-hoc, quando o analista regenera a malha no modelo (mudança de premissas, nova curva de Brent, novos papéis). Smoke test live só após o deploy da migration `20260612000000` em produção (push pra main → `supabase_deploy.yml`).
 
 ---
 
