@@ -228,7 +228,7 @@ export default function MobileView(): React.ReactElement | null {
     // Company level
     selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
-    companyFieldAggregates, companyFieldsNoData,
+    companyFieldAggregates, companyFieldCount, companyFieldsNoData,
     companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
@@ -443,6 +443,7 @@ export default function MobileView(): React.ReactElement | null {
           serieLoading={serieLoading}
           companySerieRows={companySerieRows}
           companyFieldAggregates={companyFieldAggregates}
+          companyFieldCount={companyFieldCount}
           companyFieldsNoData={companyFieldsNoData}
           companyOilTrace={companyOilTrace}
           companyMonthlyOilChart={companyMonthlyOilChart}
@@ -1036,6 +1037,7 @@ function CompanyMobileContent({
   serieLoading,
   companySerieRows,
   companyFieldAggregates,
+  companyFieldCount,
   companyFieldsNoData,
   companyOilTrace,
   companyMonthlyOilChart,
@@ -1044,6 +1046,8 @@ function CompanyMobileContent({
   serieLoading: boolean;
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
   companyFieldAggregates: CompanyFieldAggregate[];
+  /** Honest distinct-field-with-daily-data count (not the capped top-6+Others). */
+  companyFieldCount: number;
   companyFieldsNoData: { campo: string; stakePct: number }[];
   companyOilTrace: PlotData[];
   companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
@@ -1066,7 +1070,7 @@ function CompanyMobileContent({
           unit="kbpd"
           topN={0}
           isExplicit
-          explicitCount={companyFieldAggregates.length}
+          explicitCount={companyFieldCount}
           updating={serieLoading}
           companyTotal
         >
@@ -1106,7 +1110,7 @@ function CompanyMobileContent({
           unit="kbpd"
           topN={0}
           isExplicit
-          explicitCount={companyFieldAggregates.length}
+          explicitCount={companyFieldCount}
           updating={serieLoading}
           companyTotal
         >

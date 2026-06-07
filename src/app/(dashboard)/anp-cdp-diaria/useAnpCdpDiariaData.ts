@@ -412,6 +412,99 @@ export function bucketOf(
 }
 
 /**
+ * THE single source of truth for the company view's "which 6 + Others" decision.
+ *
+ * Every company surface (net oil line chart, monthly stacked bar, daily net-oil
+ * matrix, and the mobile "By Field — Net" ranking cap) derives its top-N
+ * membership, Others composition, canonical order and per-field color FROM THIS
+ * object — never by re-running `orderCompanyFieldDims` / `companyDisplayBuckets`
+ * on its own. Changing the ranking metric or the cut here propagates to all four
+ * surfaces by construction.
+ *
+ * The ranking metric is net oil average over reporting days (the company view is
+ * oil-only), computed once via `orderCompanyFieldDims(…, "petroleo_bbl_dia")`.
+ * The split is exposed in BOTH spaces:
+ *  • label space (stake-decorated dimension, e.g. "BÚZIOS (100%)") — what the
+ *    line chart, the stacked bar and the matrix column headers key on;
+ *  • campo space (raw field name, e.g. "BÚZIOS") — what the matrix cells and the
+ *    per-field aggregates / mobile cap key on.
+ */
+export interface CompanyBuckets {
+  /** Canonical order — stake-decorated labels, net-oil avg desc. */
+  orderedDims: string[];
+  /** Canonical order resolved back to raw campo names (same order). */
+  orderedCampos: string[];
+  /** Top N labels (canonical order). */
+  topFields: string[];
+  /** Collapsed remainder labels (empty when showOthers is false). */
+  othersFields: string[];
+  /** True only when there are MORE than TOP_N_COMPANY fields. */
+  showOthers: boolean;
+  /** Membership set of the top labels. */
+  topSet: Set<string>;
+  /** Membership set of the top campos. */
+  topCamposSet: Set<string>;
+  /** Count-suffixed "Others (N)" label — meaningful only when showOthers. */
+  othersDisp: string;
+  /** Field → color map (canonical order; brand orange reserved for the total). */
+  colorMap: Record<string, string>;
+  /** Stake-decorated label → raw campo. */
+  labelToCampo: Record<string, string>;
+  /** Raw campo → stake-decorated label. */
+  campoToLabel: Record<string, string>;
+  /** Honest count of distinct fields with daily data (= top + others). */
+  totalFieldCount: number;
+}
+
+/**
+ * Compute the canonical company buckets once from the raw company net serie.
+ * All company surfaces consume this — see `CompanyBuckets`.
+ */
+export function buildCompanyBuckets(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): CompanyBuckets {
+  const unified = projectCompany(rows);
+
+  // Canonical order = net oil avg over reporting days, desc.
+  const orderedDims = orderCompanyFieldDims(unified, "petroleo_bbl_dia");
+  const colorMap    = companyFieldColorMap(orderedDims);
+
+  // label ↔ campo maps (the serie carries a single stake per field).
+  const labelToCampo: Record<string, string> = {};
+  const campoToLabel: Record<string, string> = {};
+  for (const r of unified) {
+    if (campoToLabel[r.campo] == null) {
+      campoToLabel[r.campo] = r.dimension;
+      labelToCampo[r.dimension] = r.campo;
+    }
+  }
+  const orderedCampos = orderedDims
+    .map(dim => labelToCampo[dim])
+    .filter((c): c is string => c != null);
+
+  // The one top-N + Others split (shared helper).
+  const { topFields, othersFields, showOthers } = companyDisplayBuckets(orderedDims);
+  const topSet       = new Set(topFields);
+  const topCamposSet = new Set(topFields.map(l => labelToCampo[l]).filter((c): c is string => c != null));
+  const othersDisp   = othersLabel(othersFields.length);
+
+  return {
+    orderedDims,
+    orderedCampos,
+    topFields,
+    othersFields,
+    showOthers,
+    topSet,
+    topCamposSet,
+    othersDisp,
+    colorMap,
+    labelToCampo,
+    campoToLabel,
+    totalFieldCount: topFields.length + othersFields.length,
+  };
+}
+
+/**
  * Company-level chart: a bold "Company total" net headline line (brand orange)
  * plus one thin net line per field. `rows` carries NET values already; the
  * dimension is the stake-decorated field label. `scale` converts to display
@@ -422,21 +515,15 @@ export function buildCompanyChart(
   metric: Metric,
   unitLabel: string,
   height: number,
+  buckets: CompanyBuckets,
   scale: (v: number) => number = (v) => v,
 ): { data: PlotData[]; layout: Partial<Layout> } {
   const filtered = rows.filter(r => r[metric] != null);
   if (!filtered.length) return emptyPlot(height);
 
-  // Order fields by average descending so the legend reads top → bottom — the
-  // SAME ordering/coloring the monthly stacked bar uses (shared helper).
-  const fieldDims = orderCompanyFieldDims(rows, metric);
-  const colorMap  = companyFieldColorMap(fieldDims);
-
-  // Top N + Others split (shared helper — identical membership across the 3
-  // company surfaces). Everything past the top N collapses into one grey line.
-  const { topFields, othersFields, showOthers } = companyDisplayBuckets(fieldDims);
-  const topSet      = new Set(topFields);
-  const othersDisp  = othersLabel(othersFields.length);
+  // Order / color / top-N split all come from the shared `CompanyBuckets` — the
+  // single source of truth for "which 6 + Others" across every company surface.
+  const { topFields, showOthers, topSet, othersDisp, colorMap } = buckets;
 
   // Per-BUCKET aggregation: each field's daily value is summed into its bucket
   // (itself if top, else Others) so the Others line = the daily sum of the
@@ -625,26 +712,33 @@ export function buildCompanyFieldAggregates(
 }
 
 /**
- * Cap the per-field net aggregates to the top `TOP_N_COMPANY` (by oil avg desc)
- * and fold the rest into a single "Others (N)" card — mirrors the top-N+Others
- * collapse the company charts/matrix apply, so the mobile "By Field — Net"
- * ranking stays a summary (the full breakdown is in "Explore raw data"). When
- * the company has ≤ `TOP_N_COMPANY` fields (e.g. PRIO = 6) the list is returned
- * unchanged (no Others card). The Others card sums the collapsed fields' net
- * averages and their latest-day net (on the most recent date any of them
- * reported); it has no single stake (`stakePct = NaN`) and no basin.
+ * Cap the per-field net aggregates to the top `TOP_N_COMPANY` and fold the rest
+ * into a single "Others (N)" card — mirrors the top-N+Others collapse the
+ * company charts/matrix apply, so the mobile "By Field — Net" ranking stays a
+ * summary (the full breakdown is in "Explore raw data"). When the company has
+ * ≤ `TOP_N_COMPANY` fields (e.g. PRIO = 6) the list is returned unchanged (no
+ * Others card). The Others card sums the collapsed fields' net averages and
+ * their latest-day net (on the most recent date any of them reported); it has no
+ * single stake (`stakePct = NaN`) and no basin.
  *
- * Input is assumed already sorted by oil avg desc (as `buildCompanyFieldAggregates`
- * does for the oil product) — the function re-slices by that order to be safe.
+ * The "which 6 + Others" decision is NOT re-derived here — it reuses the shared
+ * `CompanyBuckets` (canonical campo order + top set), so the mobile ranking's
+ * membership is identical by construction to the charts and the matrix.
  */
 export function capCompanyFieldAggregates(
   aggs: CompanyFieldAggregate[],
+  buckets: CompanyBuckets,
 ): CompanyFieldAggregate[] {
-  const ordered = [...aggs].sort((a, b) => b.avgOilNet - a.avgOilNet);
-  if (ordered.length <= TOP_N_COMPANY) return ordered;
+  // Order the aggregates by the shared canonical campo order, then partition via
+  // the shared top set — no independent re-sort by avgOilNet.
+  const byCampo = new Map(aggs.map(a => [a.campo, a]));
+  const ordered = buckets.orderedCampos
+    .map(c => byCampo.get(c))
+    .filter((a): a is CompanyFieldAggregate => a != null);
+  if (!buckets.showOthers) return ordered;
 
-  const top    = ordered.slice(0, TOP_N_COMPANY);
-  const others = ordered.slice(TOP_N_COMPANY);
+  const top    = ordered.filter(a => bucketOf(a.campo, buckets.topCamposSet, buckets.othersDisp) !== buckets.othersDisp);
+  const others = ordered.filter(a => bucketOf(a.campo, buckets.topCamposSet, buckets.othersDisp) === buckets.othersDisp);
 
   // Sum avgs; latest = sum over the most recent date present among the others.
   const avgOilNet = others.reduce((s, f) => s + f.avgOilNet, 0);
@@ -664,7 +758,7 @@ export function capCompanyFieldAggregates(
   }
 
   const othersCard: CompanyFieldAggregate = {
-    campo:    othersLabel(others.length),
+    campo:    buckets.othersDisp,   // shared "Others (N)" label — same string everywhere
     bacia:    null,
     stakePct: NaN,
     avgOilNet,
@@ -687,6 +781,7 @@ export function capCompanyFieldAggregates(
  */
 export function buildCompanyDailyOilMatrix(
   rows: AnpCdpDiariaEmpresaSeriePonto[],
+  buckets: CompanyBuckets,
 ): CompanyDailyOilMatrix {
   // Map each field (campo) to its stake + decorated label. The serie carries a
   // single stake per field, so first sighting wins.
@@ -709,20 +804,11 @@ export function buildCompanyDailyOilMatrix(
       (cells[r.data][r.campo] ?? 0) + bblDiaToKbpd(r.petroleo_bbl_dia_net);
   }
 
-  // Canonical column order = same as the charts (avg net oil desc). The order
-  // helper works on the stake-decorated dimension, so resolve each ordered
-  // dimension label back to its campo.
-  const orderedDims = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
-  const labelToCampo: Record<string, string> = {};
-  for (const m of Object.values(fieldMeta)) labelToCampo[m.label] = m.campo;
-  const orderedCampos = orderedDims
-    .map(dim => labelToCampo[dim])
-    .filter((c): c is string => c != null);
-
-  // Top N + Others split (shared helper — same membership as the charts).
-  const { topFields: topCampos, othersFields: othersCampos, showOthers } =
-    companyDisplayBuckets(orderedCampos);
-  const othersDisp = othersLabel(othersCampos.length);
+  // Canonical column order + top-N split + Others composition all come from the
+  // shared `CompanyBuckets` (single source of truth) — keyed in campo space here.
+  const { orderedCampos, topCamposSet, showOthers, othersDisp } = buckets;
+  const topCampos    = orderedCampos.filter(c => topCamposSet.has(c));
+  const othersCampos = orderedCampos.filter(c => !topCamposSet.has(c));
   // Sentinel key used for the Others column (cannot collide — real campos never
   // contain " (N)" with a count suffix; defensive anyway).
   const OTHERS_KEY = othersDisp;
@@ -737,10 +823,9 @@ export function buildCompanyDailyOilMatrix(
       ]
     : topFieldCols;
 
-  const topSet = new Set(topCampos);
-
-  // One row per day, descending (latest first). Top fields render their own
-  // value; the Others column sums every collapsed field that reported that day.
+  // One row per day, descending (latest first). Each field's daily net oil is
+  // routed through the shared `bucketOf` (campo space): a top campo lands on
+  // itself, everything else folds into the Others column.
   const days = Object.keys(cells).sort((a, b) => b.localeCompare(a));
   const matrixRows: CompanyDailyOilMatrixRow[] = days.map(data => {
     const values: Record<string, number | null> = {};
@@ -753,7 +838,7 @@ export function buildCompanyDailyOilMatrix(
       let othersSeen = false;
       const dayCells = cells[data] ?? {};
       for (const [campo, v] of Object.entries(dayCells)) {
-        if (topSet.has(campo)) continue;
+        if (bucketOf(campo, topCamposSet, OTHERS_KEY) !== OTHERS_KEY) continue;
         othersSum += v;
         othersSeen = true;
       }
@@ -788,6 +873,7 @@ function lastDayOfMonth(year: number, monthIndex0: number): number {
  */
 export function buildCompanyMonthlyOilByField(
   rows: AnpCdpDiariaEmpresaSeriePonto[],
+  buckets: CompanyBuckets,
 ): CompanyMonthlyOilByField {
   // Accumulate per (month, field): running sum + day count.
   const acc: Record<string, Record<string, { sum: number; cnt: number }>> = {};
@@ -806,26 +892,24 @@ export function buildCompanyMonthlyOilByField(
 
   const months = Object.keys(acc).sort((a, b) => a.localeCompare(b));
 
-  // Full canonical field order / color = the same as the company line chart.
-  const fullFieldOrder = orderCompanyFieldDims(projectCompany(rows), "petroleo_bbl_dia");
-
-  // Top N + Others split (shared helper — identical membership to the line chart
-  // and the daily matrix). The per-(month, field) DAILY AVERAGE collapses by
-  // SUM across the Others fields — i.e. Others' stack segment is the sum of the
-  // collapsed fields' per-month daily averages (so top6 + Others = the full
+  // Order / top-N split / Others composition all come from the shared
+  // `CompanyBuckets` (single source of truth) — same membership as the line
+  // chart and the daily matrix. The per-(month, field) DAILY AVERAGE collapses
+  // by SUM across the Others fields — i.e. Others' stack segment is the sum of
+  // the collapsed fields' per-month daily averages (so top6 + Others = the full
   // monthly total, and the on-bar total label stays the company total).
-  const { topFields, othersFields, showOthers } = companyDisplayBuckets(fullFieldOrder);
-  const topSet            = new Set(topFields);
-  const othersBucketLabel = showOthers ? othersLabel(othersFields.length) : null;
+  const { orderedDims: fullFieldOrder, topFields, showOthers, topSet } = buckets;
+  const othersBucketLabel = showOthers ? buckets.othersDisp : null;
   const fieldOrder        = othersBucketLabel ? [...topFields, othersBucketLabel] : topFields;
 
-  // Compute daily average per (month, field), then fold into buckets.
+  // Compute daily average per (month, field), then fold into buckets via the
+  // shared `bucketOf` (label space).
   const valueByMonth: Record<string, Record<string, number>> = {};
   for (const m of months) {
     valueByMonth[m] = {};
     for (const [label, v] of Object.entries(acc[m])) {
       const avg = v.cnt > 0 ? v.sum / v.cnt : 0;
-      const bucket = topSet.has(label) ? label : (othersBucketLabel ?? label);
+      const bucket = othersBucketLabel ? bucketOf(label, topSet, othersBucketLabel) : label;
       valueByMonth[m][bucket] = (valueByMonth[m][bucket] ?? 0) + avg;
     }
   }
@@ -1068,6 +1152,12 @@ export interface UseAnpCdpDiariaData {
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
   /** Per-field net aggregates (mobile ranking cards), sorted by active product. */
   companyFieldAggregates: CompanyFieldAggregate[];
+  /**
+   * Honest count of distinct fields with daily data for the selected company
+   * (PRIO → 6, Petrobras → 37) — NOT the capped top-6+Others length. Used by the
+   * company chart subtitle so it never reads "7 fields" when there are 37.
+   */
+  companyFieldCount: number;
   /** Daily net-oil matrix (fields × days) for the desktop table. */
   companyDailyOilMatrix: CompanyDailyOilMatrix;
   /** Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO). */
@@ -1444,17 +1534,30 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     [companySerieRows],
   );
 
+  // THE single "which 6 + Others" decision for the company view. Every surface
+  // below (line chart, monthly stacked bar, daily matrix, mobile ranking cap)
+  // derives its top-N membership, Others composition, canonical order and color
+  // from THIS object — changing the metric/cut here propagates to all of them.
+  const companyBuckets = useMemo(
+    () => buildCompanyBuckets(companySerieRows),
+    [companySerieRows],
+  );
+
+  // Honest count of distinct fields carrying daily data (NOT the capped top-6+1).
+  // PRIO → 6, Petrobras → 37. Used for the company chart subtitle field count.
+  const companyFieldCount = companyBuckets.totalFieldCount;
+
   // Net oil line chart: bold headline total + per-field net lines (kbpd). The
   // gas chart was removed (2026-06-05) — Net Gas (avg) survives only as a KPI.
   const companyPetroleoChart = useMemo(
-    () => buildCompanyChart(companyUnifiedRows, "petroleo_bbl_dia", "kbpd", 320, bblDiaToKbpd),
-    [companyUnifiedRows],
+    () => buildCompanyChart(companyUnifiedRows, "petroleo_bbl_dia", "kbpd", 320, companyBuckets, bblDiaToKbpd),
+    [companyUnifiedRows, companyBuckets],
   );
 
   // Monthly average net-oil-by-field, bucketed for the stacked bar (MtD-aware).
   const companyMonthlyOil = useMemo(
-    () => buildCompanyMonthlyOilByField(companySerieRows),
-    [companySerieRows],
+    () => buildCompanyMonthlyOilByField(companySerieRows, companyBuckets),
+    [companySerieRows, companyBuckets],
   );
   const companyMonthlyOilChart = useMemo(
     () => buildCompanyMonthlyOilStacked(companyMonthlyOil, 320, bblDiaToKbpd),
@@ -1463,19 +1566,18 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
 
   // Per-field net aggregates (mobile ranking cards). Capped to the top
   // TOP_N_COMPANY fields + a single "Others (N)" card so the ranking mirrors the
-  // top-N+Others collapse the charts/matrix use (full breakdown is in Explore).
-  // Sorted by oil avg desc (the company view is oil-only); `capCompanyFieldAggregates`
-  // re-sorts by oil regardless of the active product.
+  // top-N+Others collapse the charts/matrix use (full breakdown is in Explore) —
+  // the cap reuses `companyBuckets` (no independent re-sort).
   const companyFieldAggregates = useMemo(
-    () => capCompanyFieldAggregates(buildCompanyFieldAggregates(companySerieRows, product)),
-    [companySerieRows, product],
+    () => capCompanyFieldAggregates(buildCompanyFieldAggregates(companySerieRows, product), companyBuckets),
+    [companySerieRows, product, companyBuckets],
   );
 
   // Daily net-oil matrix (fields × days) — the desktop "Daily net oil by field"
   // table. Columns ordered like the charts; rows one per day, latest first.
   const companyDailyOilMatrix = useMemo(
-    () => buildCompanyDailyOilMatrix(companySerieRows),
-    [companySerieRows],
+    () => buildCompanyDailyOilMatrix(companySerieRows, companyBuckets),
+    [companySerieRows, companyBuckets],
   );
 
   // Stake-held fields not yet in the daily feed (e.g. Wahoo for PRIO).
@@ -1749,6 +1851,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     empresaCampos,
     companySerieRows,
     companyFieldAggregates,
+    companyFieldCount,
     companyDailyOilMatrix,
     companyFieldsNoData,
     companyPetroleoChart,
