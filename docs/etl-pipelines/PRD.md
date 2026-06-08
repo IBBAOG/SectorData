@@ -401,6 +401,44 @@ and official desembaraço (timing of clearance-vs-discharge + the discharged-vol
 attribution heuristic), **not** a parsing defect — no other vessel breaches a
 physically plausible parcel size.
 
+### Itaqui scraper — import-only direction filter (2026-06-08)
+
+**Symptom.** A vessel on a non-import call was leaking into the diesel import
+lineup: **DALLAS** (IMO 9390020, `OPERAÇÃO=TRANSBORDO`, `CARGA=DIESEL`, 70,000 t)
+showed up in `/navios-diesel` for Porto de Itaqui. The `/navios-diesel` lineup must
+contain **only imports** (diesel discharged into the country).
+
+**Root cause.** `buscar_itaqui()` filtered each status table (Atracado/Fundeado/
+Esperado) **only** by `Carga` containing "DIESEL" and **ignored the `OPERAÇÃO`
+column entirely**. The Itaqui `OPERAÇÃO` column carries `IMPORTAÇÃO` / `EXPORTAÇÃO`
+/ `TRANSBORDO` / `CONSUMO`, so EXPORTAÇÃO and TRANSBORDO diesel rows passed through.
+Itaqui was the **only** port without a direction filter — every other port already
+filters direction at the source (see table below).
+
+**Fix** (`01_lineup_scrape.py`, `buscar_itaqui()`): compose the mask as
+`diesel & df[col_op].str.contains("IMPORTA")`, with `col_op = _col(df, "Opera",
+required=False)`. `"IMPORTA"` is used (not the full accented string) for encoding
+robustness — `"IMPORTAÇÃO"` matches, `"EXPORTAÇÃO"` does not. If the `OPERAÇÃO`
+column is **absent** from a table (schema anomaly — it exists on the live page),
+the table is **skipped** with a loud WARN rather than capturing unfiltered rows —
+the same anti-false-positive default as Suape's discharge-only filter. A discard
+counter for non-import diesel is printed alongside the existing row-count log
+(`linhas diesel (importação) encontradas: N, diesel não-importação descartado …: M`)
+so a future leak is visible in the workflow logs. The `OPERAÇÃO` column is **not**
+persisted to `navios_diesel`, so an already-stored leak (e.g. DALLAS) only drops out
+on the **next** scrape (the dashboard shows the latest `collected_at` snapshot);
+no DB cleanup is required — `etl_navios_lineup.yml` runs every 6h, or trigger it
+manually for an immediate refresh.
+
+**Direction filter per port** (all ports keep imports / discharge only):
+
+| Port | Direction filter (source column → kept value) |
+|---|---|
+| Porto de Santos | `Opera == "DESC"` (discharge) |
+| Porto de Paranaguá | `Sentido == "IMP"` |
+| Porto de Suape | `Tipo da Operação ∈ {DG, TB DG}` (discharge / transhipment-discharge) |
+| Porto de Itaqui | `OPERAÇÃO contains "IMPORTA"` (import) — **added 2026-06-08** |
+
 ### ComexStat backtest harness (offline validation, 2026-06)
 
 **Purpose.** `scripts/pipelines/navios/comex_backtest.py` is an **offline** harness

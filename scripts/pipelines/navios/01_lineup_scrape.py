@@ -703,6 +703,7 @@ def buscar_itaqui() -> pd.DataFrame:
     mapeamento = {0: "Atracado", 1: "Fundeado", 2: "Esperado"}
     partes = []
     total_diesel_rows = 0
+    total_nao_import_rows = 0
 
     for i, status in mapeamento.items():
         if i >= len(raw_tables):
@@ -712,7 +713,37 @@ def buscar_itaqui() -> pd.DataFrame:
         col_carga = _col(df, "Carga", required=False)
         if col_carga is None:
             continue
-        mask = df[col_carga].str.strip().str.upper().str.contains("DIESEL", na=False)
+        diesel_mask = df[col_carga].str.strip().str.upper().str.contains("DIESEL", na=False)
+
+        # Filtrar APENAS importação (descarga de diesel que entra no país),
+        # espelhando os demais portos (Santos: Opera=="DESC"; Paranaguá:
+        # Sentido=="IMP"; Suape: Tipo da Operação ∈ {DG, TB DG}). Sem este
+        # filtro, linhas de EXPORTAÇÃO/TRANSBORDO de diesel vazavam para
+        # navios_diesel (ex.: vessel DALLAS, IMO 9390020, TRANSBORDO, 70.000 t).
+        col_op = _col(df, "Opera", required=False)
+        if col_op is None:
+            # A coluna OPERAÇÃO existe na página atual do Itaqui (tabelas
+            # Atracados/Fundeados/Esperados). Ausência = anomalia de schema.
+            # Default seguro (filosofia anti-falso-positivo do Suape): sem
+            # coluna de operação confiável, NÃO inserimos — preferimos pular a
+            # tabela a deixar transbordo/exportação vazar de novo.
+            n_diesel = int(diesel_mask.sum())
+            print(
+                f"    [Itaqui] coluna OPERAÇÃO ausente na tabela {status} — "
+                f"não foi possível filtrar importação; pulando {n_diesel} "
+                f"linha(s) diesel por segurança"
+            )
+            continue
+
+        # "IMPORTA" (não a string completa com cedilha/til) por robustez de
+        # encoding. "EXPORTAÇÃO" NÃO casa com "IMPORTA"; "IMPORTAÇÃO" casa.
+        import_mask = df[col_op].str.strip().str.upper().str.contains("IMPORTA", na=False)
+        mask = diesel_mask & import_mask
+
+        # Contabiliza diesel que NÃO é importação (export/transbordo/consumo)
+        # para que um futuro vazamento seja visível nos logs.
+        total_nao_import_rows += int((diesel_mask & ~import_mask).sum())
+
         f = df.loc[mask].copy()
         if f.empty:
             continue
@@ -765,7 +796,9 @@ def buscar_itaqui() -> pd.DataFrame:
 
     print(
         f"    [Itaqui] tabelas parseadas: {len(raw_tables)}, "
-        f"linhas diesel encontradas: {total_diesel_rows}"
+        f"linhas diesel (importação) encontradas: {total_diesel_rows}, "
+        f"diesel não-importação descartado (export/transbordo/consumo): "
+        f"{total_nao_import_rows}"
     )
     return pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
 
