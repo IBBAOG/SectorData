@@ -418,17 +418,44 @@ filters direction at the source (see table below).
 **Fix** (`01_lineup_scrape.py`, `buscar_itaqui()`): compose the mask as
 `diesel & df[col_op].str.contains("IMPORTA")`, with `col_op = _col(df, "Opera",
 required=False)`. `"IMPORTA"` is used (not the full accented string) for encoding
-robustness — `"IMPORTAÇÃO"` matches, `"EXPORTAÇÃO"` does not. If the `OPERAÇÃO`
-column is **absent** from a table (schema anomaly — it exists on the live page),
-the table is **skipped** with a loud WARN rather than capturing unfiltered rows —
-the same anti-false-positive default as Suape's discharge-only filter. A discard
-counter for non-import diesel is printed alongside the existing row-count log
-(`linhas diesel (importação) encontradas: N, diesel não-importação descartado …: M`)
-so a future leak is visible in the workflow logs. The `OPERAÇÃO` column is **not**
-persisted to `navios_diesel`, so an already-stored leak (e.g. DALLAS) only drops out
-on the **next** scrape (the dashboard shows the latest `collected_at` snapshot);
-no DB cleanup is required — `etl_navios_lineup.yml` runs every 6h, or trigger it
-manually for an immediate refresh.
+robustness — `"IMPORTAÇÃO"` matches, `"EXPORTAÇÃO"` does not. The `OPERAÇÃO`
+column is **not** persisted to `navios_diesel`, so an already-stored leak
+(e.g. DALLAS) only drops out on the **next** scrape (the dashboard shows the latest
+`collected_at` snapshot); no DB cleanup is required — `etl_navios_lineup.yml` runs
+every 6h, or trigger it manually for an immediate refresh.
+
+**Follow-up — per-table direction asymmetry (2026-06-08, diagnosed against the live
+page).** The first fix assumed `OPERAÇÃO` was present on all three tables and
+**skipped** any table lacking it (anti-false-positive default). The live-page
+diagnosis showed the three Itaqui tables have **different schemas**:
+
+| Table (index) | Status | Has `OPERAÇÃO`? | Columns (abridged) |
+|---|---|---|---|
+| `[0]` | **Atracado** (berthed) | **NO** | Berço, IMO, Navio, **Bordo**, Comp, DWT, Carga, Qtd.Carga, … |
+| `[1]` | **Fundeado** (anchored) | **YES** | IMO, Navio, **Operação**, Comp, DWT, Carga, Qtd.Carga, … |
+| `[2]` | **Esperado** (expected) | **YES** | IMO, Navio, **Operação**, …, Carga, Qtd.Carga, **Prev Chegada**, … |
+
+(The `[0]` Atracado table's `Bordo` = BORESTE/BOMBORDO = physical berthing side,
+**not** a cargo direction.) The index map `{0:Atracado, 1:Fundeado, 2:Esperado}` is
+correct — no page-furniture tables shift the indices.
+
+So the "skip when `OPERAÇÃO` is absent" branch was **silently dropping the entire
+Atracado table** on every run — a sub-capture regression in the opposite direction
+(legitimate diesel imports at berth, e.g. VELOS POLARIS 34,220 t, were discarded).
+The branch is now **asymmetric per table**:
+
+- **Tables WITH `OPERAÇÃO`** (Fundeado, Esperado) → keep the `IMPORTAÇÃO`-only
+  filter (drops the DALLAS TRANSBORDO and any EXPORTAÇÃO row — original intent).
+- **The Atracado table WITHOUT `OPERAÇÃO`** → capture diesel **Maceió-style**
+  (`buscar_maceio`): a diesel ship at berth is physically discharging into the
+  terminal (an import in practice), and the page gives no direction to filter on.
+  Brazilian-flag coastal traffic is removed downstream by `04_cabotage_cleanup`.
+
+This keeps DALLAS dropped **and** restores VELOS POLARIS. The summary log now
+reports three counters (`linhas diesel mantidas: N (… atracados sem coluna de
+direção: K), diesel não-importação descartado …: M`) so both leak directions stay
+visible. Verified live: DALLAS (TRANSBORDO) discarded, VELOS POLARIS (Atracado)
+captured, BRAGE R (TRANSBORDO) discarded.
 
 **Direction filter per port** (all ports keep imports / discharge only):
 
@@ -437,7 +464,8 @@ manually for an immediate refresh.
 | Porto de Santos | `Opera == "DESC"` (discharge) |
 | Porto de Paranaguá | `Sentido == "IMP"` |
 | Porto de Suape | `Tipo da Operação ∈ {DG, TB DG}` (discharge / transhipment-discharge) |
-| Porto de Itaqui | `OPERAÇÃO contains "IMPORTA"` (import) — **added 2026-06-08** |
+| Porto de Itaqui | Fundeado/Esperado: `OPERAÇÃO contains "IMPORTA"`; Atracado (no `OPERAÇÃO`): capture all diesel + downstream cabotage filter — **added 2026-06-08** |
+| Porto de Maceió | none (no direction column) — capture all diesel + downstream cabotage filter |
 
 ### ComexStat backtest harness (offline validation, 2026-06)
 
