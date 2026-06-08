@@ -335,10 +335,18 @@ function PriceSummaryTable({
   rows,
   unitLabel,
   loading,
+  anchorAno,
+  anchorMes,
 }: {
   rows: PriceSummaryRow[];
   unitLabel: string;
   loading: boolean;
+  /** Nominal anchor month (period.end) — the month the Latest/MoM%/YoY% columns
+   *  represent. A row whose own anchor differs (it had no data at period.end and
+   *  the hook walked backward) gets a muted month label on its data cells so the
+   *  value is not silently misattributed to period.end. */
+  anchorAno: number;
+  anchorMes: number;
 }) {
   if (loading && rows.length === 0) {
     return (
@@ -382,6 +390,31 @@ function PriceSummaryTable({
       {rows.map((r) => {
         const mom = fmtDelta(r.momPct);
         const yoy = fmtDelta(r.yoyPct);
+        // When this row's data could not be read at the nominal anchor month
+        // (period.end), the hook walked backward to the most recent month with
+        // data. Surface the real month so the value is not silently
+        // misattributed to period.end. Mirrors desktop/View.tsx.
+        const anchorDiffers =
+          r.anchorAno !== anchorAno || r.anchorMes !== anchorMes;
+        const rowPrevMonthCursor = addMonths(
+          { ano: r.anchorAno, mes: r.anchorMes },
+          -1,
+        );
+        const rowPrevYearCursor = addMonths(
+          { ano: r.anchorAno, mes: r.anchorMes },
+          -12,
+        );
+        const latestSuffix = anchorDiffers
+          ? formatMonth(r.anchorAno, r.anchorMes)
+          : null;
+        const momSuffix =
+          anchorDiffers && r.momPct != null
+            ? formatMonth(rowPrevMonthCursor.ano, rowPrevMonthCursor.mes)
+            : null;
+        const yoySuffix =
+          anchorDiffers && r.yoyPct != null
+            ? formatMonth(rowPrevYearCursor.ano, rowPrevYearCursor.mes)
+            : null;
         return (
           <div
             key={r.country}
@@ -437,6 +470,11 @@ function PriceSummaryTable({
               <span style={{ fontSize: 9, color: "#999", fontWeight: 400, marginLeft: 4 }}>
                 {unitLabel}
               </span>
+              {latestSuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {latestSuffix}
+                </div>
+              )}
             </div>
             <div
               style={{
@@ -447,6 +485,11 @@ function PriceSummaryTable({
               }}
             >
               {mom.text}
+              {momSuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {momSuffix}
+                </div>
+              )}
             </div>
             <div
               style={{
@@ -457,6 +500,11 @@ function PriceSummaryTable({
               }}
             >
               {yoy.text}
+              {yoySuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {yoySuffix}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1519,6 +1567,8 @@ export default function MobileView(): React.ReactElement {
             rows={importsPriceSummary}
             unitLabel="USD/ton"
             loading={importsUnitPriceLoading}
+            anchorAno={filters.period.end.ano}
+            anchorMes={filters.period.end.mes}
           />
 
           <div
@@ -1594,6 +1644,8 @@ export default function MobileView(): React.ReactElement {
             rows={exportsPriceSummaryColored}
             unitLabel="USD/bbl"
             loading={exportsUnitPriceLoading}
+            anchorAno={filters.period.end.ano}
+            anchorMes={filters.period.end.mes}
           />
 
           <div

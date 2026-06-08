@@ -52,7 +52,7 @@ import ChartSection from "../../../../components/dashboard/ChartSection";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
-import { useImportsExportsData, formatMonth, cmpMonth } from "../useImportsExportsData";
+import { useImportsExportsData, formatMonth, addMonths, cmpMonth } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
   YoyTableRow,
@@ -974,6 +974,31 @@ function PriceSummaryTable({
               const yoy = fmtDelta(row.yoyPct);
               const dotColor =
                 row.color ?? (fallbackColorFor ? fallbackColorFor(row.country) : "#bbb");
+              // When this row's data could not be read at the nominal anchor
+              // month (period.end), the hook walked backward to the most recent
+              // month with data. Surface the real month under each header so
+              // the value is not silently misattributed to period.end.
+              const anchorDiffers =
+                row.anchorAno !== anchorAno || row.anchorMes !== anchorMes;
+              const rowPrevMonthCursor = addMonths(
+                { ano: row.anchorAno, mes: row.anchorMes },
+                -1,
+              );
+              const rowPrevYearCursor = addMonths(
+                { ano: row.anchorAno, mes: row.anchorMes },
+                -12,
+              );
+              const latestSuffix = anchorDiffers
+                ? formatMonth(row.anchorAno, row.anchorMes)
+                : null;
+              const prevMonthSuffix =
+                anchorDiffers && row.prevMonth != null
+                  ? formatMonth(rowPrevMonthCursor.ano, rowPrevMonthCursor.mes)
+                  : null;
+              const prevYearSuffix =
+                anchorDiffers && row.prevYear != null
+                  ? formatMonth(rowPrevYearCursor.ano, rowPrevYearCursor.mes)
+                  : null;
               return (
                 <tr key={row.country}>
                   <td
@@ -1006,6 +1031,11 @@ function PriceSummaryTable({
                     }}
                   >
                     {row.latest.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                    {latestSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {latestSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1018,6 +1048,11 @@ function PriceSummaryTable({
                     {row.prevMonth != null
                       ? row.prevMonth.toLocaleString("en-US", { maximumFractionDigits: 1 })
                       : "—"}
+                    {prevMonthSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {prevMonthSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1041,6 +1076,11 @@ function PriceSummaryTable({
                     {row.prevYear != null
                       ? row.prevYear.toLocaleString("en-US", { maximumFractionDigits: 1 })
                       : "—"}
+                    {prevYearSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {prevYearSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{

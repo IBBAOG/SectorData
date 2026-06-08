@@ -574,6 +574,18 @@ Added 2026-05-28 alongside the Panel C removal. Rendered directly below the corr
 
 Row count: **always 3** — top-2 origin countries by total `SUM(vol_m3)` in the window + an "Others" row carrying a volume-weighted-average price across the remaining countries. The "Others" monthly value is `Σ(usd_per_m3 × vol_m3) / Σ(vol_m3)`; if `Σ(vol_m3) == 0` for the anchor month, the value is `null` and the row shows `—`.
 
+#### Anchor-month labelling (2026-06-08)
+
+The column headers are fixed off `period.end` (e.g. "May 2026" / "Apr 2026" / "May 2025"), but a row's data may not exist at `period.end` — a common case for the **Others** row in a partial ComexStat month, where the top-2 suppliers have already reported the latest month but the long tail has not. When that happens the hook's `evaluateSeries` walks backward to the **most recent month that has data** (e.g. Mar 2026) and reads the value there. To keep the table honest, the hook now exposes the real `anchorAno` / `anchorMes` per `PriceSummaryRow`, and both Views append a small muted month label (e.g. `Mar 2026`) under each of the three data cells whenever a row's anchor differs from `period.end`:
+
+- Latest cell → `formatMonth(row.anchorAno, row.anchorMes)`
+- Prior-month cell → `formatMonth(addMonths(anchor, −1))`
+- Prior-year cell → `formatMonth(addMonths(anchor, −12))`
+
+Rows whose anchor equals `period.end` (Russia, United States — they have the latest month) get **no** label. A genuinely null value still renders `—` with no label.
+
+This is the table-side counterpart of the chart's behaviour: the **chart** (`importsUnitPriceChartDerivation`) simply **stops** the Others line at the last month with data (months where `Σ(vol_m3) == 0` are dropped), so the line ends earlier; the **table** keeps the fallback value but tags its real month. Both behaviours are intentional and now consistent — neither silently misattributes the Others number to `period.end`. The same labelling is applied to the Exports Price Summary's inline evaluator (which shares the identical backward-walk), so the two summary tables never drift in this respect.
+
 Color dots in the Country column mirror the chart's legend colors exactly (top-2: pinned-palette color when applicable, PALETTE rotation otherwise; Others: grey `#7F7F7F`).
 
 Unit suffix in the Latest column header follows the active toggle. Switching the toggle re-renders both the chart and the table together.
@@ -595,8 +607,8 @@ Color dots come from the same `PALETTE` rotation the chart uses, in the same `ex
 
 - Conversions (`USD/m³ → USD/ton`, `USD/m³ → ¢/gal`, `USD/m³ → USD/bbl`) are applied **before** computing MoM% / YoY% and also applied to the `prevMonth` / `prevYear` absolute values. For linear conversions this is mathematically equivalent to applying them after, but it keeps all five value cells in lockstep with the displayed unit.
 - Density assumptions (Diesel 832, Gasoline 745, Crude Oil 870 kg/m³) match `ncm_densidade_kg_m3` server-side. Refinement is done by updating the table — no code change.
-- The summary derivation lives in the shared hook (`useImportsExportsData.ts`) as the memoized `importsPriceSummary` / `exportsPriceSummary` outputs. `PriceSummaryRow` now carries `latest`, `prevMonth`, `momPct`, `prevYear`, `yoyPct`. Both Views consume them; neither computes anything itself.
-- Dynamic column headers (e.g. "Apr 2026", "Mar 2026", "Apr 2025") are derived in `desktop/View.tsx` from `filters.period.end` — the same anchor the hook uses for the price anchor walk-back. Mobile view is unaffected (price summary tables are desktop-only).
+- The summary derivation lives in the shared hook (`useImportsExportsData.ts`) as the memoized `importsPriceSummary` / `exportsPriceSummary` outputs. `PriceSummaryRow` carries `latest`, `prevMonth`, `momPct`, `prevYear`, `yoyPct`, the legend `color`, and (since 2026-06-08) `anchorAno` / `anchorMes` — the actual month the `latest` value was read from (see § "Anchor-month labelling"). Both Views consume them; neither computes anything itself.
+- Dynamic column headers (e.g. "Apr 2026", "Mar 2026", "Apr 2025") are derived in both `desktop/View.tsx` and `mobile/View.tsx` from `filters.period.end` — the same anchor the hook uses for the price anchor walk-back. The mobile price summary renders the same `PriceSummaryTable` off the same anchor (`period.end`) and applies the same anchor-month labelling as desktop (see § "Anchor-month labelling").
 
 ### Cross-source reconciliation (carried over from old Panel C section)
 

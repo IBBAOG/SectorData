@@ -138,6 +138,15 @@ export interface PriceSummaryRow {
   prevYear: number | null;  // Converted value for same month prev year; null when missing
   yoyPct: number | null;    // null when same-month-prev-year is missing or zero
   color?: string;
+  // Actual month the `latest` value was read from. Normally equals period.end,
+  // but when this row has no data at period.end the derivation walks backward
+  // to the most recent month WITH data (e.g. "Others" in a partial ComexStat
+  // month). The Views compare these against period.end and append a muted month
+  // label to the three data cells when they differ, so the table stays honest:
+  // the value sits under the "May 2026" header but is tagged "Mar 2026".
+  // prevMonth derives from (anchor − 1 month), prevYear from (anchor − 12 months).
+  anchorAno: number;
+  anchorMes: number;
 }
 
 export interface FiltrosResult {
@@ -941,6 +950,8 @@ export function useImportsExportsData(): UseImportsExportsData {
       momPct: number | null;
       prevYear: number | null;
       yoyPct: number | null;
+      anchorAno: number;
+      anchorMes: number;
     } | null {
       // Find latest non-null month, prefer period.end if present.
       const endKey = `${periodEndAno}-${String(periodEndMes).padStart(2, "0")}`;
@@ -997,7 +1008,7 @@ export function useImportsExportsData(): UseImportsExportsData {
           ? ((latestUsdPerM3 - yoyEntry.p) / yoyEntry.p) * 100
           : null;
 
-      return { latest, prevMonth, momPct, prevYear, yoyPct };
+      return { latest, prevMonth, momPct, prevYear, yoyPct, anchorAno, anchorMes };
     }
 
     // 4. Top-2 countries → individual rows.
@@ -1018,6 +1029,8 @@ export function useImportsExportsData(): UseImportsExportsData {
         prevYear: ev.prevYear,
         yoyPct: ev.yoyPct,
         color,
+        anchorAno: ev.anchorAno,
+        anchorMes: ev.anchorMes,
       });
     }
 
@@ -1059,6 +1072,8 @@ export function useImportsExportsData(): UseImportsExportsData {
           prevYear: ev.prevYear,
           yoyPct: ev.yoyPct,
           color: OTHERS_COLOR_DATA,
+          anchorAno: ev.anchorAno,
+          anchorMes: ev.anchorMes,
         });
       }
     }
@@ -1439,7 +1454,7 @@ export function useImportsExportsData(): UseImportsExportsData {
         yoyEntry && yoyEntry.p != null && yoyEntry.p !== 0
           ? ((anchorEntry.p - yoyEntry.p) / yoyEntry.p) * 100
           : null;
-      out.push({ country: pais, latest, prevMonth, momPct, prevYear, yoyPct });
+      out.push({ country: pais, latest, prevMonth, momPct, prevYear, yoyPct, anchorAno, anchorMes });
     }
 
     return out;
