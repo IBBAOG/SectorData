@@ -534,6 +534,21 @@ ON CONFLICT (variant) DO UPDATE
 
 **Conservative scope of this round.** Other "X de Y" variants exist in the data (LESTE DE POÇO XAVIER, NORTE DE FAZENDA CARUAÇU, NORTE DE PESCADA, OESTE DE ATAPU, OESTE DE UBARANA, SUL DE BERBIGÃO, SUL DE CORURIPE, SUL DE LULA) but the PDF only explicitly aggregates Sul de Tupi into Tupi. All other variants stay separate until a PDF/IR doc justifies merging.
 
+#### Override (2026-06-08) — `PITANGOLA → PEREGRINO` — Migration `20260614000000_anp_cdp_diaria_merge_pitangola_into_peregrino.sql`
+
+CEO rule: investors treat **Peregrino = Peregrino + Pitangola** (both PRIO 80% working interest, both in bacia `Campos`). Adds a second manual row to `field_canonical_names`:
+
+```sql
+INSERT INTO public.field_canonical_names (variant, canonical, source)
+VALUES ('PITANGOLA', 'PEREGRINO', 'manual')
+ON CONFLICT (variant) DO UPDATE
+   SET canonical = EXCLUDED.canonical, source = EXCLUDED.source;
+```
+
+The migration's primary target is `/anp-cdp-diaria`: it recreates the 4 **field/company-scoped** daily RPCs (`get_anp_cdp_diaria_serie`, `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos`) to project `canonical_field_name(campo)` + `SUM(...)` + GROUP BY canonical (relabel-and-aggregate, since `anp_cdp_diaria` carries separate raw PEREGRINO/PITANGOLA rows per day). Signatures, `SECURITY DEFINER`, `search_path` and grants preserved. The installation/well daily RPCs are untouched (field-scoped merge only).
+
+> **Cross-table caveat — `field_canonical_names` is shared.** Because `canonical_field_name()` is also baked into the `/well-by-well` MVs (`mv_production_monthly`, `mv_brazil_canonical_monthly`) at refresh time, this override **will** fold PITANGOLA into PEREGRINO there too on the **next MV refresh** (via `02_upload.py`'s `refresh_mv_production()` hook). That is consistent with the same investor convention (PRIO IR reports Peregrino combined), so it is acceptable — but note it is **not isolated to `/anp-cdp-diaria`**. This migration does **not** issue a REFRESH (the daily dashboard reads `anp_cdp_diaria` live, not the MVs); the `/well-by-well` MVs pick it up on their normal refresh cadence. If a future analyst needs Peregrino and Pitangola kept separate on `/well-by-well`, this override would have to be scoped differently (the canonical helper is global today).
+
 #### Round 12 (2026-05-29) — Migration `20260529300000_well_by_well_header_expand.sql`
 
 Expands `get_well_by_well_header(p_empresa, p_year, p_month)` from 16 rows to **24 rows** so the per-empresa section matches the structure of the Brazil section verbatim. Before Round 12 the empresa block carried only Oil rows (display_order 13–16). After Round 12 it carries Oil + Gas + Main fields, mirroring Brazil (1–12).
