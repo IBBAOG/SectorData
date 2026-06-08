@@ -52,9 +52,11 @@ Both `bba_import_parity_w_subsidy` and `petrobras_price_w_subsidy` are **no long
 **Calculation logic:**
 - `bba_import_parity_w_subsidy = bba_import_parity − reimbursement_importador`
 - `petrobras_price_w_subsidy   = petrobras_price + reimbursement_produtor`
-- `reimbursement = MIN(MAX(anp_reference_daily − anp_commercialization_period, 0), cap_agente)`
+- `reimbursement = MIN(MAX(anp_reference_daily − anp_commercialization_period, 0), cap_agente)` — **historical leg, < 2026-06-01 only.**
 - Average of 5 regional reimbursements (Norte/Nordeste/Centro-Oeste/Sudeste/Sul).
 - Caps from `anp_subsidy_caps` table; pre-2026-03-13 = no subsidy (NULL).
+
+**Fixed regime since 2026-06-01:** for dates ≥ 2026-06-01 `compute_subsidy_reimbursement(date, agent)` short-circuits to a flat **effective 1.47 BRL/L** for both agents (the cap/commercialization formula above no longer applies to these dates). So `bba_import_parity_w_subsidy = bba_import_parity − 1.47` and `petrobras_price_w_subsidy = petrobras_price + 1.47` for current-regime Diesel rows. The **1.47** is the effective subsidy = **1.12** (MP nº 1.363 headline subvention) + **0.35** (compensation for Petrobras' refinery-price cut of BRL 0.35, 3.65 → 3.30 reflected in `petrobras_price`, plus equivalent PIS/COFINS reactivation): 3.30 + 1.47 = 4.77 = the pre-reform realization (3.65 + 1.12). The dashboard reflects the **effective** subsidy (1.47), not the MP headline (1.12) — **do not revert to 1.12**. Migration `20260613000000_subsidy_fixed_diesel_1_47.sql` (owned by `worker_supabase`; see `docs/supabase/PRD.md` § "Fixed subsidy regime since 2026-06-01"). Gasoline (fixed 0.44 delta) is unchanged.
 
 **Trigger chain:**
 - `recompute_pb_on_reference_change` — fires on `anp_subsidy_diesel_reference` INSERT/UPDATE → updates `price_bands` for that date.

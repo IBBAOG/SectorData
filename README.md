@@ -60,7 +60,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-glp` (LPG Market Share) | Fuel Distribution | `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count` (% Share ↔ thousand t toggle; clone of `/market-share` over `anp_glp`) |
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` (consolidates 3 retired ANP price dashboards) |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` (source split: By Origin Country chart + YoY `paises` scope read from `mdic_comex`/ComexStat — published weeks ahead of ANP; By Importer (Brazil) stays on `anp_desembaracos`, the only source with CNPJ/importer) |
-| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat BRL 1.12/L from 2026-06-01, cap/commercialization formula applies only to history before that) |
+| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat **effective** BRL 1.47/L from 2026-06-01 — 1.12 MP nº 1.363 subvention + 0.35 refinery-cut / PIS-COFINS compensation — the cap/commercialization formula applies only to history before that) |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -145,7 +145,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `anp_voip` | (ano_publicacao, campo) | Volumes originally in-place / recovered fraction / situacao |
 | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` | varies | Daily production at field / installation / well level (since 2025-11-09) |
 | `anp_subsidy_diesel_reference` | (data_referencia, regiao, tipo_agente) | Per-region reference price; triggers maintain `price_bands._w_subsidy` columns |
-| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat BRL 1.12/L for both agents |
+| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat **effective** BRL 1.47/L for both agents (1.12 MP nº 1.363 headline subvention + 0.35 compensation for the BRL 0.35 Petrobras refinery-price cut / PIS-COFINS reactivation) |
 | `anp_subsidy_commercialization` | (data_inicio, regiao, tipo_agente) | Period × region × agent commercialization prices (HTML scrape stage of `subsidy_diesel_sync.py`) |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` (Market Share), plus the `/well-by-well` production MV (auto-refreshed via `pg_cron`).

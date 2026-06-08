@@ -779,16 +779,18 @@ Total: 23 sources (era 22). Atributos preservados na recriação: `LANGUAGE sql 
 
 ### Fixed subsidy regime since 2026-06-01
 
-Migration: `supabase/migrations/20260608200000_subsidy_fixed_diesel_1_12.sql` (applied in production).
+Migration: `supabase/migrations/20260613000000_subsidy_fixed_diesel_1_47.sql` (applied in production) — supersedes the earlier `20260608200000_subsidy_fixed_diesel_1_12.sql` (which set the flat value to 1.12).
 
 A regulatory change effective **2026-06-01** turned the fuel subsidy into a **flat value** for both agents:
 
 | Product | Fixed value (≥ 2026-06-01) | Where it lives |
 |---|---|---|
-| Diesel | **1.12 BRL/L** (`importador` and `produtor`) | DB — `compute_subsidy_reimbursement` |
+| Diesel | **1.47 BRL/L** effective (`importador` and `produtor`) | DB — `compute_subsidy_reimbursement` |
 | Gasoline | **0.44 BRL/L** delta (Petrobras +0.44, import parity −0.44) | client-side in `/price-bands` (`use<PriceBands>Data` hook) — see `docs/app/price-bands.md` |
 
-**Diesel mechanics:** `compute_subsidy_reimbursement(p_date, p_tipo_agente)` was `CREATE OR REPLACE`d with a leading `CASE WHEN p_date >= DATE '2026-06-01' THEN 1.12 ELSE (<historical AVG-over-5-regions-of-MIN(MAX(ref−comm,0),cap) formula>) END`. The historical branch is byte-for-byte the prior formula wrapped as a scalar subquery, so dates before 2026-06-01 are **untouched** and still depend on `anp_subsidy_caps` + `anp_subsidy_commercialization` + `anp_subsidy_diesel_reference`. SECURITY DEFINER + `search_path` + `GRANT EXECUTE TO anon, authenticated` re-applied (Pegadinha #18). The migration finishes by calling `_pb_refresh_w_subsidy_from_date(DATE '2026-06-01')` so the `price_bands._w_subsidy` columns (and therefore `/price-bands` Petrobras-w/subsidy and `/subsidy-tracker` `petrobras_adjusted` / `ipp_adjusted`) pick up the flat value automatically.
+**Why 1.47, not the 1.12 headline:** MP nº 1.363 (30/05/2026) carries a **headline** subvention of BRL 1.12. The **effective** subsidy that keeps Petrobras / importers whole is **1.47 = 1.12 (subvention) + 0.35 (compensation)**: on 2026-06-01 Petrobras cut its refinery price by BRL 0.35 (3.65 → 3.30, already reflected in `price_bands.petrobras_price`) and PIS/COFINS of an equivalent amount was reactivated. Economic identity: 3.30 (price) + 1.47 (subsidy) = 4.77 = the pre-reform realization (3.65 + 1.12). The dashboards reflect the **effective** economics (1.47), not the MP headline (1.12). Validated with the CEO on 2026-06-08. **Do not revert to 1.12.**
+
+**Diesel mechanics:** `compute_subsidy_reimbursement(p_date, p_tipo_agente)` was `CREATE OR REPLACE`d with a leading `CASE WHEN p_date >= DATE '2026-06-01' THEN 1.47 ELSE (<historical AVG-over-5-regions-of-MIN(MAX(ref−comm,0),cap) formula>) END`. The historical branch is byte-for-byte the prior formula wrapped as a scalar subquery, so dates before 2026-06-01 are **untouched** and still depend on `anp_subsidy_caps` + `anp_subsidy_commercialization` + `anp_subsidy_diesel_reference`. SECURITY DEFINER + `search_path` + `GRANT EXECUTE TO anon, authenticated` re-applied (Pegadinha #18). The migration finishes by calling `_pb_refresh_w_subsidy_from_date(DATE '2026-06-01')` so the `price_bands._w_subsidy` columns (and therefore `/price-bands` Petrobras-w/subsidy and `/subsidy-tracker` `petrobras_adjusted` / `ipp_adjusted`) pick up the flat value automatically.
 
 **Implication:** `anp_subsidy_caps` and `anp_subsidy_commercialization` no longer affect any date on/after 2026-06-01 — they only drive the historical (< 2026-06-01) leg. Their ETL (`etl_anp_subsidy_diesel.yml`) keeps running and remains the freshness signal for those sources, but new caps/commercialization rows have no effect on current-regime reimbursement.
 
