@@ -91,14 +91,14 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_ais_positions.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | `etl_anp_vendas.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`; PK extended to `(ano,mes,ncm_codigo,pais_origem,cnpj)` since 2026-05-25). `03_painel_imp_sync.py` + `anp_painel_imp_dist` removed by Imports & Exports reform. |
-| `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
+| `etl_anp_lpc.yml` | Daily 14:30 UTC (`30 14 * * *`) — changed from weekly Wed on 2026-06-09 (incident) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill). ANP publishes the weekly "Levantamento de Preços" on an **unstable weekday** (assumed Wed; on 2026-06-09 it was a Tuesday) — a Wed-only cron silently lagged `anp_lpc` by up to a week. The scrape is incremental (downloads only weeks newer than `MAX(data_fim)`) + idempotent (`ON CONFLICT data_fim,produto,estado`), so daily is a clean no-op when nothing new is published and ingests the new week within ~24h on whatever weekday ANP drops it. Upstream half of the dg-margins fix: `etl_dg_margins.yml` now runs downstream of this via `workflow_run`. |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
 | `etl_mdic_comex.yml` | Diário 14:00 UTC (`0 14 * * *`, trailing 3 meses) **+** semanal Dom 06:00 UTC (`0 6 * * 0`, trailing 12 meses = *revision sweep*) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_mdic_comex_drift.yml` | Mensal — dia 5, 07:00 UTC (`0 7 5 * *`) + `workflow_dispatch` | `pipelines/mdic_comex_drift_check.py` | `mdic_comex` (self-heal só dos meses derivados). *Drift detector* das revisões retroativas do ComexStat — ver seção "MDIC Comex — drift detector" abaixo |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel`. Portos cobertos: Santos, Itaqui, Paranaguá, São Sebastião, Suape, **Maceió** (`buscar_maceio`, desde 2026-06-03). **Filtro de direção por porto** — cada scraper só mantém **descarga (importação)**: Paranaguá filtra `Sentido == "IMP"`; Santos esperados filtra operação `DESC`; **Suape** (desde 2026-06-03) filtra por `Tipo da Operação`; **Maceió** NÃO publica coluna de direção → captura todo diesel e confia no `04_cabotage_cleanup` para remover tráfego de bandeira brasileira (limitação documentada inline). **Pegadinha — Suape "Tipo da Operação"**: a aba "Dados Brutos" (Google Sheets, formato wide) repete blocos `Produto`/`Quantidade`/`Unidade`/`Tipo da Operação` (pandas sufixa `.1 … .6` as colunas duplicadas), **posicionalmente alinhados** (`Produto.N` ↔ `Tipo da Operação.N`). Valores: `DG`=Descarga (import), `TB DG`=transbordo descarga, `CG`=Carga/embarque (saída), `TB CG`=transbordo carga. `buscar_suape()` só conta um bloco como diesel-importação se `_diesel_puro(produto)` **E** `Tipo da Operação ∈ {DG, TB DG}` (upper/strip) — pareado por bloco, não "qualquer produto é diesel". Volume (`_qtd_e_unidade`) e `Carga` somam/listam só os blocos diesel-E-descarga. Antes do fix, navios de carga doméstica (ex.: ATLANTIC PRIDE, IMO 9797266 — 3 blocos diesel todos `CG`) entravam como falso-positivo de importação. Não suavizar para "qualquer DIESEL" de novo. **Watchdog (hardened 2026-06-03)**: a exceção `FetchError` distingue **fetch quebrado** (encoding/Brotli/WAF/schema break — a falha que zerou Itaqui silenciosamente por 9 dias em maio, Pegadinha #12) de **0-diesel legítimo**. `buscar_itaqui`/`buscar_maceio` levantam `FetchError` quando a página não decodifica numa lineup confiável → o porto vira sentinela `ERRO_COLETA` e o watchdog falha (exit 2) destacando os fetches quebrados. Portos EXPECTED que fetcharam OK mas retornaram 0 diesel emitem `[WARN]` a cada run (silent-zero fica visível). |
 | ~~`manual_dg_margins.yml`~~ | **RETIRED 2026-06-05** (deletado) | ~~`manual/dg_margins_upload.py`~~ | substituído por `etl_dg_margins.yml` (D&G Margins automation) |
-| `etl_dg_margins.yml` | Semanal — terça, 15:00 UTC (`0 15 * * 2`) + `workflow_dispatch` | `cepea/cepea_etanol_anidro_sync.py` → `anp/producao/anp_producao_derivados_sync.py` → RPC `recompute_dg_margins(week_start, week_end)` | `cepea_etanol_anidro`, `anp_producao_derivados`, e (computado) `d_g_margins`. Decomposição R$/L por semana ISO: `base_fuel = (import_parity×import% + petrobras×production%)×(1−blend)`; `biofuel` = etanol anidro (lag week−1)×ethanol_blend (gasolina) / Biodiesel B-100 (mesma semana)×biodiesel_blend (diesel); `federal_tax`+`state_tax` de `fuel_tax_reference` (ANP Síntese + CONFAZ ad-rem); `distribution_and_resale_margin` = pump − componentes (residual); `total` = pump = `anp_lpc` station-weighted national avg. `import%` = imports(`anp_desembaracos`/`mdic_comex`, kg→m³ via densidade)/(imports+`anp_producao_derivados`). Cutover: era ad-rem ICMS (gasolina Jun/2023, diesel Mai/2023) computada; pré-ad-rem (2021→meados 2023) preservado da série manual (arquivo em `d_g_margins_manual_bak`). Fontes: ANP · CEPEA/ESALQ · CONFAZ. |
+| `etl_dg_margins.yml` | **PRIMARY:** `workflow_run` after a successful `etl_anp_lpc.yml`. **FALLBACK:** daily 15:00 UTC (`0 15 * * *`, after the 14:30 LPC scrape). **MANUAL:** `workflow_dispatch` with inputs `full_backfill` (boolean, default false) + `week_start` (optional `W/YYYY` override). Re-ordered from the old weekly Tue 15:00 UTC on 2026-06-09 (incident). | `cepea/cepea_etanol_anidro_sync.py` → `anp/producao/anp_producao_derivados_sync.py` → RPC `recompute_dg_margins(week_start, week_end)` | `cepea_etanol_anidro`, `anp_producao_derivados`, e (computado) `d_g_margins`. Decomposição R$/L por semana ISO: `base_fuel = (import_parity×import% + petrobras×production%)×(1−blend)`; `biofuel` = etanol anidro (lag week−1)×ethanol_blend (gasolina) / Biodiesel B-100 (mesma semana)×biodiesel_blend (diesel); `federal_tax`+`state_tax` de `fuel_tax_reference` (ANP Síntese + CONFAZ ad-rem); `distribution_and_resale_margin` = pump − componentes (residual); `total` = pump = `anp_lpc` station-weighted national avg. `import%` = imports(`anp_desembaracos`/`mdic_comex`, kg→m³ via densidade)/(imports+`anp_producao_derivados`). Cutover: era ad-rem ICMS (gasolina Jun/2023, diesel Mai/2023) computada; pré-ad-rem (2021→meados 2023) preservado da série manual (arquivo em `d_g_margins_manual_bak`). Fontes: ANP · CEPEA/ESALQ · CONFAZ. **Routine recompute is bounded to the last ~12 ISO weeks** (computed dynamically) — see § "D&G Margins — ordering & bounded recompute (incident 2026-06-09)" below. |
 | `etl_navios_imo_lookup.yml` | Após `etl_navios_lineup` | `pipelines/navios/03_imo_lookup.py` → `04_cabotage_cleanup.py` | `navios_diesel.imo/mmsi` |
 | `etl_navios_positions.yml` | Após `etl_navios_imo_lookup` | `pipelines/navios/05_positions_sync.py` | `vessel_positions`, `port_arrivals` |
 | `etl_anp_precos_distribuicao.yml` | Mensal — dia 5, 14:00 UTC (`0 14 5 * *`) + Semanal — terça, 14:30 UTC (`30 14 * * 2`) | `pipelines/anp/precos_distribuicao_sync.py` | `anp_precos_distribuicao` |
@@ -106,6 +106,56 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_cdp_diaria.yml` | 3×/dia — `0 10,15,20 * * *` UTC (7h/12h/17h BRT) | `scripts/extractors/anp_cdp_powerbi.py --level all --upload` (via `_powerbi_common.py`) | `anp_cdp_diaria` (~16.5k rows; upsert `(data, campo, bacia)`), `anp_cdp_diaria_instalacao` (~16.3k rows; upsert `(data, campo, instalacao)`), `anp_cdp_diaria_poco` (~180.7k rows; upsert `(data, campo, bacia, poco)`). Timeout workflow: 25min. **Semântica de upload — append-only** (desde commit `397a108c`, 2026-05-08): usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). (data, dim) inédito: INSERT. (data, dim) já existe: SKIP — valor original preservado. Aplica-se às 3 tabelas (campo / instalacao / poco) — todas passam pela mesma `upload_to_supabase()`. Base point: `--start` default = `2025-11-09` (primeira data com dados Power BI). Trade-off: revisões retroativas do Power BI ANP não são refletidas (snapshot histórico tem prioridade sobre fidelidade a revisões — decisão explícita do usuário). **Pegadinha 1 — property names**: property names Power BI são case-sensitive e diferem do display name — ex: nível Poço usa `Campo (Poço)` (property) e não `NOME CAMPO` (display name); retorna 0 linhas se property errada. **Pegadinha 2 — atribuição 1:1 vs N:N**: entity `v_poco_instalacao_sigep_ultimo` (páginas 5/6, níveis Installation e Well) faz atribuição "última" — cada poço linka a apenas 1 campo. Entity `v_campos_detalhe` (página 4, nível Field) faz N:N. Resultado: filtro Campo mostra 94 campos em Field mas apenas 76 em Installation/Well (19 campos Field-only com poços 100% compartilhados com outro campo "principal"). Não é bug do ETL. Documentado em [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md). |
 
 > Workflows confirmados ativos em 2026-05-05. Row counts atualizados após backfill histórico de 2026-05-06. README está desatualizado (não os menciona). Quando atualizar README, incluir.
+
+### D&G Margins — ordering & bounded recompute (incident 2026-06-09)
+
+The "Distribution & Resale Margin" component is a residual driven by the ANP pump
+price, which lives in `anp_lpc` (fed by `etl_anp_lpc.yml`). Two problems compounded
+into a single incident on 2026-06-09 and were fixed together:
+
+**Problem 1 — wrong ordering.** ANP publishes the weekly LPC survey on an unstable
+weekday (assumed Wed; on 2026-06-09 it was a Tuesday). The old setup ran the
+recompute on Tue 15:00 UTC, but `anp_lpc` only scraped Wed 14:30 UTC — so the
+margins ran a full day **before** the freshest pump price even landed, freezing the
+dashboard at the prior week and starving the Client Alert of a new week to fire.
+
+**Problem 2 — full-timeline recompute timed out.** The scheduled run died at the
+recompute step with PostgREST error `57014` (`canceling statement due to statement
+timeout`) ~31s in (GitHub run 27223589112).
+
+**Fix (the four pieces that actually matter):**
+
+1. `etl_anp_lpc.yml` now scrapes **daily** (`30 14 * * *`), incremental + idempotent,
+   so `anp_lpc` tracks ANP's publish day within ~24h whatever weekday they choose.
+2. `etl_dg_margins.yml` **primary trigger is `workflow_run`** downstream of a
+   *successful* `etl_anp_lpc.yml` (the job gates on
+   `github.event.workflow_run.conclusion == 'success'` since `workflow_run` fires on
+   every completion, including failure). The recompute — and its Client Alert hook —
+   therefore always runs on the freshest pump price the same day ANP publishes.
+3. **Daily 15:00 UTC fallback cron** (`0 15 * * *`), strictly after the 14:30 LPC
+   scrape, backstops the `workflow_run` path if it is ever skipped and still picks up
+   fresh Monday producer prices / CEPEA.
+4. **Routine recompute is bounded to the last ~12 ISO weeks.** The window start is
+   computed dynamically in-workflow (not hardcoded): `today − 12 weeks → isocalendar()`
+   → `p_week_start = "<iso_week>/<iso_year>"` (unpadded ISO `W/YYYY`, e.g. `12/2026`),
+   with `p_week_end = NULL` so the window stays open-ended through the newest week.
+   This finishes in seconds. The **full-timeline recompute** (both params NULL) is
+   reachable only via the manual `workflow_dispatch` input `full_backfill=true`; the
+   `week_start` dispatch input overrides the 12-week start for an explicit bounded run.
+
+> **Why the bounded window + set-based optimization — not just the function-level
+> `SET statement_timeout` — is what fixes the prod path:** the recompute is called
+> over PostgREST as `service_role`. PostgREST connects as the `authenticator` login
+> role, whose role config carries `statement_timeout=30s`; `SET ROLE service_role`
+> does **not** pick up `service_role`'s config (its `rolconfig` is NULL), and the
+> `SELECT recompute_dg_margins(...)` statement's timer is armed at 30s *before* the
+> function body runs. A `SET` inside an already-running statement does not re-arm its
+> timer, so the function-level `SET statement_timeout='300s'` (migration
+> `20260616100000`) only protects **direct in-database callers** (psql / pg_cron /
+> a SECURITY DEFINER caller). The PostgREST path is rescued by (a) the set-based
+> `imp_pct` optimization that brings the full recompute well under 30s, and (b) the
+> ETL's bounded-window call (a 12-week recompute runs in ~2s). See
+> `docs/supabase/PRD.md` for the RPC-side detail.
 
 ### Navios — backfill de maio/2026 (one-shot, 2026-06-03)
 

@@ -90,7 +90,7 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 |---|---|
 | `get_dg_margins_data` | Linhas (filtráveis) — read-only, consumida pela UI |
 | `get_dg_margins_filters` | Opções de filtros |
-| `recompute_dg_margins(p_week_start text, p_week_end text)` | **Recompute job** — `SECURITY DEFINER`, `EXECUTE` only `service_role`. Recalcula `d_g_margins` para o range de semanas ISO informado a partir das tabelas-fonte (preços, produção, ethanol, impostos, blend). Chamada pelo workflow `etl_dg_margins.yml`. Não callable pelo anon/authenticated. |
+| `recompute_dg_margins(p_week_start text, p_week_end text)` | **Recompute job** — `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `SET statement_timeout = '300s'`, `EXECUTE` only `service_role`. Recalcula `d_g_margins` para o range de semanas ISO informado a partir das tabelas-fonte (preços, produção, ethanol, impostos, blend). Args são ISO `"W/YYYY"` unpadded (ex. `12/2026`), parseados via `to_date('IYYY-IW')`; ambos NULL = timeline completa. Chamada pelo workflow `etl_dg_margins.yml` (rotina: janela das últimas ~12 semanas; full timeline só via `full_backfill`). Não callable pelo anon/authenticated. Timeout guard + otimização set-based do `imp_pct` em `20260616100000` (incident 2026-06-09) — ver § "Como o dado chega". |
 
 ## Tabela
 
@@ -119,11 +119,54 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 ### Pipeline
 
 ```
-etl_dg_margins.yml (weekly Tue 15:00 UTC + workflow_dispatch)
-  ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py    → cepea_etanol_anidro
-  ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py → anp_producao_derivados
-  └─ recompute_dg_margins(week_start, week_end)             → d_g_margins (upsert por (fuel_type, week))
+etl_dg_margins.yml
+  triggers:
+    - PRIMARY: workflow_run after a successful etl_anp_lpc.yml (daily 14:30 UTC scrape)
+    - FALLBACK: daily 15:00 UTC cron (after the 14:30 LPC scrape)
+    - MANUAL: workflow_dispatch (inputs: full_backfill bool, week_start "W/YYYY")
+  steps:
+    ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py            → cepea_etanol_anidro
+    ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py  → anp_producao_derivados
+    └─ recompute_dg_margins(week_start, week_end)                     → d_g_margins (upsert por (fuel_type, week))
+         routine: bounded to the last ~12 ISO weeks (dynamic), p_week_end=NULL
+         full timeline: only via workflow_dispatch full_backfill=true
 ```
+
+### Ordering & schedule (incident 2026-06-09)
+
+The "Distribution & Resale Margin" is a residual driven by the ANP pump price in
+`anp_lpc`. ANP publishes the weekly LPC survey on an **unstable weekday** (assumed
+Wed; on 2026-06-09 it was a Tuesday). The old setup ran this recompute on Tue 15:00
+UTC but `anp_lpc` only scraped Wed 14:30 UTC — so the margins ran a full day *before*
+the freshest pump price even landed, freezing the dashboard and starving the Client
+Alert. Fixed by:
+
+1. `etl_anp_lpc.yml` now scrapes **daily** (incremental + idempotent), tracking ANP's
+   publish day within ~24h.
+2. `etl_dg_margins.yml` **primary trigger is `workflow_run`** downstream of a
+   *successful* `etl_anp_lpc.yml`, so the recompute (and its Client Alert hook) always
+   runs on the freshest pump price the same day ANP publishes.
+3. A **daily 15:00 UTC fallback cron** (after the 14:30 LPC scrape) backstops the
+   `workflow_run` path.
+4. The **routine recompute is bounded to the last ~12 ISO weeks** (computed
+   dynamically as `today − 12 weeks` in unpadded ISO `"W/YYYY"`, `p_week_end=NULL`), so
+   each run finishes in seconds. The **full-timeline recompute** is reachable only via
+   the manual `workflow_dispatch` input `full_backfill=true`.
+
+### Timeout guard & optimization (incident 2026-06-09)
+
+Migration `20260616100000_recompute_dg_margins_timeout_guard.sql` (live in prod) added
+a function-level `SET statement_timeout = '300s'` and a set-based optimization of the
+`imp_pct` block (computed once per `(fuel_type, month)` instead of per `(week, fuel)` —
+QA-verified result-identical). **Nuance:** the function-level `SET statement_timeout`
+does *not* rescue the PostgREST call path (PostgREST runs as `authenticator`, whose
+30s login-time timeout governs; `SET ROLE service_role` does not pick up its config, and
+a `SET` inside an already-running statement does not re-arm its timer). The prod path is
+fixed by the set-based optimization (full recompute now <30s) + the ETL's bounded-window
+call; the function-level guard only protects direct / pg_cron / psql callers. Full
+detail in [`docs/supabase/PRD.md`](../supabase/PRD.md) § "`recompute_dg_margins` — timeout
+guard & optimization" and [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md) §
+"D&G Margins — ordering & bounded recompute".
 
 ### Fórmula de decomposição (R$/L, por semana ISO)
 

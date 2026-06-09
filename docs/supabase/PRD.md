@@ -876,7 +876,7 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 |---|---|---|
 | Market Share (absorveu Sales Volumes em 2026-05-26) | `get_ms_*` (sole family in use). `get_sv_*` legacy RPCs dropped in migration `20260526400000_drop_sv_rpcs.sql`. | dash-market-share |
 | Navios | `get_nd_*` | dash-navios-diesel |
-| D&G Margins | `get_dg_*` (read, anon/authenticated) + `recompute_dg_margins(p_week_start text, p_week_end text)` — **SECURITY DEFINER, `EXECUTE` only `service_role`** (recompute job chamado pelo `etl_dg_margins.yml`; recalcula `d_g_margins` a partir das tabelas-fonte de preço/produção/etanol/imposto/blend) | dash-margins |
+| D&G Margins | `get_dg_*` (read, anon/authenticated) + `recompute_dg_margins(p_week_start text, p_week_end text)` — **SECURITY DEFINER, `SET search_path = public, pg_temp`, `SET statement_timeout = '300s'`, `EXECUTE` only `service_role`** (recompute job chamado pelo `etl_dg_margins.yml`; recalcula `d_g_margins` a partir das tabelas-fonte de preço/produção/etanol/imposto/blend). Bounded args são ISO `"W/YYYY"` unpadded (ex. `12/2026`), parseados via `to_date('IYYY-IW')`; ambos NULL = timeline completa. Ver § "`recompute_dg_margins` — timeout guard & optimization (incident 2026-06-09)". | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
 | Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | dash-admin |
 | News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (retrocompat — retorna `text[]`), `get_default_news_keywords_with_flags` (retorna `keyword, match_type` — consumido pelo scanner repo). Writes admin via `admin_*_default_news_keyword*` listados em Profile/Admin | dash-news-hunter |
@@ -1298,6 +1298,22 @@ GRANT EXECUTE ON FUNCTION public.<func>(<args>) TO authenticated;
 ```
 
 A migration `20260525250000_default_news_keywords_match_type.sql` aplica esse padrão nas 4 RPCs admin (`admin_list_*`, `admin_add_*`, `admin_set_*_match_type`, `admin_remove_*`). Auditoria periódica via `has_function_privilege('anon', p.oid, 'EXECUTE')` em RPCs admin é desejável — qualquer linha onde a função `admin_*` retorna `true` é gap.
+
+### `recompute_dg_margins` — timeout guard & optimization (incident 2026-06-09)
+
+Migration `20260616100000_recompute_dg_margins_timeout_guard.sql` (live in prod). Signature is **unchanged** — `recompute_dg_margins(p_week_start text, p_week_end text)`, `LANGUAGE plpgsql`, `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` only `service_role`. Args are unpadded ISO `"W/YYYY"` (e.g. `12/2026`), parsed to that ISO week's Monday via `to_date(split_part(...,'/',2) || '-' || split_part(...,'/',1), 'IYYY-IW')`; both NULL = full timeline.
+
+**What the migration added:**
+
+1. **Function-level `SET statement_timeout = '300s'`** (plus a `SET LOCAL statement_timeout = '300s'` at the top of the body).
+2. **Set-based `imp_pct` precompute.** The import%/production% split is a pure function of `(fuel_type, target month)`. The old body evaluated that correlated `INTERSECT`/`MAX`/`SUM` block once **per `(week, fuel)` grid row** (~2254 rows). It is now computed **once per distinct `(fuel_type, m_year, m_month)`** (~526 combinations, ~4.3× fewer evaluations of the heaviest subquery) in an `imp_pct_by_month` CTE, then `LEFT JOIN`ed back to the grid. **Results are identical** (verified by QA): `imp_pct` depends only on `(fuel_type, m_year, m_month)`, so deduplicating its evaluation cannot change any value; every other column and the final arithmetic are byte-for-byte the prior body (`20260613300000`).
+
+**Critical nuance — the function-level `SET statement_timeout` does NOT rescue the PostgREST call path.** PostgREST connects as the `authenticator` login role, whose role config carries `statement_timeout=30s`; `SET ROLE service_role` does **not** pick up `service_role`'s config (its `rolconfig` is NULL), so the request runs under the 30s `authenticator` cap. The `SELECT recompute_dg_margins(...)` statement's timer is armed at 30s **before** the function body executes, and a `SET` inside an already-running statement does **not** re-arm that timer. So:
+
+- The **function-level `SET statement_timeout`** only protects **direct in-database callers** whose enclosing statement *is* the function call — psql / pg_cron / a SECURITY DEFINER caller / a future internal call (their timer is armed after the GUC is in effect).
+- The things that actually fix the **prod (ETL → PostgREST) path** are (a) the **set-based optimization** (full recompute now runs well under 30s) and (b) the **ETL's bounded-window call** (`etl_dg_margins.yml` recomputes only the last ~12 ISO weeks, ~2s). See `docs/etl-pipelines/PRD.md` § "D&G Margins — ordering & bounded recompute (incident 2026-06-09)".
+
+> Incident origin: GitHub run 27223589112 (2026-06-09 17:22 UTC) died at the recompute step with PostgREST `57014` (`canceling statement due to statement timeout`) ~31s in; the failed step skipped the gated Client Alerts hook, so subscribers got no alert and `/diesel-gasoline-margins` went stale.
 
 ## Contratos com outros departamentos
 
