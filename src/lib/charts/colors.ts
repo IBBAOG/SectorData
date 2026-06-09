@@ -24,8 +24,15 @@ export interface AssignSeriesColorsOptions {
   /** Entity → fixed color map (e.g. COMPANY_COLORS / COUNTRY_COLORS). Consulted
    *  first for every entity. Values SHOULD be PALETTE members. */
   canonical?: Record<string, string>;
-  /** When true, the FIRST entity is forced to BRAND_ORANGE (highlight/leader
-   *  pattern). Ignored for the entity that equals `othersLabel`. */
+  /** EXPLICIT HIGHLIGHT pattern (distinct from the PALETTE leader order).
+   *  When true, the FIRST entity is forced to BRAND_ORANGE so a user-selected
+   *  series "pops" (BSW, anp-cdp-diaria). Ignored for the `othersLabel` entity.
+   *
+   *  Note: this is NOT the same thing as the default positional leader color.
+   *  The PALETTE now leads with navy (#1f2937, pos 1); a plain positional /
+   *  stacked chart that does NOT pass `leader` gets navy as its 1st series and
+   *  orange as its 2nd. `leader: true` is the opt-in highlight override that
+   *  re-claims orange for the selected series. Both coexist by design. */
   leader?: boolean;
   /** Label of the "Others" bucket. Always colored grey and pushed to the end. */
   othersLabel?: string;
@@ -40,7 +47,9 @@ export interface SeriesColor {
  * Assign a unique color to each entity, in the given order.
  *
  * Resolution order, per entity:
- *   1. If `leader` and this is the first non-Others entity → BRAND_ORANGE.
+ *   1. If `leader` (explicit highlight) and this is the first non-Others
+ *      entity → BRAND_ORANGE. (Without `leader`, the first entity simply
+ *      takes PALETTE pos 1 = navy #1f2937 — the default leader-order color.)
  *   2. `opts.canonical[entity]` if present (and not already taken — if the
  *      canonical color was already consumed by an earlier entity it falls
  *      through to the palette step so we never duplicate).
