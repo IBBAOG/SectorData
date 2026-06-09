@@ -65,11 +65,12 @@ export type {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // Chart colors come from the canonical identity palette — never hard-coded hex
-// (docs/design/identity.md). PALETTE position 1 is the brand orange, reserved
-// for the chart leader / "Company total" headline line; per-field lines start
-// at position 2 to keep the orange exclusive to the leader. Re-exported here so
-// both Views import their chart colors from the shared hook (single source of
-// truth) and never invent a hex of their own.
+// (docs/design/identity.md). PALETTE position 0 is navy (#1f2937); BRAND_ORANGE
+// (#FF5000) sits at position 1. The "Company total" headline line is always
+// pinned to BRAND_ORANGE, so per-field colors EXCLUDE orange (see
+// COMPANY_FIELD_COLORS / companyFieldColorMap) to avoid colliding with the total
+// line in the same chart. Re-exported here so both Views import their chart
+// colors from the shared hook (single source of truth) and never invent a hex.
 export { PALETTE, BRAND_ORANGE } from "../../../lib/plotlyDefaults";
 
 export const TOP_N = 10;
@@ -350,16 +351,30 @@ export function orderCompanyFieldDims(rows: UnifiedRow[], metric: Metric): strin
 }
 
 /**
+ * Field color sequence for the company charts: the PALETTE with BRAND_ORANGE
+ * removed. The company line chart always pins its "Company total" headline line
+ * to BRAND_ORANGE (#FF5000) and renders it in the SAME chart as the field
+ * traces, so no field may receive orange or it would collide with the total
+ * line. We filter orange out of the sequence (rather than offsetting the index)
+ * so the guarantee survives any future PALETTE reorder — the position of orange
+ * in the array no longer matters. PALETTE pos 0 is now navy (#1f2937), a
+ * legitimate field color here since the company chart has no fixed navy series.
+ */
+const COMPANY_FIELD_COLORS: string[] = PALETTE.filter((c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase());
+
+/**
  * Canonical field → color map for a company's charts. `orderedDims` must come
- * from `orderCompanyFieldDims` so the i-th field gets `PALETTE[(i+1) % len]`
- * (position 0 / brand orange is reserved for the "Company total" headline line,
- * which has no counterpart in the stacked bar). Returned map is reused by both
- * the line chart and the stacked bar to keep each field's color identical.
+ * from `orderCompanyFieldDims` so the i-th field gets the i-th color of
+ * `COMPANY_FIELD_COLORS` (PALETTE minus BRAND_ORANGE). BRAND_ORANGE is excluded
+ * because the "Company total" headline line is always orange and coexists in the
+ * same line chart — a field colored orange would be indistinguishable from it.
+ * Returned map is reused by both the line chart and the stacked bar (keyed on the
+ * full canonical order) to keep each field's color identical across both charts.
  */
 export function companyFieldColorMap(orderedDims: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   orderedDims.forEach((dim, i) => {
-    map[dim] = PALETTE[(i + 1) % PALETTE.length];
+    map[dim] = COMPANY_FIELD_COLORS[i % COMPANY_FIELD_COLORS.length];
   });
   return map;
 }
