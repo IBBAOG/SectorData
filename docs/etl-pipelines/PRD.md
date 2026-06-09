@@ -49,7 +49,8 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
     04_cabotage_cleanup.py          Limpeza de cabotagem em navios_diesel
     05_positions_sync.py            VF port-call → vessel_positions, port_arrivals
 
-  mdic_comex_sync.py                MDIC Comex
+  mdic_comex_sync.py                MDIC Comex (+ sync_months() reused by drift check)
+  mdic_comex_drift_check.py         MDIC Comex drift detector (retroactive revisions)
   anp/
     precos_distribuicao_sync.py     ANP PDC — Preços de Distribuição → anp_precos_distribuicao
 
@@ -94,6 +95,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
 | `etl_mdic_comex.yml` | Diário 14:00 UTC (`0 14 * * *`, trailing 3 meses) **+** semanal Dom 06:00 UTC (`0 6 * * 0`, trailing 12 meses = *revision sweep*) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
+| `etl_mdic_comex_drift.yml` | Mensal — dia 5, 07:00 UTC (`0 7 5 * *`) + `workflow_dispatch` | `pipelines/mdic_comex_drift_check.py` | `mdic_comex` (self-heal só dos meses derivados). *Drift detector* das revisões retroativas do ComexStat — ver seção "MDIC Comex — drift detector" abaixo |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel`. Portos cobertos: Santos, Itaqui, Paranaguá, São Sebastião, Suape, **Maceió** (`buscar_maceio`, desde 2026-06-03). **Filtro de direção por porto** — cada scraper só mantém **descarga (importação)**: Paranaguá filtra `Sentido == "IMP"`; Santos esperados filtra operação `DESC`; **Suape** (desde 2026-06-03) filtra por `Tipo da Operação`; **Maceió** NÃO publica coluna de direção → captura todo diesel e confia no `04_cabotage_cleanup` para remover tráfego de bandeira brasileira (limitação documentada inline). **Pegadinha — Suape "Tipo da Operação"**: a aba "Dados Brutos" (Google Sheets, formato wide) repete blocos `Produto`/`Quantidade`/`Unidade`/`Tipo da Operação` (pandas sufixa `.1 … .6` as colunas duplicadas), **posicionalmente alinhados** (`Produto.N` ↔ `Tipo da Operação.N`). Valores: `DG`=Descarga (import), `TB DG`=transbordo descarga, `CG`=Carga/embarque (saída), `TB CG`=transbordo carga. `buscar_suape()` só conta um bloco como diesel-importação se `_diesel_puro(produto)` **E** `Tipo da Operação ∈ {DG, TB DG}` (upper/strip) — pareado por bloco, não "qualquer produto é diesel". Volume (`_qtd_e_unidade`) e `Carga` somam/listam só os blocos diesel-E-descarga. Antes do fix, navios de carga doméstica (ex.: ATLANTIC PRIDE, IMO 9797266 — 3 blocos diesel todos `CG`) entravam como falso-positivo de importação. Não suavizar para "qualquer DIESEL" de novo. **Watchdog (hardened 2026-06-03)**: a exceção `FetchError` distingue **fetch quebrado** (encoding/Brotli/WAF/schema break — a falha que zerou Itaqui silenciosamente por 9 dias em maio, Pegadinha #12) de **0-diesel legítimo**. `buscar_itaqui`/`buscar_maceio` levantam `FetchError` quando a página não decodifica numa lineup confiável → o porto vira sentinela `ERRO_COLETA` e o watchdog falha (exit 2) destacando os fetches quebrados. Portos EXPECTED que fetcharam OK mas retornaram 0 diesel emitem `[WARN]` a cada run (silent-zero fica visível). |
 | ~~`manual_dg_margins.yml`~~ | **RETIRED 2026-06-05** (deletado) | ~~`manual/dg_margins_upload.py`~~ | substituído por `etl_dg_margins.yml` (D&G Margins automation) |
 | `etl_dg_margins.yml` | Semanal — terça, 15:00 UTC (`0 15 * * 2`) + `workflow_dispatch` | `cepea/cepea_etanol_anidro_sync.py` → `anp/producao/anp_producao_derivados_sync.py` → RPC `recompute_dg_margins(week_start, week_end)` | `cepea_etanol_anidro`, `anp_producao_derivados`, e (computado) `d_g_margins`. Decomposição R$/L por semana ISO: `base_fuel = (import_parity×import% + petrobras×production%)×(1−blend)`; `biofuel` = etanol anidro (lag week−1)×ethanol_blend (gasolina) / Biodiesel B-100 (mesma semana)×biodiesel_blend (diesel); `federal_tax`+`state_tax` de `fuel_tax_reference` (ANP Síntese + CONFAZ ad-rem); `distribution_and_resale_margin` = pump − componentes (residual); `total` = pump = `anp_lpc` station-weighted national avg. `import%` = imports(`anp_desembaracos`/`mdic_comex`, kg→m³ via densidade)/(imports+`anp_producao_derivados`). Cutover: era ad-rem ICMS (gasolina Jun/2023, diesel Mai/2023) computada; pré-ad-rem (2021→meados 2023) preservado da série manual (arquivo em `d_g_margins_manual_bak`). Fontes: ANP · CEPEA/ESALQ · CONFAZ. |
@@ -586,6 +588,71 @@ ad-hoc one-off re-syncs without editing code. Corrective re-sync for the live bu
 above was run once with `mdic_comex_sync.py --desde 2025-06` (13 months, ~24 legs).
 Bump `WIDE_MONTHS` in the workflow if revisions are ever observed further back.
 
+### MDIC Comex — drift detector (self-heals any-horizon revisions, 2026-06-09)
+
+**Gap the sweeps leave.** The daily 3-month + weekly 12-month sweeps absorb
+recent revisions, but the annual "fechamento" — a final revision to the prior
+year's late months around Q1 — can land **just outside** the 12-month window.
+Re-extracting everything is wasteful (months ≥ ~13 months old match the live
+source to the dollar, verified 2022→2025). A cheap monthly **drift detector**
+closes the gap for **any horizon** and surfaces revisions as a signal.
+
+**Script.** `scripts/pipelines/mdic_comex_drift_check.py`. Algorithm:
+
+1. **Fetch lightweight live monthly aggregates** for both flows over a trailing
+   window (`--meses`, default **24**). The call uses `details: ["ncm"]` (NO
+   country detail) so each response is tiny (≤ 12 mo × 3 NCM per flow) — only
+   monthly FOB + KG per `(ano, mes)`. Reuses `mdic_comex_sync.py`'s endpoint,
+   browser-like headers, `_RETRIES`/`_BACKOFF`/Retry-After backoff and the 12 s
+   inter-request sleep; **does not advertise `br`** (Pegadinha #12).
+2. **Read stored aggregates** from `mdic_comex` (paginated `SELECT`, summed per
+   month, service-role client — same creds as the sync script).
+3. **Compare** per `(flow, ano, mes)`. Flags **DRIFT** when the relative delta on
+   FOB **or** KG exceeds the tolerance (`--tolerancia`, default **0.5%**), with an
+   absolute floor (`_FLOOR_FOB`/`_FLOOR_KG` = 100k each) to ignore rounding noise
+   on tiny months — a month is skipped only if **both** stored and live are below
+   the floor (so a newly-appeared month, stored=0/live large, is still surfaced).
+4. **Self-heals** each drifted month via a targeted full re-pull
+   (`mdic_comex_sync.sync_months(sb, months)` — the shared per-month pull+upsert
+   path extracted from the sync script; no duplicated upsert logic). Heals are
+   capped at `--heal-cap` (default **12**, mirrors the cross-local heal-cap
+   pattern); if the cap is hit, the most-recent months heal first and the rest
+   defer to the next run (logged + annotated).
+5. **Signals** the revision (half the value): prints a summary, emits
+   `::warning::` annotations and a `$GITHUB_STEP_SUMMARY` table listing each
+   revised month + % delta (e.g. *"ComexStat revised import 2025-12 FOB by
+   +1.8% — re-pulled"*). **Exit policy**: non-zero **only** if a heal was
+   attempted and **FAILED** — a clean heal (or `--dry-run`, or cap-deferred) is a
+   **loud-but-green** signal, so green = no drift or drift cleanly healed, red =
+   needs a human.
+6. Idempotent; safe to re-run.
+
+**API period pegadinha (verified empirically 2026-06-09).** The ComexStat
+`period {from, to}` is **NOT a contiguous span** — the *month* component is
+applied as a recurring window across the *year* range. A naive trailing window
+like `from=2024-06, to=2025-05` returns **0 rows** (month range 06..05 is empty).
+The drift checker therefore requests **full calendar years**
+(`from=<startYear>-01` to `to=<endYear>-12`, 1 call/flow) and filters client-side
+to the trailing N months — verified `from=2024-01, to=2025-12` returns all 24
+months. Same trap applies to anyone writing a new ComexStat query; prefer
+full-calendar-year requests or month-by-month iteration like the sync script.
+
+**Schedule.** Separate workflow `.github/workflows/etl_mdic_comex_drift.yml`
+(kept distinct from `etl_mdic_comex.yml` so the revision signal is its own
+clean green/red monitoring job). Monthly on the **5th at 07:00 UTC** (after the
+month-1st heavy ETLs, off-peak) — sufficient given daily-3 + weekly-12 already
+cover recent months, and the check is cheap. `workflow_dispatch` accepts
+`meses` / `tolerancia` / `dry_run` inputs. Same secrets as the other ComexStat
+jobs (`SUPABASE_URL`, `SUPABASE_SERVICE_KEY`); a final `continue-on-error` Client
+Alerts hook fires `--source mdic_comex` when a heal revised values.
+
+**Follow-up flagged to CTO (cross-domain, alerts owner).** Wiring a *proper
+subscriber-facing* "ComexStat revised month X" alert through `scripts/client_alerts/`
+is intentionally **not** done here (cross-domain — owned by the Client Alerts
+product). The current signal is the GHA annotation/summary + a red run on heal
+failure. If a dedicated alert base is wanted, that is a follow-up for the alerts
+owner; this script must not touch `scripts/client_alerts/` or alert workflows.
+
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 
 Produto de alertas por email **só-logado**, event-driven. Substitui o produto cloud antigo (anon double-opt-in, detectores em polling de 2h, `scripts/alerts/`) que foi **deletado**. Engine em `scripts/client_alerts/` (ver árvore acima); schema/RPCs em `docs/supabase/PRD.md` § "Alerts v2"; frontend em `docs/app/alerts.md`.
@@ -680,6 +747,9 @@ São idempotentes (ON CONFLICT DO UPDATE) — seguros de re-rodar.
 scripts/pipelines/
   mdic_comex_backfill.py              DADOS/mdic_comex/comex_consolidado.parquet → mdic_comex
                                       Flags: --parquet PATH, --desde ANO, --ate ANO
+  mdic_comex_drift_check.py           Detects retroactive ComexStat revisions vs mdic_comex,
+                                      self-heals only drifted months (reuses sync.sync_months).
+                                      Flags: --meses (24), --tolerancia (0.5), --heal-cap (12), --dry-run
   anp/
     precos/precos_produtores_backfill.py  DADOS/anp_precos_produtores/...parquet → anp_precos_produtores
                                           Flags: --parquet PATH, --desde YYYY-MM-DD, --ate YYYY-MM-DD

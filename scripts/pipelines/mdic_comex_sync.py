@@ -207,6 +207,41 @@ def _upsert(sb, records: list[dict]):
     return total
 
 
+# ── Targeted per-month pull + upsert (reused by the drift checker) ──────────────
+
+def sync_months(sb, months: list[str]) -> tuple[int, list[str]]:
+    """Full re-pull + upsert of an explicit list of ``YYYY-MM`` months.
+
+    For each month we pull BOTH flows (import + export) at full
+    ``["ncm", "country"]`` detail and upsert the normalized rows. This is the
+    same per-month leg the daily/weekly sync uses, exposed so callers such as
+    ``mdic_comex_drift_check.py`` can self-heal a specific drifted month without
+    duplicating the request/normalize/upsert logic.
+
+    Returns ``(total_upserted, errors)`` where ``errors`` lists ``"<month> <flow>"``
+    legs whose every HTTP attempt failed (non-200) — i.e. the heal could not be
+    completed and the caller should treat the month as still drifted.
+    """
+    all_records: list[dict] = []
+    errors: list[str] = []
+    legs = [(m, flow) for m in months for flow in ("import", "export")]
+    for idx, (pf, flow) in enumerate(legs):
+        print(f"  API {flow} {pf}...", end=" ", flush=True)
+        rows, http_ok = _post_retry(flow, pf, pf)
+        normed = _normalizar(rows, flow)
+        print(f"{len(normed):,} rows" + ("" if http_ok else "  [HTTP FAILED]"))
+        if not http_ok:
+            errors.append(f"{pf} {flow}")
+        all_records.extend(normed)
+        if idx < len(legs) - 1:
+            time.sleep(_INTER_REQUEST_SLEEP)
+
+    total = 0
+    if all_records:
+        total = _upsert(sb, all_records)
+    return total, errors
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
