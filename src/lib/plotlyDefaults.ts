@@ -7,7 +7,14 @@
 //   import {
 //     COMMON_LAYOUT, AXIS_LINE, emptyPlot, BRAND_ORANGE, PALETTE,
 //     PRODUCT_COLORS, COUNTRY_COLORS, REGION_COLORS, SEGMENT_COLORS,
+//     COMPANY_COLORS,
 //   } from "@/lib/plotlyDefaults";
+//
+// For chart series assignment, prefer the central assigner in
+// src/lib/charts/colors.ts (assignSeriesColors / applyStackedLegendOrder),
+// which guarantees no two series share a color and that the legend order
+// matches the stack order. The runtime lock src/lib/charts/validateTraces.ts
+// enforces both invariants (dev: throw; prod: auto-correct + console.error).
 //
 // Color policy (2026-05-28 audit — CTO directive "no white in any chart"):
 //   - No chart series uses #ffffff / #fff / 'white' as a trace, marker, line,
@@ -123,6 +130,39 @@ export const REGION_COLORS: Record<string, string> = {
   S:             "#8258A0",  // purple
   Sul:           "#8258A0",
   SUL:           "#8258A0",
+};
+
+/** Per-company canonical color — same fuel-distributor / oil company always
+ *  gets the same color across EVERY dashboard that renders it (the By Importer
+ *  panel of /imports-exports, market-share, future company-level charts).
+ *
+ *  Contract:
+ *   - Every hex here MUST already exist in PALETTE (no inventing colors).
+ *   - BRAND_ORANGE (#FF5000) is NEVER used to pin a recurring company — it is
+ *     reserved for highlight/leader patterns only (see the color policy at the
+ *     top of this file). That is why the leader of a chart is colored via the
+ *     `leader` flag of assignSeriesColors, not via this map.
+ *   - "Others" is grey (#7F7F7F, PALETTE pos 14) and is always rendered LAST by
+ *     the central color assigner (src/lib/charts/colors.ts).
+ *   - All companies must have DISTINCT colors so two series in the same chart
+ *     can never collide (the runtime lock in src/lib/charts/validateTraces.ts
+ *     enforces this; this map is the first line of defense).
+ *
+ *  Aliases (e.g. "Atem's", "Raizen") map to the same color as their canonical
+ *  spelling so source-data label drift never breaks the pinning. */
+export const COMPANY_COLORS: Record<string, string> = {
+  Petrobras:   "#000000",  // black   (PALETTE pos 5)
+  Vibra:       "#0F766E",  // teal    (PALETTE pos 9)
+  Ipiranga:    "#1D4080",  // navy    (PALETTE pos 6)
+  Raízen:      "#73C6A1",  // mint    (PALETTE pos 7)
+  Raizen:      "#73C6A1",  // alias (no-tilde spelling sometimes in source data)
+  Atem:        "#8258A0",  // purple  (PALETTE pos 8)
+  "Atem's":    "#8258A0",  // alias (source data renders "Atem's")
+  "Royal FIC": "#D97706",  // amber   (PALETTE pos 11) — replaces the old #D2FF00
+                           //          lime that collided + was removed in the
+                           //          2026-05-28 "no near-yellow" audit.
+  "Royal Fic": "#D97706",  // alias (casing variant)
+  Others:      "#7F7F7F",  // mid grey (PALETTE pos 14) — always last
 };
 
 /** Per-segment (sales-volumes / market-share segmentation) canonical color.

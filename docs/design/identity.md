@@ -143,6 +143,80 @@ Brand orange é reservada para "highlight" — não aparece como cor de produto.
 | Importer | `#8258A0` | purple |
 | Total | `#000512` | near-black — agregado |
 
+#### `COMPANY_COLORS` (fuel-distributor / oil companies)
+
+Pins each company to a fixed color across every dashboard that renders it (By
+Importer panel of `/imports-exports`, market-share, future company charts).
+Source of truth: `COMPANY_COLORS` in [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
+
+| Company | Hex | PALETTE pos | Aliases |
+|---|---|---|---|
+| Petrobras | `#000000` (black) | 5 | — |
+| Vibra | `#0F766E` (teal) | 9 | — |
+| Ipiranga | `#1D4080` (navy) | 6 | — |
+| Raízen | `#73C6A1` (mint) | 7 | Raizen |
+| Atem | `#8258A0` (purple) | 8 | Atem's |
+| Royal FIC | `#D97706` (amber) | 11 | Royal Fic |
+| Others | `#7F7F7F` (mid grey) | 14 | always last |
+
+Contract: every hex is a PALETTE member; `BRAND_ORANGE` is never used to pin a
+company (highlight only); all companies are distinct so two series in one chart
+can never collide; `Others` is grey and always rendered last. Royal FIC's amber
+replaces the old `#D2FF00` lime that collided with Atem's and was removed in the
+2026-05-28 "no near-yellow" audit (root cause of the reported bug).
+
+### Central chart-color assigner + lock (2026-06-09)
+
+Two new modules turn the canonical maps above into a guarantee, not a
+convention:
+
+#### `assignSeriesColors` / `applyStackedLegendOrder` — [`src/lib/charts/colors.ts`](../../src/lib/charts/colors.ts)
+
+`assignSeriesColors(orderedEntities, { canonical, leader, othersLabel })` returns
+an ordered `{ entity, color }[]`. Rules:
+
+1. Each entity resolves to `canonical[entity]` first.
+2. `othersLabel` is always grey (`#7F7F7F`) and pushed last.
+3. Fallback is the next PALETTE color **not yet used in this chart** (collision
+   skip → duplicates are impossible by construction). If the palette is
+   exhausted (> 13 distinct non-Others series) it throws, telling the caller to
+   collapse the tail into "Others" rather than repeat a color.
+4. `leader: true` forces the first entity to `BRAND_ORANGE` (highlight pattern).
+5. The returned order **is** the stack order **and** the legend order.
+
+`applyStackedLegendOrder(layout)` non-destructively merges
+`legend.traceorder: 'normal'` so a stacked chart's legend reads in the same
+order the traces stack (Plotly's stacked default is `'reversed'`, which is what
+made the legend look inverted).
+
+`toColorMap(assignment)` adapts the ordered result to the `{ entity: color }`
+shape existing trace builders consume (pair it with the ordered entity list for
+stacking).
+
+#### `validateTraces` — the lock — [`src/lib/charts/validateTraces.ts`](../../src/lib/charts/validateTraces.ts)
+
+Wired into the single chart wrapper [`PlotlyChart`](../../src/components/PlotlyChart.tsx)
+(new optional `ctx?: string` prop). Before every render it checks:
+
+- **A. Duplicate color** — two VISIBLE traces (ignores `visible:'legendonly'`/`false`)
+  sharing `fillcolor`/`line.color`/`marker.color`.
+- **B. Inverted stacked legend** — any trace has `stackgroup` but
+  `layout.legend.traceorder` is not explicitly `'normal'` or `'reversed'`.
+
+Behavior by environment:
+
+- **dev / CI** (`NODE_ENV !== 'production'`): for charts on the `MIGRATED_CTX`
+  allowlist → **throws** (fails the build/test), naming the `ctx` and the
+  colliding series. Charts NOT yet on the allowlist → `console.warn` only, so
+  the gradual rollout never breaks unmigrated dashboards.
+- **production**: never throws — auto-corrects (re-assigns the colliding color
+  to the next free palette color; forces `traceorder:'normal'`) and
+  `console.error`s, so the end user's chart never breaks.
+
+Rollout: `MIGRATED_CTX` currently holds only the `/imports-exports` charts. Add
+a dashboard's `ctx` strings to that Set as it adopts `assignSeriesColors` +
+`applyStackedLegendOrder`. Tests: [`src/lib/charts/__tests__/validateTraces.test.ts`](../../src/lib/charts/__tests__/validateTraces.test.ts).
+
 > Dashboards que já tinham mapeamento próprio (ex: `/anp-prices` mantém Producer=navy / Distribution=bronze / Retail=teal para distinguir B2B de Retail num gráfico com os 3 simultaneamente; `/diesel-gasoline-margins` mantém o stack com 5 cores fixas) mantêm essas tabelas locais — mas devem se alinhar com a paleta canônica quando possível.
 
 #### Quando NÃO usar o canonical map

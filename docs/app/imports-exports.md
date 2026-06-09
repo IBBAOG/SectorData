@@ -694,6 +694,41 @@ Same traces, same data, mobile-tuned layout (240px height, no markers, tighter m
 
 ---
 
+## Chart-color fix + central trace lock (2026-06-09)
+
+The "By Importer (Brazil)" panel previously colored importers from a local inline
+array (`IMPORTER_RANK_COLORS`, which still carried the removed `#D2FF00` lime)
+with a fragile `colorIdx ?? i` fallback. When a non-canonical importer label
+(e.g. the source's `Atem's`) missed the canonical lookup it fell back to the
+positional index `i`, which could collide with another importer's color — Royal
+FIC and Atem's both rendered lime. The stacked legend also read inverted vs. the
+stack on charts that did not pin `legend.traceorder`.
+
+Fix:
+
+- Importer colors now come from the canonical `COMPANY_COLORS` map via the
+  central assigner `assignSeriesColors` (`src/lib/charts/colors.ts`), which
+  guarantees distinct colors (collision-skip) and `Others` grey + last. The
+  inline `IMPORTER_RANK_COLORS` array and the `colorIdx ?? i` fallback were
+  removed from `useImportsExportsData.ts`.
+- Origin-country pins (`ORIGIN_COUNTRY_PINS`) in both Views and the hook now read
+  from the canonical `COUNTRY_COLORS` map (United States = navy, not brand
+  orange; Saudi Arabia = teal, not the removed lime).
+- All `/imports-exports` charts route through the shared `PlotlyChart` wrapper
+  with a `ctx` (`imports-exports:by-origin-country`, `:by-importer`,
+  `:imports-unit-price`, `:exports-by-destination`, `:exports-unit-price`) and
+  apply `applyStackedLegendOrder` on stacked layouts. These ctx are on the
+  `validateTraces` `MIGRATED_CTX` allowlist, so a future color collision or
+  inverted-legend regression on this dashboard **fails the build/tests in dev**
+  (auto-corrects in production). See `docs/design/identity.md` §
+  "Central chart-color assigner + lock".
+
+The By Origin Country, imports unit-price, and exports panels keep distinct
+colors and correct ordering (no regression). Both Views were updated in the same
+commit (dual-view sync rule).
+
+---
+
 ## Future Work
 
 - **Tier 2 export upgrade**: if users request full raw `anp_desembaracos` dumps (60k–200k rows), add `get_imports_exports_export_count` RPC + `ExportModal` + `useExportSize` integration.

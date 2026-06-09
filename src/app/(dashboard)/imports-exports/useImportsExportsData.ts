@@ -57,7 +57,8 @@ import type {
   IEExportsYoyRow,
   IEUnitPriceRow,
 } from "@/lib/rpc";
-import { PALETTE } from "@/lib/plotlyDefaults";
+import { PALETTE, COMPANY_COLORS, COUNTRY_COLORS } from "@/lib/plotlyDefaults";
+import { assignSeriesColors, toColorMap } from "@/lib/charts/colors";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -329,17 +330,21 @@ const M3_PER_BBL = 6.2898;
 // Views share the same pin set and the price summary's color column must
 // match the chart legend exactly. Keep in sync with desktop/View.tsx and
 // mobile/View.tsx if the pin set ever changes.
+// Colors come from the canonical COUNTRY_COLORS map (plotlyDefaults) so the
+// same origin country looks identical everywhere. United States is navy (NOT
+// brand orange — orange is reserved for highlight) and Saudi Arabia is teal
+// (replaces the removed #D2FF00 lime), matching the 2026-05-28 palette audit.
 const ORIGIN_COUNTRY_PINS_DATA: ReadonlyArray<{
   dbName: string;
   label: string;
   color: string;
 }> = [
-  { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
-  { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
-  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
-  { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
+  { dbName: "Rússia", label: "Russia", color: COUNTRY_COLORS.Russia },
+  { dbName: "Estados Unidos", label: "United States", color: COUNTRY_COLORS["United States"] },
+  { dbName: "Emirados Árabes Unidos", label: "UAE", color: COUNTRY_COLORS.UAE },
+  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: COUNTRY_COLORS.Netherlands },
+  { dbName: "Índia", label: "India", color: COUNTRY_COLORS.India },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: COUNTRY_COLORS["Saudi Arabia"] },
 ];
 
 const ORIGIN_LABEL_BY_DB_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_DATA.reduce(
@@ -356,12 +361,20 @@ const OTHERS_COLOR_DATA = "#7F7F7F";
 const OTHERS_LABEL_DATA = "Others";
 
 // Panel B canonical importer order — fixed display order regardless of volume.
-// Colors are entity-bound (not rank-bound): Petrobras always gets rank-1 color,
-// Vibra always gets rank-2 color, etc. This ensures the legend and table remain
-// stable across periods and products.
+// Colors are entity-bound (not rank-bound) and come from the canonical
+// COMPANY_COLORS map in plotlyDefaults: Petrobras always black, Vibra teal,
+// Ipiranga navy, Raízen mint, Atem purple, Royal FIC amber. Color assignment
+// is delegated to assignSeriesColors (src/lib/charts/colors.ts), which:
+//   - pins each importer to its COMPANY_COLORS color,
+//   - falls back to the next FREE palette color for any importer outside the
+//     canonical map (collision-skip → two importers can never share a color),
+//   - forces "Others" grey + last.
+// This replaces the old inline IMPORTER_RANK_COLORS array (which carried the
+// removed #D2FF00 lime) and its fragile `colorIdx ?? i` fallback that let
+// non-canonical importers collide with canonical ones (the Royal FIC / Atem's
+// lime collision the CTO reported on 2026-06-09).
 //
-// Importers not in this list appear before "Others" in alphabetical order,
-// each receiving the next color in IMPORTER_RANK_COLORS after the canonical slots.
+// Importers not in this list appear before "Others" in alphabetical order.
 // "Others" is always last.
 const IMPORTER_CANONICAL_ORDER: ReadonlyArray<string> = [
   "Petrobras",
@@ -370,18 +383,6 @@ const IMPORTER_CANONICAL_ORDER: ReadonlyArray<string> = [
   "Raízen",
   "Atem",
   "Royal FIC",
-];
-
-// Colors assigned positionally to the canonical order (index 0 = Petrobras, etc.)
-// Mirrors the Panel A origin-country palette in rank order. After exhausting
-// canonical slots, non-listed importers get subsequent palette colors.
-const IMPORTER_RANK_COLORS: ReadonlyArray<string> = [
-  "#000000", // Petrobras (canonical rank 1)
-  "#FF5000", // Vibra     (canonical rank 2)
-  "#73C6A1", // Ipiranga  (canonical rank 3)
-  "#FFAE66", // Raízen    (canonical rank 4)
-  "#8258A0", // Atem      (canonical rank 5)
-  "#D2FF00", // Royal FIC (canonical rank 6)
 ];
 
 const IMPORTER_TOP_N = 6;
@@ -1274,16 +1275,17 @@ export function useImportsExportsData(): UseImportsExportsData {
     const entities: string[] = [...top];
     if (hasOthers) entities.push(OTHERS_LABEL_DATA);
 
-    // 6. Color map — entity-bound: each importer in the canonical list gets
-    //    its fixed color slot; non-listed importers that made the top-6 get
-    //    the next available color slot; Others is always grey.
-    const colorMap: Record<string, string> = {};
-    for (let i = 0; i < top.length; i += 1) {
-      const name = top[i];
-      const colorIdx = canonicalIdx.get(name) ?? i; // use canonical position when available
-      colorMap[name] = IMPORTER_RANK_COLORS[colorIdx] ?? IMPORTER_RANK_COLORS[i] ?? OTHERS_COLOR_DATA;
-    }
-    if (hasOthers) colorMap[OTHERS_LABEL_DATA] = OTHERS_COLOR_DATA;
+    // 6. Color map — delegated to the central assigner. Canonical importers
+    //    pin to COMPANY_COLORS; any non-canonical importer that made the top-6
+    //    gets the next FREE palette color (never a duplicate); Others is grey
+    //    and last. The returned ORDER equals `entities`, so the stack order and
+    //    the legend order are identical (no inversion).
+    const colorMap = toColorMap(
+      assignSeriesColors(entities, {
+        canonical: COMPANY_COLORS,
+        othersLabel: OTHERS_LABEL_DATA,
+      }),
+    );
 
     // 7. Emit rows — keep top-6 verbatim, collapse rank-≥7 named rows AND
     //    server-side "Others" rows into a single per-(ano, mes) "Others"
