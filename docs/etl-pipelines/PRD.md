@@ -93,7 +93,7 @@ scripts/utils/                      # one-shots (não-ETL)
 | `etl_anp_lpc.yml` | Semanal — quarta, 14:30 UTC (`30 14 * * 3`) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill) |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
 | `etl_anp_cdp.yml` | Cron interno mensal (5º), 08:00 UTC (`0 8 5 * *`) como fallback + trigger externo via cron-job.org (`workflow_dispatch`) a cada ~2h — pipeline desenhado para rodar incrementalmente com alta frequência | `pipelines/anp/cdp/01_extract_powerbi.py` (Power BI, no CAPTCHA) → `02_upload.py` | `output/anp/` + `anp_cdp_producao` (2.045.515+ rows). Power BI poco-level data aggregated daily→monthly; local derived from DB lookup + basin heuristic. Replaces Selenium/CAPTCHA (01_extract.py) which had an undocumented APEX row cap (~197 offshore wells vs ~937 in Power BI for 04/2026). **Inputs `workflow_dispatch`**: `force_upload=true` passes `--no-incremental` AND implies `--purge` automatically — never re-upload over an already-loaded period without it (prevents the PK-overlap duplicate-`local` bug, Apr/2026). |
-| `etl_mdic_comex.yml` | Diário, 14:00 UTC (`0 14 * * *`) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
+| `etl_mdic_comex.yml` | Diário 14:00 UTC (`0 14 * * *`, trailing 3 meses) **+** semanal Dom 06:00 UTC (`0 6 * * 0`, trailing 12 meses = *revision sweep*) | `pipelines/mdic_comex_sync.py` | `mdic_comex` (10.029 rows — histórico 1997–2026 após backfill) |
 | `etl_navios_lineup.yml` | Cada 6h | `pipelines/navios/01_lineup_scrape.py` → `02_diesel_import.mjs` | `navios_diesel`. Portos cobertos: Santos, Itaqui, Paranaguá, São Sebastião, Suape, **Maceió** (`buscar_maceio`, desde 2026-06-03). **Filtro de direção por porto** — cada scraper só mantém **descarga (importação)**: Paranaguá filtra `Sentido == "IMP"`; Santos esperados filtra operação `DESC`; **Suape** (desde 2026-06-03) filtra por `Tipo da Operação`; **Maceió** NÃO publica coluna de direção → captura todo diesel e confia no `04_cabotage_cleanup` para remover tráfego de bandeira brasileira (limitação documentada inline). **Pegadinha — Suape "Tipo da Operação"**: a aba "Dados Brutos" (Google Sheets, formato wide) repete blocos `Produto`/`Quantidade`/`Unidade`/`Tipo da Operação` (pandas sufixa `.1 … .6` as colunas duplicadas), **posicionalmente alinhados** (`Produto.N` ↔ `Tipo da Operação.N`). Valores: `DG`=Descarga (import), `TB DG`=transbordo descarga, `CG`=Carga/embarque (saída), `TB CG`=transbordo carga. `buscar_suape()` só conta um bloco como diesel-importação se `_diesel_puro(produto)` **E** `Tipo da Operação ∈ {DG, TB DG}` (upper/strip) — pareado por bloco, não "qualquer produto é diesel". Volume (`_qtd_e_unidade`) e `Carga` somam/listam só os blocos diesel-E-descarga. Antes do fix, navios de carga doméstica (ex.: ATLANTIC PRIDE, IMO 9797266 — 3 blocos diesel todos `CG`) entravam como falso-positivo de importação. Não suavizar para "qualquer DIESEL" de novo. **Watchdog (hardened 2026-06-03)**: a exceção `FetchError` distingue **fetch quebrado** (encoding/Brotli/WAF/schema break — a falha que zerou Itaqui silenciosamente por 9 dias em maio, Pegadinha #12) de **0-diesel legítimo**. `buscar_itaqui`/`buscar_maceio` levantam `FetchError` quando a página não decodifica numa lineup confiável → o porto vira sentinela `ERRO_COLETA` e o watchdog falha (exit 2) destacando os fetches quebrados. Portos EXPECTED que fetcharam OK mas retornaram 0 diesel emitem `[WARN]` a cada run (silent-zero fica visível). |
 | ~~`manual_dg_margins.yml`~~ | **RETIRED 2026-06-05** (deletado) | ~~`manual/dg_margins_upload.py`~~ | substituído por `etl_dg_margins.yml` (D&G Margins automation) |
 | `etl_dg_margins.yml` | Semanal — terça, 15:00 UTC (`0 15 * * 2`) + `workflow_dispatch` | `cepea/cepea_etanol_anidro_sync.py` → `anp/producao/anp_producao_derivados_sync.py` → RPC `recompute_dg_margins(week_start, week_end)` | `cepea_etanol_anidro`, `anp_producao_derivados`, e (computado) `d_g_margins`. Decomposição R$/L por semana ISO: `base_fuel = (import_parity×import% + petrobras×production%)×(1−blend)`; `biofuel` = etanol anidro (lag week−1)×ethanol_blend (gasolina) / Biodiesel B-100 (mesma semana)×biodiesel_blend (diesel); `federal_tax`+`state_tax` de `fuel_tax_reference` (ANP Síntese + CONFAZ ad-rem); `distribution_and_resale_margin` = pump − componentes (residual); `total` = pump = `anp_lpc` station-weighted national avg. `import%` = imports(`anp_desembaracos`/`mdic_comex`, kg→m³ via densidade)/(imports+`anp_producao_derivados`). Cutover: era ad-rem ICMS (gasolina Jun/2023, diesel Mai/2023) computada; pré-ad-rem (2021→meados 2023) preservado da série manual (arquivo em `d_g_margins_manual_bak`). Fontes: ANP · CEPEA/ESALQ · CONFAZ. |
@@ -562,6 +562,29 @@ tree — works from a worktree). The ComexStat API 429s aggressively; the harnes
 `mdic_comex_sync.py`'s backoff and spaces month legs ~13 s apart. **No GitHub Actions
 workflow yet** (CTO decides whether to schedule it); the script is written so a future
 job only needs `pip install -r requirements.txt` and one call, gating on the exit code.
+
+### MDIC Comex — source revises prior months → weekly revision sweep (2026-06-09)
+
+**Root cause.** ComexStat revises already-published months as more customs
+declarations are processed (FOB drifts a few percent; volume usually stable).
+The daily `etl_mdic_comex.yml` run pulled only a **trailing 3 months**
+(`--meses 3`), so once a month fell out of that rolling window it was **frozen at
+whatever value it had on its last refresh** and never absorbed later revisions.
+
+**Symptom (confirmed 2026-06-09).** Russia / Mar-2026 / NCM `27101921` / import:
+our `mdic_comex` held `valor_fob_usd = 505,862,730` while live ComexStat had
+`529,067,402` (+4.59%; volume unchanged at `653,501,838`). This produced wrong
+unit prices on `/imports-exports` (Import Unit Price by Origin Country + price
+summary) for any month that had aged out of the window but was later revised.
+
+**Fix.** `etl_mdic_comex.yml` now has **two schedules**: the daily `--meses 3`
+freshness run (unchanged) **plus** a weekly Sunday 06:00 UTC *revision sweep* that
+re-pulls a **trailing 12 months** (`--meses 12`), so revisions to months 4–12 back
+get re-upserted. Idempotent (PK `(ano,mes,flow,ncm_codigo,pais)` upsert). The
+`workflow_dispatch` now also accepts a `meses` input (alongside `desde`) for
+ad-hoc one-off re-syncs without editing code. Corrective re-sync for the live bug
+above was run once with `mdic_comex_sync.py --desde 2025-06` (13 months, ~24 legs).
+Bump `WIDE_MONTHS` in the workflow if revisions are ever observed further back.
 
 ### Client Alerts (logged-in product — hook no fim do ETL, 2026-06-02)
 

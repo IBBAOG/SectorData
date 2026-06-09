@@ -2,11 +2,22 @@ name: MDIC Comex — Sync
 
 on:
   schedule:
+    # Daily freshness run — trailing 3 months (cheap, ~6 API legs).
     - cron: '0 14 * * *'   # daily at 14:00 UTC (11:00 BRT)
+    # Weekly wide revision sweep — re-pulls a trailing ~12-month window so that
+    # ComexStat's retroactive revisions to months that have already dropped out
+    # of the daily 3-month window get absorbed. Runs off-peak Sunday early AM to
+    # avoid colliding with the daily run and to be gentle on the per-IP rate
+    # limit (~24 legs ≈ several minutes). See `wide` flag handling below.
+    - cron: '0 6 * * 0'    # weekly Sunday 06:00 UTC (03:00 BRT)
   workflow_dispatch:        # manual trigger from GitHub UI
     inputs:
       desde:
-        description: 'Mês inicial YYYY-MM (opcional, default: últimos 3 meses)'
+        description: 'Start month YYYY-MM (optional; overrides --meses when set)'
+        required: false
+        default: ''
+      meses:
+        description: 'Trailing months to pull (optional; ignored when "desde" is set; default 3)'
         required: false
         default: ''
 
@@ -24,13 +35,37 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Sync MDIC Comex → Supabase
+      # How many trailing months the weekly revision sweep re-pulls. ComexStat
+      # revisions are heaviest in the most recent 2-3 months but can trickle in
+      # for up to a year, so 12 months comfortably covers the dashboard's
+      # "Last 12m" window. Bump here if revisions ever reach further back.
+      - name: Resolve sync range
+        id: range
+        env:
+          SCHEDULE_CRON: ${{ github.event.schedule }}
+          INPUT_DESDE:   ${{ github.event.inputs.desde }}
+          INPUT_MESES:   ${{ github.event.inputs.meses }}
         run: |
-          if [ -n "${{ github.event.inputs.desde }}" ]; then
-            python scripts/pipelines/mdic_comex_sync.py --desde "${{ github.event.inputs.desde }}"
+          WIDE_MONTHS=12
+          # 1) Manual dispatch with explicit overrides wins.
+          if [ -n "$INPUT_DESDE" ]; then
+            echo "args=--desde $INPUT_DESDE" >> "$GITHUB_OUTPUT"
+            echo "Range: manual --desde $INPUT_DESDE"
+          elif [ -n "$INPUT_MESES" ]; then
+            echo "args=--meses $INPUT_MESES" >> "$GITHUB_OUTPUT"
+            echo "Range: manual --meses $INPUT_MESES"
+          # 2) The weekly Sunday cron is the wide revision sweep.
+          elif [ "$SCHEDULE_CRON" = "0 6 * * 0" ]; then
+            echo "args=--meses $WIDE_MONTHS" >> "$GITHUB_OUTPUT"
+            echo "Range: weekly wide revision sweep --meses $WIDE_MONTHS"
+          # 3) Everything else (daily cron, plain manual dispatch) = fresh 3 months.
           else
-            python scripts/pipelines/mdic_comex_sync.py --meses 3
+            echo "args=--meses 3" >> "$GITHUB_OUTPUT"
+            echo "Range: daily freshness --meses 3"
           fi
+
+      - name: Sync MDIC Comex → Supabase
+        run: python scripts/pipelines/mdic_comex_sync.py ${{ steps.range.outputs.args }}
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
