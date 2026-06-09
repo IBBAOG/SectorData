@@ -166,7 +166,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 8 | `etl_anp_fase3.yml` | Monthly 1st 13:00 UTC | `anp_daie`, `anp_desembaracos` (importador/cnpj/uf_cnpj preserved) |
 | 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `anp_lpc` |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
-| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
+| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC + Weekly Sun 06:00 UTC (12-month revision sweep) | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
 | 12 | `etl_dg_margins.yml` | Weekly Tue 15:00 UTC + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` |
 | 13 | `supabase_deploy.yml` | On push to main | migrations (`supabase db push`) |
 | 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th + Weekly Tue | `anp_precos_distribuicao` |
