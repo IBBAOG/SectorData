@@ -1,23 +1,55 @@
 name: Diesel/Gasoline Margins — Sync (CEPEA + ANP production → recompute)
 
-# Weekly automation of /diesel-gasoline-margins. Runs the two source scrapers
+# Automation of /diesel-gasoline-margins. Runs the two source scrapers
 # (CEPEA anhydrous ethanol + ANP refined-product production), then refreshes the
 # d_g_margins table from ALL sources via public.recompute_dg_margins().
 #
-# Scheduled Tuesday 15:00 UTC (12:00 BRT) — AFTER the ANP price ETLs land:
-#   - etl_anp_precos.yml      Mon 12:00 UTC (anp_precos_produtores, anp_glp)
-#   - etl_anp_lpc.yml         Wed 14:30 UTC (anp_lpc)  -- runs after us, but the
-#                             margins recompute reads last-published anp_lpc; the
-#                             weekly pump price changes slowly, so Tue is fine and
-#                             gets the fresh Monday producer prices.
-#   - etl_anp_precos_distribuicao.yml  Tue 14:30 UTC — we run 30 min later.
+# ── Ordering (incident 2026-06-09) ────────────────────────────────────────────
+# The "Distribution & Resale Margin" is a residual driven by the ANP pump price,
+# which lives in anp_lpc (fed by etl_anp_lpc.yml). ANP publishes the weekly LPC
+# survey on an unstable weekday (e.g. Tue 2026-06-09), so the previous setup —
+# this recompute on Tue 15:00 UTC, but anp_lpc only scraped Wed 14:30 UTC — ran
+# the margins a full day BEFORE the freshest pump price even landed, freezing the
+# dashboard at the last week and starving the Client Alert of a new week to fire.
+#
+# Fix:
+#   1) etl_anp_lpc.yml now scrapes DAILY (idempotent), so anp_lpc tracks ANP's
+#      publish day within ~24h whatever weekday they choose.
+#   2) PRIMARY trigger: workflow_run downstream of a SUCCESSFUL etl_anp_lpc.yml,
+#      so the recompute (and its Client Alert hook) always runs on the freshest
+#      pump price the same day ANP publishes.
+#   3) SCHEDULED FALLBACK: daily 15:00 UTC (12:00 BRT) — strictly AFTER the
+#      anp_lpc scrape (14:30 UTC) — backstops the workflow_run path if it is ever
+#      skipped, and still picks up fresh Monday producer prices / CEPEA.
+#   4) Routine recompute is BOUNDED to a recent ISO-week window (default last 12
+#      weeks) so each run finishes in seconds; full-timeline recompute is a
+#      manual workflow_dispatch input only (full_backfill).
+#
+# Other ANP price ETLs that feed this: etl_anp_precos.yml (Mon 12:00 UTC),
+# etl_anp_precos_distribuicao.yml (Tue 14:30 UTC).
 #
 # Secrets used (already registered): SUPABASE_URL, SUPABASE_SERVICE_KEY.
 
 on:
+  # PRIMARY: run right after the daily ANP LPC scrape succeeds, so margins are
+  # always recomputed on the freshest pump price and the alert fires same-day.
+  workflow_run:
+    workflows: ["ANP LPC — Sync (preços semanais de combustíveis)"]
+    types: [completed]
+  # FALLBACK: daily 15:00 UTC (12:00 BRT) — AFTER etl_anp_lpc.yml's 14:30 UTC
+  # scrape. Backstops the workflow_run path if it is ever skipped.
   schedule:
-    - cron: '0 15 * * 2'   # weekly Tuesday 15:00 UTC (12:00 BRT)
+    - cron: '0 15 * * *'   # daily 15:00 UTC (12:00 BRT)
   workflow_dispatch:        # manual trigger from the GitHub UI
+    inputs:
+      full_backfill:
+        description: 'Recompute the FULL timeline (slow). Leave false for the routine bounded window.'
+        type: boolean
+        default: false
+      week_start:
+        description: 'Optional explicit bounded-window start, unpadded ISO "W/YYYY" (e.g. 12/2026). Overrides the default 12-week lookback. Ignored if full_backfill=true.'
+        type: string
+        default: ''
 
 concurrency:
   group: etl-dg-margins
@@ -26,6 +58,12 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    # When triggered by workflow_run, only proceed if the upstream etl_anp_lpc.yml
+    # actually SUCCEEDED (workflow_run fires on every completion, incl. failure).
+    # schedule / workflow_dispatch always proceed.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v4
@@ -69,6 +107,15 @@ jobs:
       # succeeded, so a transient outage on one source does not skip a margins
       # refresh built on the other. The recompute is idempotent off the DB.
       #
+      # BOUNDED WINDOW (incident 2026-06-09): the routine path recomputes only a
+      # recent ISO-week window (default: current ISO week minus 12 weeks → today,
+      # p_week_end=NULL), which finishes in seconds and avoids the full-timeline
+      # DB-timeout cost. The start bound is computed dynamically (not hardcoded)
+      # in the unpadded "W/YYYY" format that recompute_dg_margins parses via
+      # to_date('IYYY-IW') — so it self-maintains and never ages into a gap.
+      # The FULL-timeline recompute (both params NULL) is reachable only via the
+      # manual workflow_dispatch input full_backfill=true (explicit backfill).
+      #
       # NOTE: the scrapers above use continue-on-error, so their `conclusion`
       # is forced to 'success' (the failure is tolerated). We therefore gate on
       # `.outcome`, which preserves the REAL result ('success'/'failure'). This
@@ -79,17 +126,45 @@ jobs:
         if: steps.cepea.outcome == 'success' || steps.producao.outcome == 'success'
         run: |
           python - <<'PY'
-          import os, sys
+          import os, datetime
           from supabase import create_client
+
           sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
-          # No bounds => recompute the full timeline (the function defaults both
-          # params to NULL, which it interprets as "all weeks").
-          res = sb.rpc("recompute_dg_margins", {}).execute()
-          print(f"recompute_dg_margins() -> {res.data!r}")
+
+          full_backfill = os.environ.get("FULL_BACKFILL", "false").lower() == "true"
+          week_start_override = os.environ.get("WEEK_START", "").strip()
+          LOOKBACK_WEEKS = 12
+
+          if full_backfill:
+              # Explicit manual backfill: recompute the entire timeline (both
+              # params NULL => "all weeks"). Slow — only on demand.
+              params = {}
+              print("recompute_dg_margins(): FULL TIMELINE backfill (manual)")
+          else:
+              # Routine bounded window. p_week_start = unpadded ISO "W/YYYY"
+              # (matches to_date('IYYY-IW') in the function); p_week_end = NULL
+              # so the window stays open-ended through the newest week.
+              if week_start_override:
+                  p_week_start = week_start_override
+                  print(f"recompute_dg_margins(): bounded window from explicit "
+                        f"week_start={p_week_start} -> NULL")
+              else:
+                  iso = (datetime.date.today()
+                         - datetime.timedelta(weeks=LOOKBACK_WEEKS)).isocalendar()
+                  # isocalendar() -> (iso_year, iso_week, iso_weekday)
+                  p_week_start = f"{iso[1]}/{iso[0]}"
+                  print(f"recompute_dg_margins(): bounded window last "
+                        f"{LOOKBACK_WEEKS} weeks -> p_week_start={p_week_start} -> NULL")
+              params = {"p_week_start": p_week_start, "p_week_end": None}
+
+          res = sb.rpc("recompute_dg_margins", params).execute()
+          print(f"recompute_dg_margins() -> rows written: {res.data!r}")
           PY
         env:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          FULL_BACKFILL:        ${{ github.event.inputs.full_backfill }}
+          WEEK_START:           ${{ github.event.inputs.week_start }}
 
       # ── Client Alerts hook — d_g_margins gained new data ───────────────────
       # Non-critical side-effect: never fail the data pipeline on a send error.
