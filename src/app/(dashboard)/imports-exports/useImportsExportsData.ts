@@ -1212,8 +1212,8 @@ export function useImportsExportsData(): UseImportsExportsData {
   //   Petrobras → Vibra → Ipiranga → Raízen → Atem → Royal FIC → Others
   //
   // Importers outside the canonical list that appear in the data are placed
-  // between Royal FIC and Others in alphabetical order, each receiving the
-  // next color in IMPORTER_RANK_COLORS. "Others" is always last.
+  // between Royal FIC and Others in alphabetical order. "Others" is always
+  // last. Colors come from COMPANY_COLORS via assignSeriesColors (see below).
   //
   // The server RPC already collapses everything outside its own top-10 into a
   // row labeled 'Others'. We:
@@ -1225,9 +1225,11 @@ export function useImportsExportsData(): UseImportsExportsData {
   //      rows AND the rank-≥7 (out-of-top-6) named rows per (ano, mes).
   //      No volume data is lost.
   //
-  // Colors are entity-bound (not rank-bound): Petrobras always gets rank-1
-  // color (#000), Vibra always gets rank-2 (#FF5000), etc., regardless of
-  // which period is selected. This keeps the legend visually stable.
+  // Colors are entity-bound (not rank-bound): each importer is assigned a
+  // stable color from COMPANY_COLORS via assignSeriesColors (uniqueness
+  // guaranteed; "Others" rendered last). Brand orange (#FF5000) is reserved
+  // for highlight only and is never pinned to a company. The legend stays
+  // visually stable regardless of which period is selected.
   const importersTop6Derivation = useMemo(() => {
     if (!importersData.length) {
       return {
