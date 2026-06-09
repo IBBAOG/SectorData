@@ -169,12 +169,16 @@ def _post_agg_retry(flow: str, year_from: int, year_to: int) -> tuple[list[dict]
     return [], http_ok
 
 
-def _live_aggregates(year_from: int, year_to: int) -> dict[tuple[str, int, int], dict]:
-    """Return ``{(flow, ano, mes): {"fob": float, "kg": float}}`` from the API.
+def _live_aggregates(year_from: int, year_to: int) -> tuple[dict[tuple[str, int, int], dict], set[str]]:
+    """Return ``({(flow, ano, mes): {"fob": float, "kg": float}}, empty_flows)``.
 
     One call per flow (full calendar-year span), summed across the 3 NCMs.
+    ``empty_flows`` is the set of flows whose live aggregate returned ZERO usable
+    rows across the entire window despite a 200 OK — the caller uses it to detect
+    the HTTP-200-empty anomaly (see ``main``).
     """
     agg: dict[tuple[str, int, int], dict] = {}
+    empty_flows: set[str] = set()
     flows = ("import", "export")
     for idx, flow in enumerate(flows):
         print(f"  API {flow} {year_from}-01 → {year_to}-12 (monthly aggregate)...",
@@ -198,9 +202,11 @@ def _live_aggregates(year_from: int, year_to: int) -> dict[tuple[str, int, int],
             cell["kg"]  += kg
             n += 1
         print(f"{n:,} ncm-month rows")
+        if n == 0:
+            empty_flows.add(flow)
         if idx < len(flows) - 1:
             time.sleep(sync._INTER_REQUEST_SLEEP)
-    return agg
+    return agg, empty_flows
 
 
 def _to_float(v) -> float:
@@ -291,6 +297,11 @@ def _gha_warning(msg: str) -> None:
     print(f"::warning::{msg}")
 
 
+def _gha_error(msg: str) -> None:
+    # Error annotation in the run log; safe no-op when not running under Actions.
+    print(f"::error::{msg}")
+
+
 def _gha_summary(lines: list[str]) -> None:
     path = os.environ.get("GITHUB_STEP_SUMMARY")
     if not path:
@@ -333,9 +344,31 @@ def main() -> None:
     sb = create_client(url, key)
 
     print("\nFetching live monthly aggregates (cheap, no country detail)...")
-    live = _live_aggregates(year_from, year_to)
+    live, empty_flows = _live_aggregates(year_from, year_to)
     print("Reading stored aggregates from mdic_comex...")
     stored = _stored_aggregates(sb, year_from)
+
+    # HTTP-200-empty guard (Pegadinha #12 class, comparator variant).
+    # If a flow's live aggregate returned ZERO rows across the entire window
+    # while stored HAS rows for that flow, treat it as a fetch anomaly — NOT as a
+    # -100% drift. Healing here would re-pull real months against a transiently
+    # empty source. Abort that flow's drift evaluation (and the whole run) instead
+    # of mass-flagging / healing-against-empty. A legitimately empty stored+live
+    # flow is fine — only the asymmetry (empty live, non-empty stored) is anomalous.
+    stored_flows = {flow for (flow, _ano, _mes) in stored}
+    anomalous_flows = sorted(f for f in empty_flows if f in stored_flows)
+    if anomalous_flows:
+        for flow in anomalous_flows:
+            msg = (f"live aggregate for {flow} returned ZERO rows across the "
+                   f"entire {args.meses}-month window while stored has data — "
+                   f"treating as a fetch anomaly (HTTP-200-empty), NOT drift. "
+                   f"Skipping drift detection/heal for {flow}.")
+            print(f"\n[ERROR] {msg}")
+            _gha_error(msg)
+        print("\n[FATAL] Empty-live + non-empty-stored asymmetry detected for "
+              f"flow(s): {', '.join(anomalous_flows)}. Aborting WITHOUT any heal "
+              "so a human can investigate the source. Exiting non-zero.")
+        sys.exit(1)
 
     drifts = _detect_drift(live, stored, window, tol_frac)
 
@@ -390,7 +423,6 @@ def main() -> None:
         months_to_heal = sorted(months_to_heal, reverse=True)[:cap]
 
     heal_ok = True
-    healed: set[str] = set()
     failed_legs: list[str] = []
     if args.dry_run:
         print("\n[dry-run] Skipping self-heal.")
@@ -404,10 +436,9 @@ def main() -> None:
             failed_legs = errors
             print(f"  [ERROR] {len(errors)} leg(s) failed to fetch: "
                   f"{', '.join(errors)}")
-        healed = {m for m in months_to_heal} if not errors else set()
 
     # Build the summary table now that we know what was healed.
-    healed_set = {m for m in months_to_heal} if (not args.dry_run and heal_ok) else set()
+    healed_set = set(months_to_heal) if (not args.dry_run and heal_ok) else set()
     for d in drifts:
         mstr = f"{d['ano']}-{d['mes']:02d}"
         if args.dry_run:
