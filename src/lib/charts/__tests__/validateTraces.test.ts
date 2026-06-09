@@ -181,6 +181,71 @@ describe("validateTraces — production auto-correction", () => {
   });
 });
 
+// ─── (e) validateTraces — unmigrated charts are NEVER mutated ────────────────────
+//
+// Regression guard (2026-06-09): the lock used to auto-correct colors + force
+// traceorder for ANY chart in production, repainting /price-bands' intentional
+// solid+dashed color families (e.g. "Import Parity" + "Import Parity w/ subsidy"
+// both #E8611A, distinguished only by dash style). Unmigrated charts — including
+// ctx === undefined (price-bands passes no ctx) — must be a strict no-op.
+
+describe("validateTraces — unmigrated charts never mutated", () => {
+  function solidDashedPair(): Partial<PlotData>[] {
+    // Mirrors /price-bands: two lines sharing one color, distinguished by dash.
+    return [
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Import Parity",
+        line: { color: "#E8611A" },
+      } as Partial<PlotData>,
+      {
+        type: "scatter",
+        mode: "lines",
+        name: "Import Parity w/ subsidy",
+        line: { color: "#E8611A", dash: "dash" },
+      } as unknown as Partial<PlotData>,
+    ];
+  }
+
+  it("keeps duplicate colors INTACT in production when ctx is undefined", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const data = solidDashedPair();
+    const result = validateTraces(data, {}); // ctx omitted, like /price-bands
+    const colors = result.data.map((t) => (t as { line?: { color?: string } }).line?.color);
+    expect(colors).toEqual(["#E8611A", "#E8611A"]); // no reassignment
+    expect(err).not.toHaveBeenCalled(); // no auto-correct error logged
+  });
+
+  it("keeps duplicate colors INTACT in production for an unmigrated ctx", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    const data = solidDashedPair();
+    const result = validateTraces(data, {}, UNMIGRATED);
+    const colors = result.data.map((t) => (t as { line?: { color?: string } }).line?.color);
+    expect(colors).toEqual(["#E8611A", "#E8611A"]);
+    expect(err).not.toHaveBeenCalled();
+  });
+
+  it("does NOT force legend.traceorder on an unmigrated stacked chart in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const data = [stacked("A", "#1D4080"), stacked("B", "#0F766E")];
+    const result = validateTraces(data, {}, UNMIGRATED); // no traceorder pinned
+    expect(result.layout.legend?.traceorder).toBeUndefined();
+  });
+
+  it("does NOT mutate (only warns) for an unmigrated stacked chart in dev", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const data = [stacked("A", "#1D4080"), stacked("B", "#0F766E")];
+    const result = validateTraces(data, {}, UNMIGRATED);
+    expect(result.layout.legend?.traceorder).toBeUndefined();
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
 // Sanity: the imports-exports charts are on the allowlist.
 describe("MIGRATED_CTX allowlist", () => {
   it("includes the by-importer chart", () => {

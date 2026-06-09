@@ -7,17 +7,32 @@
 //   B) A stacked chart whose legend order is inverted vs. the stack order
 //      (Plotly's stacked-legend default is traceorder:'reversed').
 //
+// SCOPE — the lock ONLY ever MUTATES charts on the migrated allowlist
+// (MIGRATED_CTX). Unmigrated charts (ctx absent, or not on the allowlist) are
+// a strict no-op in EVERY environment: their colors and legend.traceorder are
+// returned exactly as the caller passed them. This matters because unmigrated
+// dashboards can LEGITIMATELY repeat a color — e.g. /price-bands draws
+// solid+dashed families ("Import Parity" + "Import Parity w/ subsidy") sharing
+// one color, distinguished only by dash style. Auto-repainting those broke the
+// chart in production (2026-06-09 regression). A chart must be explicitly
+// migrated to the central color assigner before the lock is allowed to touch
+// it.
+//
 // Behavior:
-//   - dev / CI  (NODE_ENV !== 'production'): for charts on the migrated
-//     allowlist, THROW with a precise message (fails the build/test). Charts
-//     NOT yet on the allowlist only console.warn (so the rest of the app keeps
-//     building during the gradual rollout).
-//   - production: NEVER throws. It auto-corrects (re-assigns the colliding
-//     color to the next free palette color; forces legend.traceorder:'normal')
-//     and console.error's so the end user's chart never breaks.
+//   - migrated ctx (enforce === true):
+//       · dev / CI (NODE_ENV !== 'production'): THROW with a precise message
+//         (fails the build/test) on a violation.
+//       · production: NEVER throws. Auto-corrects (re-assigns the colliding
+//         color to the next free palette color; forces legend.traceorder:
+//         'normal') and console.error's so the end user's chart never breaks.
+//   - unmigrated ctx (enforce === false, incl. ctx undefined):
+//       · NEVER mutates color or traceorder, in ANY environment.
+//       · dev / CI only: a purely informational console.warn on a detected
+//         issue (no mutation).
+//       · production: silent, no mutation.
 //
 // As dashboards are migrated to the central color assigner, add their ctx
-// strings to MIGRATED_CTX to opt them into dev-throw enforcement.
+// strings to MIGRATED_CTX to opt them into enforcement (dev-throw / prod-fix).
 
 import { PALETTE } from "@/lib/plotlyDefaults";
 import type { Layout, PlotData } from "plotly.js";
@@ -124,8 +139,18 @@ export function validateTraces(
       const msg =
         `[validateTraces] color collision in ${label}: ` +
         `"${name}" and "${firstName}" both render with ${color}.`;
-      if (prod) {
-        // Auto-correct: re-assign the colliding trace to the next free color.
+      if (!enforce) {
+        // Unmigrated chart — NEVER mutate. Unmigrated dashboards may repeat a
+        // color on purpose (e.g. /price-bands solid+dashed families). Only an
+        // informational warn in dev; silent in production.
+        if (!prod) {
+          console.warn(`${msg} (chart not yet migrated — not enforced, no change)`);
+        }
+        // Keep the color owned so we don't warn again for the same color.
+        used.add(color);
+      } else if (prod) {
+        // Migrated chart in production — auto-correct: re-assign the colliding
+        // trace to the next free palette color.
         const replacement = nextFreeColor(used);
         if (replacement) {
           setTraceColor(t, replacement);
@@ -134,10 +159,9 @@ export function validateTraces(
         } else {
           console.error(`${msg} No free palette color left to auto-correct.`);
         }
-      } else if (enforce) {
-        throw new Error(msg);
       } else {
-        console.warn(`${msg} (chart not yet migrated — not enforced)`);
+        // Migrated chart in dev / CI — fail loud.
+        throw new Error(msg);
       }
     } else {
       used.add(color);
@@ -156,16 +180,19 @@ export function validateTraces(
       const msg =
         `[validateTraces] stacked chart ${label} does not pin ` +
         `legend.traceorder — legend may read inverted vs. the stack.`;
-      if (prod) {
+      if (!enforce) {
+        // Unmigrated chart — NEVER force traceorder. Warn only in dev.
+        if (!prod) {
+          console.warn(`${msg} (chart not yet migrated — not enforced, no change)`);
+        }
+      } else if (prod) {
         outLayout = {
           ...outLayout,
           legend: { ...(outLayout.legend ?? {}), traceorder: "normal" },
         };
         console.error(`${msg} Auto-corrected to 'normal'.`);
-      } else if (enforce) {
-        throw new Error(msg);
       } else {
-        console.warn(`${msg} (chart not yet migrated — not enforced)`);
+        throw new Error(msg);
       }
     }
   }
