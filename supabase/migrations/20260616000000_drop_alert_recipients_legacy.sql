@@ -1,0 +1,30 @@
+-- 20260616000000_drop_alert_recipients_legacy.sql
+--
+-- Drop the legacy `public.alert_recipients` table.
+--
+-- WHY
+-- ----
+-- `alert_recipients` was the global recipient list for the LEGACY, local-only
+-- alert subsystem (`alertas/notificador.py`). That subsystem has been retired:
+-- its workflow `alertas_monitor.yml` is disabled, and a repo-wide grep confirms
+-- the table's ONLY reader was `alertas/notificador.py` (gitignored, retired, and
+-- which already carries a hardcoded fallback recipient email).
+--
+-- The current Client Alerts product (`scripts/client_alerts/`, table
+-- `alert_subscriptions` + RPCs `admin_alerts_*` / `set_my_subscription`) does NOT
+-- reference `alert_recipients`. The `/admin-panel` "Alert Emails" tab that fronted
+-- this table is being removed in parallel.
+--
+-- HISTORY (context only — not reverted here)
+--   20260507000006_create_alert_recipients.sql            (create)
+--   20260507202001_fix_alert_recipients_rls_recursion.sql (RLS recursion fix)
+--   20260512000000_data_input_admin_policies.sql          (mentions)
+--   20260608000000_alerts_rebuild_drop_old_product.sql    (intentionally PRESERVED it then)
+--
+-- SAFETY
+-- ------
+-- Validated before drop: 0 foreign keys from live tables reference this table.
+-- CASCADE removes the table's RLS policy and grants together; no manual policy
+-- drop is required.
+
+DROP TABLE IF EXISTS public.alert_recipients CASCADE;

@@ -11,15 +11,14 @@
 //   • Members           — list all users; promote/demote Admin ↔ Client
 //   • Permissions       — three-column visibility per module:
 //                         Public (anon), Clients (logged-in), Home (gallery card)
-//   • Alert Emails      — manage automatic notification recipients
+//   • Alerts            — admin console for the logged-in Client Alerts product
 //   • Default Keywords  — manage default News Hunter keywords for anonymous visitors
 //   • Data Input        — edit reference tables (desktop-only editor)
 //
 // RPCs touched: get_module_visibility (via UserProfileContext), set_module_visibility,
 // set_module_home_visibility, set_module_public_visibility, get_all_users_with_roles,
 // set_user_role, admin_list_default_news_keywords, admin_add_default_news_keyword,
-// admin_remove_default_news_keyword.
-// Plus direct PostgREST on alert_recipients.
+// admin_remove_default_news_keyword, admin_alerts_* (Client Alerts console).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -504,7 +503,6 @@ function deriveTableCompanies(d: SgTableDraft): string[] {
 export type SectionId =
   | "members"
   | "permissions"
-  | "alert-recipients"
   | "client-alerts"
   | "default-news"
   | "data-input"
@@ -521,7 +519,6 @@ export interface SectionMeta {
 export const SECTIONS: SectionMeta[] = [
   { id: "members",          label: "Members",               shortLabel: "Members",      description: "User roles & access" },
   { id: "permissions",      label: "Permissions",           shortLabel: "Access",       description: "Module visibility — Public, Clients, and Home" },
-  { id: "alert-recipients", label: "Alert Emails",          shortLabel: "Alert Emails", description: "Notification recipients" },
   { id: "client-alerts",    label: "Alerts",                shortLabel: "Alerts",       description: "Client email alerts — subscribers, sources, and delivery log" },
   { id: "default-news",     label: "Default News Keywords", shortLabel: "News Defaults", description: "Keywords used by anonymous News Hunter visitors" },
   { id: "data-input",       label: "Data Input",            shortLabel: "Tables",       description: "Edit reference tables" },
@@ -563,16 +560,6 @@ export const MODULE_LABELS: ModuleLabel[] = [
   // Tools
   { slug: "alerts",                  label: "Alerts",                       description: "Email notifications for new data publications — opt-in subscriber list" },
 ];
-
-// ── Alert recipient row shape ──────────────────────────────────────────────────
-
-export interface AlertRecipient {
-  id: string;
-  email: string;
-  is_active: boolean;
-  created_at: string;
-  added_by: string | null;
-}
 
 // ── Hook return shape ──────────────────────────────────────────────────────────
 
@@ -620,23 +607,6 @@ export interface UseAdminPanelData {
   savingUser: string | null;
   savedUser: string | null;
   handleRoleChange: (userId: string, newRole: "Admin" | "Client") => Promise<void>;
-
-  // Alert recipients
-  recipients: AlertRecipient[];
-  recipientsLoading: boolean;
-  recipientsError: string | null;
-  newEmail: string;
-  setNewEmail: (v: string) => void;
-  addingEmail: boolean;
-  addEmailError: string | null;
-  addEmailSuccess: boolean;
-  togglingId: string | null;
-  removingId: string | null;
-  confirmRemoveId: string | null;
-  setConfirmRemoveId: (id: string | null) => void;
-  handleAddRecipient: () => Promise<void>;
-  handleToggleRecipient: (id: string, currentActive: boolean) => Promise<void>;
-  handleRemoveRecipient: (id: string) => Promise<void>;
 
   // Client Alerts (the rebuilt client-alerts product — "Alerts" tab).
   // A read-mostly admin console: stats overview, the source catalog with an
@@ -1131,83 +1101,10 @@ export function useAdminPanelData(): UseAdminPanelData {
     [supabase, savingUser, myProfile?.id, users],
   );
 
-  // ── Alert Recipients ───────────────────────────────────────────────────────
-  const [recipients, setRecipients] = useState<AlertRecipient[]>([]);
-  const [recipientsLoading, setRecipientsLoading] = useState(false);
-  const [recipientsError, setRecipientsError] = useState<string | null>(null);
-  const [newEmail, setNewEmail] = useState("");
-  const [addingEmail, setAddingEmail] = useState(false);
-  const [addEmailError, setAddEmailError] = useState<string | null>(null);
-  const [addEmailSuccess, setAddEmailSuccess] = useState(false);
-  const [togglingId, setTogglingId] = useState<string | null>(null);
-  const [removingId, setRemovingId] = useState<string | null>(null);
-  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
-
-  const loadRecipients = useCallback(async () => {
-    if (!supabase) return;
-    setRecipientsLoading(true);
-    setRecipientsError(null);
-    const { data, error } = await supabase
-      .from("alert_recipients")
-      .select("*")
-      .order("created_at", { ascending: false });
-    if (error) setRecipientsError("Could not load recipients. Please try again.");
-    else setRecipients((data as AlertRecipient[]) ?? []);
-    setRecipientsLoading(false);
-  }, [supabase]);
-
-  useEffect(() => {
-    if (allowed && activeSection === "alert-recipients") loadRecipients();
-  }, [allowed, activeSection, loadRecipients]);
-
-  const handleAddRecipient = useCallback(async () => {
-    if (!supabase || addingEmail || !isValidEmail(newEmail)) return;
-    setAddingEmail(true);
-    setAddEmailError(null);
-    const { error } = await supabase.from("alert_recipients").insert({
-      email: newEmail.trim().toLowerCase(),
-      is_active: true,
-      added_by: myProfile?.id ?? null,
-    });
-    if (error) {
-      // Generic message — do NOT differentiate 23505 (email-enumeration fix F2.3)
-      setAddEmailError("Could not add recipient. Please verify the email and try again.");
-    } else {
-      setNewEmail("");
-      setAddEmailSuccess(true);
-      setTimeout(() => setAddEmailSuccess(false), 2000);
-      await loadRecipients();
-    }
-    setAddingEmail(false);
-  }, [supabase, addingEmail, newEmail, myProfile?.id, loadRecipients]);
-
-  const handleToggleRecipient = useCallback(
-    async (id: string, currentActive: boolean) => {
-      if (!supabase || togglingId) return;
-      setTogglingId(id);
-      await supabase.from("alert_recipients").update({ is_active: !currentActive }).eq("id", id);
-      await loadRecipients();
-      setTogglingId(null);
-    },
-    [supabase, togglingId, loadRecipients],
-  );
-
-  const handleRemoveRecipient = useCallback(
-    async (id: string) => {
-      if (!supabase || removingId) return;
-      setRemovingId(id);
-      await supabase.from("alert_recipients").delete().eq("id", id);
-      setConfirmRemoveId(null);
-      await loadRecipients();
-      setRemovingId(null);
-    },
-    [supabase, removingId, loadRecipients],
-  );
-
   // ── Client Alerts (the rebuilt client-alerts product — "Alerts" tab) ────────
   //
   // A read-mostly admin console over the new `admin_alerts_*` SECURITY DEFINER
-  // RPCs (NOT the legacy alert_recipients table above). Two fetch groups:
+  // RPCs (the logged-in self-service product). Two fetch groups:
   //   • Overview  — stats + the source catalog (admin_alerts_stats +
   //                 list_subscribable_bases), loaded together on first open.
   //   • Subscribers / Email log — loaded alongside, refreshable on demand.
@@ -2794,22 +2691,6 @@ export function useAdminPanelData(): UseAdminPanelData {
     savingUser,
     savedUser,
     handleRoleChange,
-
-    recipients,
-    recipientsLoading,
-    recipientsError,
-    newEmail,
-    setNewEmail,
-    addingEmail,
-    addEmailError,
-    addEmailSuccess,
-    togglingId,
-    removingId,
-    confirmRemoveId,
-    setConfirmRemoveId,
-    handleAddRecipient,
-    handleToggleRecipient,
-    handleRemoveRecipient,
 
     caStats,
     caBases,

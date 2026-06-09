@@ -106,36 +106,34 @@ admin-panel/
 ├── page.tsx               "use client" — useIsMobile → DesktopView | MobileView
 ├── useAdminPanelData.ts   Brain hook — RPCs, all state, all handlers,
 │                           SECTIONS & MODULE_LABELS metadata
-├── desktop/View.tsx       Desktop: sidebar (6 sections) + content panel
+├── desktop/View.tsx       Desktop: sidebar (sections from SECTIONS) + content panel
 └── mobile/View.tsx        Mobile: sticky horizontal pill row for sections +
                             search bar + MobileDataCard rows per item
 ```
 
 **Shared hook (`useAdminPanelData`):**
 - Owns `useRoleGuard("Admin")` invocation (MFA-aware) — both Views early-return `null` if not allowed
-- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `localPublicVis`, `users`/`localRoles`, `recipients`, plus all `saving*`/`saved*`/`*Error` flags
-- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handlePublicToggle`, `handleRoleChange`, `handleAddRecipient`, `handleToggleRecipient`, `handleRemoveRecipient`
+- Owns ALL state: `activeSection`, `localVis`, `localHomeVis`, `localPublicVis`, `users`/`localRoles`, the `ca*` Client-Alerts console state, plus all `saving*`/`saved*`/`*Error` flags. (The legacy `recipients`/`alert_recipients` state was removed 2026-06-09.)
+- Owns ALL handlers: `handleToggle`, `handleHomeToggle`, `handlePublicToggle`, `handleRoleChange`, plus the `handle*Ca*` Client-Alerts handlers. (The legacy `handleAddRecipient`/`handleToggleRecipient`/`handleRemoveRecipient` were removed 2026-06-09.)
 - Owns pure helpers `isValidEmail` and `formatDateBR`
 - Exports `SECTIONS` (id, label, shortLabel, description) and `MODULE_LABELS` (slug, label, description) as static module-level constants so both Views render the same catalog
 
-**Desktop view** — Dark left sidebar (220px wide, 6 buttons + Analytics link), white content panel with section header + module-specific cards.
+**Desktop view** — Dark left sidebar (220px wide, one button per `SECTIONS` entry + Analytics link), white content panel with section header + module-specific cards.
 
 **Mobile view** — list-based archetype:
 - `MobileTopBar` with "Admin" pill + "Admin Panel" title + avatar (initials)
-- Sticky horizontal scroll of section pills (Members / Access / Alert Emails / Alerts / News Defaults / Tables) — pill row needed because 6 tabs don't fit in `MobileTabBar` container variant
-- Per-section search bar (placeholder adapts: "Search by name, email, or role" / "Search modules" / "Search recipients")
+- Sticky horizontal scroll of section pills (Members / Access / Alerts / News Defaults / Tables / …) — pill row needed because the tabs don't fit in the `MobileTabBar` container variant
+- Per-section search bar (placeholder adapts: "Search by name, email, or role" / "Search modules")
 - **Members**: `MobileDataCard` per user with avatar, name+email, role pill. Tapping the row opens a `BottomSheet` with the Admin/Client picker.
 - **Permissions**: one article per module with title+description, then three stacked toggle rows — Public / Clients / Home. All three visibility axes are in the same card (consolidated 2026-05-26).
-- **Alert Emails**: Add form (input + button, 44px min-height for touch), then `MobileDataCard` per recipient with status pill + Enable/Disable button. Removing opens a `BottomSheet` with a confirm prompt (replaces the inline "Are you sure?" pattern from desktop, which doesn't fit on a 320px row).
 - **Data Input**: shows a desktop-only notice because `EditableTableEditor` needs a wide layout.
+
+> The legacy **Alert Emails** mobile section (Add-form + per-recipient `MobileDataCard` + `BottomSheet` remove-confirm) was removed alongside the desktop section on 2026-06-09 — see the section-list note above.
 
 **Divergence from desktop** (`[mobile-only]` deltas):
 - The desktop's Analytics sidebar link is omitted on mobile — navigation to `/admin-analytics` happens through `/home`.
-- Inline "Are you sure?" confirm for recipient removal becomes a `BottomSheet` with explicit Cancel/Remove buttons.
-- Recipient row's primary action (tap whole row) is "remove" (opens confirm sheet); secondary action (button) is "Disable/Enable". On desktop both are inline buttons.
 - `Data Input` section shows a placeholder explaining desktop-only; the embedded `EditableTableEditor` is not rendered on mobile.
 - Per-section search filter is mobile-only (desktop has no search; the sidebar's narrow nav makes it unnecessary).
-- The original Portuguese string `"Remover"` in the recipients list was corrected to `"Remove"` in BOTH views (English-only policy).
 
 ### Wave 5 — `/profile` (completed 2026-05-20)
 
@@ -293,7 +291,7 @@ Protegida por `useRoleGuard("Admin")`. Funcionalidades (6 seções na sidebar):
   - Admin always has access regardless of these flags.
   - Desktop layout: 4-column grid — Module | Public | Clients | Home.
   - Mobile layout: one article per module with three stacked toggle rows (Public / Clients / Home).
-- **Alert Emails** — gerenciar destinatários de alertas automáticos (legado local).
+- ~~**Alert Emails**~~ — **removida em 2026-06-09**. Era vestígio do subsistema de alertas LEGADO/local-only (`alertas/notificador.py`, aposentado), lia a tabela `alert_recipients` (já DROPADA em prod, migration `20260616000000`). A UI + lógica (`AlertRecipient`, `loadRecipients`, `handleAddRecipient`/`handleToggleRecipient`/`handleRemoveRecipient`, states `recipients`/`newEmail`/etc.) foram removidas de `desktop/View.tsx` + `useAdminPanelData.ts`. O produto de Alerts vigente é o logged-in self-service (`/alerts` + a aba admin **"Alerts"** abaixo), cuja tabela é `alert_subscriptions` — NÃO `alert_recipients`.
 - **Alerts** — Alerts Product management (cloud, multi-recipient). 5 sub-sections:
   - **Subscriber Stats** — total/active/unconfirmed counts, bounce/complaint rates (7d), per-source active count.
   - **Subscribers** — full subscriber table with source filter and Force Unsubscribe action.
@@ -399,7 +397,7 @@ Workflow disparado pelo Subgerente APP quando ele cria um dashboard novo:
 
 ## Alerts Product — section "alerts-product" (added 2026-05-25)
 
-This section manages the cloud multi-recipient Alerts Product (`worker_alerts-product` domain). It is entirely separate from the legacy Alert Emails section (`alert_recipients` table) which manages local one-off notifications.
+This section manages the cloud multi-recipient Alerts Product (`worker_alerts-product` domain). The legacy **Alert Emails** section (over the `alert_recipients` table) it once coexisted with was removed on 2026-06-09 (table DROPPED in prod via migration `20260616000000`); this is now the only Alerts admin surface.
 
 ### Sub-sections
 
@@ -823,7 +821,9 @@ After the Imports & Exports reform (`24dd2aa1`), three stale references to the r
 - `EditableTableEditor.tsx` — `handleSave` now re-validates all drafts and edited rows from current committed state before calling `saveChanges`.
 - `persistence.ts` — `saveChanges` now (a) coerces number strings to JS numbers for PostgREST, and (b) short-circuits with a clear error if any required column in a draft is null/undefined, blocking the Postgres call entirely.
 
-## Security — Email Enumeration (F2.3, 2026-05-14)
+## Security — Email Enumeration (F2.3, 2026-05-14) — _historical; surface removed 2026-06-09_
+
+> **Obsolete:** the **Alert Emails** form this hardening applied to was removed on 2026-06-09 (legacy `alert_recipients` table DROPPED in prod). Kept for the historical record only. The enumeration-resistant generic-error pattern is now applied to the surviving email-entry surfaces (Client Alerts test-event, login, forgot-password).
 
 `handleAddRecipient` in `admin-panel/page.tsx` previously differentiated error `23505` (duplicate key) with the message "This email is already registered.", enabling an Admin-credential attacker to enumerate registered emails via the Alert Emails form.
 

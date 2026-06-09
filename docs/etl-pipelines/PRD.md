@@ -646,7 +646,7 @@ The legacy local-only Gmail monitor (`alertas/`, driven by `.github/workflows/al
 - Its 48h stale-canary is subsumed by the freshness guardian (per-source cadence-tuned thresholds, not a flat 48h).
 - Its `etl_workflow_stuck` pager was re-homed into `workflow_failure_monitor.yml` (above), against the live `IBBAOG/SectorData` repo with the current SMTP sender.
 
-**Recipient migration.** The 3 internal recipients (`monique.greco`, `eric.mello`, `eduardo.mendes` @itaubba.com) were migrated to the new Client Alerts product — each subscribed to the 7 ANP bases they previously got from the legacy monitor. Their `alert_recipients` rows were set `is_active=false` to stop the legacy path, so there are no more duplicate emails. Ops digests (freshness/failure) still go to `ALERTAS_DEST_EMAIL` (default `eduardo.mendes@itaubba.com`).
+**Recipient migration.** The 3 internal recipients (`monique.greco`, `eric.mello`, `eduardo.mendes` @itaubba.com) were migrated to the new Client Alerts product — each subscribed to the 7 ANP bases they previously got from the legacy monitor. The legacy delivery path is now gone entirely: the `alert_recipients` table was DROPPED in prod on 2026-06-09 (migration `20260616000000_drop_alert_recipients_legacy.sql`), along with the `/admin-panel` "Alert Emails" section. Ops digests (freshness/failure) still go to `ALERTAS_DEST_EMAIL` (default `eduardo.mendes@itaubba.com`).
 
 ### Scripts de backfill histórico (one-shot, rodar localmente)
 
