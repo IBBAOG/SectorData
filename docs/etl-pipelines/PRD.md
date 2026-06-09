@@ -765,7 +765,7 @@ output/
 
 ### Repo separado
 
-`IBBAOG/news-hunter-scanner` — News Hunter scanner. Roda via cron-job.org cada ~5min. Usa `SUPABASE_SERVICE_KEY` (bypass RLS). Keywords sourced da UNION de `news_hunter_keywords` (todos os usuários). Frontend (APP) faz polling em `news_articles` cada 60s incremental por `found_at`.
+`IBBAOG/news-hunter-scanner` — News Hunter scanner. Roda via cron-job.org cada ~5min. Usa `SUPABASE_SERVICE_KEY` (bypass RLS). Keywords sourced da UNION da lista default (`get_default_news_keywords_with_flags`) com `news_hunter_keywords` (per-user, todos os usuários). Matching contra título + RSS-summary com lede-rescue (PR #4, 2026-06-09) para near-misses de RSS. Frontend (APP) faz polling em `news_articles` cada 60s incremental por `found_at`. Detalhes: [`news-hunter-architecture.md`](news-hunter-architecture.md).
 
 ## Princípios
 
