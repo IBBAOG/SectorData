@@ -146,7 +146,7 @@ The RPC returns these values directly — frontend never derives or maps them.
 |---|---|---|
 | `anp_precos_produtores` | ~38k rows | `scripts/pipelines/anp/precos/02_precos_produtores_sync.py` (weekly Mon) |
 | `anp_precos_distribuicao` | ~50–100k rows | `scripts/pipelines/anp/precos_distribuicao_sync.py` (monthly 5th + weekly Tue) |
-| `anp_lpc` | ~30k rows | `scripts/pipelines/anp/lpc_sync.py` (weekly Wed) |
+| `anp_lpc` | ~30k rows | `scripts/pipelines/anp/lpc_sync.py` (daily 14:30 UTC since 2026-06-09; ANP publishes weekly on an unstable weekday, scrape is incremental + idempotent) |
 
 The 3 ETL pipelines are unchanged by the reform — they continue to populate their source tables. Only the consumer (frontend) was unified.
 
@@ -156,7 +156,7 @@ The 3 ETL pipelines are unchanged by the reform — they continue to populate th
 |---|---|---|
 | `etl_anp_precos.yml` | Mon 12:00 UTC | `precos/02_precos_produtores_sync.py` + `glp_sync.py` |
 | `etl_anp_precos_distribuicao.yml` | 5th of month + Tue 14:30 UTC | `precos_distribuicao_sync.py` |
-| `etl_anp_lpc.yml` | Wed 14:30 UTC | `lpc_sync.py` (engine `calamine` for XLSX) |
+| `etl_anp_lpc.yml` | Daily 14:30 UTC (was weekly Wed until 2026-06-09) | `lpc_sync.py` (engine `calamine` for XLSX) |
 
 ## Charts (1)
 

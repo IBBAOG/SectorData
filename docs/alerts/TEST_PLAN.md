@@ -87,7 +87,7 @@ Legend — Cadence: I = immediate, D = digest. "What advances the period" = what
 | 15 | vessel_positions | D | timestamp | new `MAX(ts)` | etl_navios_positions + etl_ais_positions | ✅ CI |
 | 16 | port_arrivals | D | timestamp | new `MAX(detected_at)` | etl_navios_positions + etl_ais_positions | ✅ CI |
 | 17 | import_candidates | D | timestamp | new `MAX(last_seen_at)` | etl_ais_candidates | ✅ CI |
-| 18 | d_g_margins | I | iso_week | new `MAX(to_date(week))` | `etl_dg_margins.yml` (weekly Tue 15:00 UTC + dispatch; runs CEPEA + ANP production scrapers → `recompute_dg_margins`) | ✅ CI — computed; alerts fire at end of `etl_dg_margins` (manual upload + admin Data Input retired 2026-06-05) |
+| 18 | d_g_margins | I | iso_week | new `MAX(to_date(week))` | `etl_dg_margins.yml` (`workflow_run` after a successful `etl_anp_lpc.yml` + daily 15:00 UTC fallback + dispatch since 2026-06-09; runs CEPEA + ANP production scrapers → `recompute_dg_margins`, bounded to the last ~12 ISO weeks) | ✅ CI — computed; alerts fire at end of `etl_dg_margins` (manual upload + admin Data Input retired 2026-06-05) |
 | 19 | **price_bands** | I | date | new `MAX(date)` | **admin Data Input (PostgREST upsert); no CI workflow** | ❌ **NO alert trigger on the write path — the reported bug** |
 | 20 | anp_subsidy_diesel_reference | I | date | new `MAX(data_referencia)` | etl_anp_subsidy_diesel | ✅ CI |
 | 21 | anp_subsidy_commercialization | I | date | new `MAX(data_inicio)` | etl_anp_subsidy_diesel | ✅ CI |

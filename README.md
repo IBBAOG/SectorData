@@ -164,10 +164,10 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 6 | `etl_anp_cdp.yml` | Monthly cron + external dispatch every ~2h | `anp_cdp_producao` (Selenium + ddddocr CAPTCHA) |
 | 7 | `etl_anp_vendas.yml` | External cron-job.org dispatch | `vendas` |
 | 8 | `etl_anp_fase3.yml` | Monthly 1st 13:00 UTC | `anp_daie`, `anp_desembaracos` (importador/cnpj/uf_cnpj preserved) |
-| 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `anp_lpc` |
+| 9 | `etl_anp_lpc.yml` | Daily 14:30 UTC | `anp_lpc` (ANP publishes the weekly LPC survey on an unstable weekday — daily scrape is idempotent + incremental, ingests the new week within ~24h) |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
 | 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC + Weekly Sun 06:00 UTC (12-month revision sweep) | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
-| 12 | `etl_dg_margins.yml` | Weekly Tue 15:00 UTC + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` |
+| 12 | `etl_dg_margins.yml` | `workflow_run` after a successful `etl_anp_lpc.yml` (primary) + daily 15:00 UTC fallback + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` bounded to the last ~12 ISO weeks (full-timeline backfill is `workflow_dispatch full_backfill=true` only) |
 | 13 | `supabase_deploy.yml` | On push to main | migrations (`supabase db push`) |
 | 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th + Weekly Tue | `anp_precos_distribuicao` |
 | 15 | `etl_anp_cdp_diaria.yml` | 3×/day | `anp_cdp_diaria{_instalacao,_poco}` (Power BI public API) |
