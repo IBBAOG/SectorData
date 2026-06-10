@@ -88,9 +88,9 @@ export default function P78CoverageNotice({
             fontSize:     isMobile ? 13 : 14,
           }}
         >
-          Data coverage notice — FPSO P-78 not yet in ANP&apos;s daily panel
+          FPSO P-78 not yet in ANP&apos;s daily panel
         </div>
-        ANP&apos;s daily panel does not yet include FPSO P-78 (Búzios) — its two
+        ANP&apos;s daily panel does not yet include FPSO P-78 (Búzios). Its two
         producer wells (~87 kbpd gross in Apr-2026, ramping up) are absent at
         every level, so daily figures here understate Búzios and Petrobras net
         production by roughly 85–90 kbpd. Monthly data on{" "}
@@ -100,8 +100,7 @@ export default function P78CoverageNotice({
         >
           Brazil Production Summary
         </Link>{" "}
-        already includes P-78; the full history here backfills automatically the
-        moment ANP adds it.
+        already includes P-78.
       </div>
     </div>
   );
