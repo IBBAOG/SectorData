@@ -4612,7 +4612,7 @@ const GRID_OUTPUT_MODES = [
  *   • more than 3 valid axes → the excess is dropped (keep the first 3);
  *   • zero valid axes → null (the table then falls back to the static matrix).
  *
- * `outputs` is a 1..6-entry array of `{key, mode, label}` (mode ∈ the
+ * `outputs` is a 1..12-entry array of `{key, mode, label}` (mode ∈ the
  * value-mode enum). A LEGACY single-output block (`output:"target_price"` and no
  * `outputs`) maps to `[{key:'target_price', mode:'upside', label:'Target price'}]`.
  */
@@ -4671,7 +4671,7 @@ function mapGridBlock(raw: unknown): SensitivityGridBlock | null {
         : "upside";
       seenOut.add(key);
       outputs.push({ key, mode, label: String(o.label ?? key) });
-      if (outputs.length === 6) break;
+      if (outputs.length === 12) break;
     }
   }
   if (outputs.length === 0) {

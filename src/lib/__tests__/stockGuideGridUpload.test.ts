@@ -232,6 +232,62 @@ describe("parseScenarioGridWorkbook — non-numeric coordinate + empty book", ()
   });
 });
 
+// ── Per-output YEAR (base_year effective keys) ──────────────────────────────────
+
+const GRID_YEARED: SensitivityGridBlock = {
+  axes: [
+    { driver_key: "avg_brent_2026", label: "Brent (avg 2026)", unit: "USD/bbl" },
+    { driver_key: "avg_brent_2027", label: "Brent (avg 2027)", unit: "USD/bbl" },
+  ],
+  // Effective keys carry a year suffix — sheet names must match these verbatim.
+  outputs: [
+    { key: "fcfe_2026", mode: "yield", label: "FCFE yield 2026" },
+    { key: "fcfe_2027", mode: "yield", label: "FCFE yield 2027" },
+  ],
+};
+
+describe("parseScenarioGridWorkbook — per-output year (base_year keys)", () => {
+  it("matches sheets by the effective base_year key and keys byMetric on it", () => {
+    const wb = new ExcelJS.Workbook();
+    const tickers = ["PETR4", "PRIO3"];
+    addSheet(
+      wb,
+      "fcfe_2026",
+      ["Brent (avg 2026)", "Brent (avg 2027)", ...tickers],
+      mesh2x2Rows(tickers, (x) => x * 10),
+    );
+    addSheet(
+      wb,
+      "fcfe_2027",
+      ["Brent (avg 2026)", "Brent (avg 2027)", ...tickers],
+      mesh2x2Rows(tickers, (x) => x * 11),
+    );
+
+    const res = parseScenarioGridWorkbook(wb, GRID_YEARED);
+    expect(res.errors).toEqual([]);
+    // 2 metrics × 2 tickers × 4 scenarios = 16 points; metric = the effective key.
+    expect(res.rows).toHaveLength(16);
+    expect(res.summary.byMetric).toEqual({ fcfe_2026: 8, fcfe_2027: 8 });
+    expect(res.rows.every((r) => r.metric === "fcfe_2026" || r.metric === "fcfe_2027")).toBe(true);
+  });
+
+  it("warns citing the effective base_year key when its sheet is absent", () => {
+    const wb = new ExcelJS.Workbook();
+    const tickers = ["PETR4"];
+    addSheet(
+      wb,
+      "fcfe_2026",
+      ["Brent (avg 2026)", "Brent (avg 2027)", ...tickers],
+      mesh2x2Rows(tickers, (x) => x * 10),
+    );
+    // fcfe_2027 configured but missing → warning must name the effective key.
+    const res = parseScenarioGridWorkbook(wb, GRID_YEARED);
+    expect(res.warnings.some((w) => /Output "fcfe_2027".*ABSENT/.test(w))).toBe(true);
+    expect(res.rows).toHaveLength(4);
+    expect(res.errors).toEqual([]);
+  });
+});
+
 describe("chunkUploadRows", () => {
   it("marks only the first chunk firstChunk=true", () => {
     const rows = Array.from({ length: 5 }, (_, i) => ({

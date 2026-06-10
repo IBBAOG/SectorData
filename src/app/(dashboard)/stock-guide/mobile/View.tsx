@@ -1034,7 +1034,7 @@ function MobileGridPanel({
             <span style={{ flex: 1, minWidth: 96 }}>Company</span>
             {model.outputs.map((o) => {
               const cols = [
-                <span key={o.key} style={{ width: 78, textAlign: "right" }}>
+                <span key={o.key} style={{ width: 78, textAlign: "right", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {o.label}
                 </span>,
               ];

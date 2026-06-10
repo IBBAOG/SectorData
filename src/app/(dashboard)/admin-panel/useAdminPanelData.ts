@@ -327,23 +327,86 @@ export interface SgGridAxisDraft {
   tstep: string;
 }
 
-/** One configured output (metric) of the scenario grid — a checkbox in the editor. */
+/**
+ * One configured output (metric) of the scenario grid — a row in the output-list
+ * editor. The effective storage / worksheet key is `${base}_${year}` when `year`
+ * is set (e.g. `fcfe_2026`), else just `base`. `base` selects the metric from
+ * `SG_GRID_BASE_CATALOG` (which fixes the value-mode); `year` is an optional 4-digit
+ * forward-year qualifier. `mode` mirrors the base metric's value-mode and `label`
+ * is the auto-generated display column header (e.g. "FCFE yield 2026").
+ */
 export interface SgGridOutputDraft {
-  /** The `metric` key in `stock_guide_scenario_grid` (e.g. 'target_price', 'fcfe'). */
-  key: string;
-  /** How the interpolated value is displayed (value-mode math). */
+  /** Base metric key (one of `SG_GRID_BASE_CATALOG`, e.g. 'target_price', 'fcfe'). */
+  base: string;
+  /** Optional 4-digit forward year ("" = none → key has no suffix). */
+  year: string;
+  /** How the interpolated value is displayed (value-mode math; derived from `base`). */
   mode: SgValueMode;
-  /** Column label (e.g. "Target price", "FCFE yield"). */
+  /** Auto-generated display column label (e.g. "FCFE yield 2026"). */
   label: string;
 }
 
-/** The 4 supported scenario-grid outputs (checkbox catalog in the admin editor). */
-export const SG_GRID_OUTPUT_CATALOG: SgGridOutputDraft[] = [
-  { key: "target_price", mode: "upside", label: "Target price" },
-  { key: "fcfe", mode: "yield", label: "FCFE yield" },
-  { key: "dividends", mode: "yield", label: "Div yield" },
-  { key: "net_income", mode: "pe", label: "P/E" },
+/** One base metric the scenario grid can output (dropdown catalog in the editor). */
+export interface SgGridBaseMetric {
+  /** Base metric key (the un-yeared storage key, e.g. 'target_price'). */
+  base: string;
+  /** Value-mode math applied to the interpolated value. */
+  mode: SgValueMode;
+  /** Base display label (e.g. "FCFE yield"); the year is appended when set. */
+  label: string;
+}
+
+/** The 4 base metrics a scenario-grid output can use (dropdown in the admin editor). */
+export const SG_GRID_BASE_CATALOG: SgGridBaseMetric[] = [
+  { base: "target_price", mode: "upside", label: "Target price" },
+  { base: "fcfe", mode: "yield", label: "FCFE yield" },
+  { base: "dividends", mode: "yield", label: "Div yield" },
+  { base: "net_income", mode: "pe", label: "P/E" },
 ];
+
+/** Effective storage / worksheet key for an output draft: `base_year` or `base`. */
+export function sgGridOutputKey(o: { base: string; year: string }): string {
+  const base = o.base.trim();
+  const year = o.year.trim();
+  return year ? `${base}_${year}` : base;
+}
+
+/** Auto-generated display label for an output draft: "<base label> <year>". */
+export function sgGridOutputLabel(o: { base: string; year: string }): string {
+  const meta = SG_GRID_BASE_CATALOG.find((m) => m.base === o.base.trim());
+  const baseLabel = meta?.label ?? o.base.trim();
+  const year = o.year.trim();
+  return year ? `${baseLabel} ${year}` : baseLabel;
+}
+
+/** A pristine output row (defaults to the first base metric, no year). */
+function blankGridOutput(): SgGridOutputDraft {
+  const m = SG_GRID_BASE_CATALOG[0];
+  return { base: m.base, year: "", mode: m.mode, label: m.label };
+}
+
+/**
+ * Split an effective storage key into `(base, year)`. A trailing `_<4digits>`
+ * suffix whose stem is a known base metric → that base + year; otherwise the whole
+ * key is treated as the base and year is "" (legacy / un-yeared keys round-trip
+ * unchanged).
+ */
+export function sgGridSplitKey(key: string): { base: string; year: string } {
+  const k = (key ?? "").trim();
+  const m = /^(.+)_(\d{4})$/.exec(k);
+  if (m && SG_GRID_BASE_CATALOG.some((c) => c.base === m[1])) {
+    return { base: m[1], year: m[2] };
+  }
+  return { base: k, year: "" };
+}
+
+/**
+ * The legacy catalog name kept for callers that still want the un-yeared default
+ * output rows. Mirrors `SG_GRID_BASE_CATALOG` as full output drafts (year="").
+ */
+export const SG_GRID_OUTPUT_CATALOG: SgGridOutputDraft[] = SG_GRID_BASE_CATALOG.map(
+  (m) => ({ base: m.base, year: "", mode: m.mode, label: m.label }),
+);
 
 /**
  * Editable mirror of the SCENARIO-GRID `definition.grid` block — the CASE only
@@ -426,7 +489,7 @@ function blankGridAxis(): SgGridAxisDraft {
 function blankGridDraft(): SgGridDraft {
   return {
     axes: [blankGridAxis()],
-    outputs: [{ ...SG_GRID_OUTPUT_CATALOG[0] }],
+    outputs: [blankGridOutput()],
   };
 }
 
@@ -467,11 +530,19 @@ function gridToDraft(
       tstep: a.tstep != null ? String(a.tstep) : "10",
     }));
   const outputs: SgGridOutputDraft[] = (g.outputs ?? [])
-    .map((o) => ({ key: o.key, mode: o.mode as SgValueMode, label: o.label || o.key }))
-    .filter((o) => o.key);
+    .filter((o) => (o.key ?? "").trim())
+    .map((o) => {
+      const { base, year } = sgGridSplitKey(o.key);
+      return {
+        base,
+        year,
+        mode: o.mode as SgValueMode,
+        label: o.label || sgGridOutputLabel({ base, year }),
+      };
+    });
   return {
     axes: axes.length > 0 ? axes : blankGridDraft().axes,
-    outputs: outputs.length > 0 ? outputs : [{ ...SG_GRID_OUTPUT_CATALOG[0] }],
+    outputs: outputs.length > 0 ? outputs : [blankGridOutput()],
   };
 }
 
@@ -499,11 +570,23 @@ function sgDraftToGridBlock(g: SgGridDraft): SensitivityGridBlock {
       if (tstep != null) block.tstep = tstep;
       return block;
     }),
-    outputs: g.outputs.map((o) => ({
-      key: o.key.trim(),
-      mode: o.mode,
-      label: o.label.trim() || o.key.trim(),
-    })),
+    outputs: g.outputs.map((o) => {
+      const key = sgGridOutputKey(o);
+      const base = o.base.trim();
+      const year = o.year.trim();
+      const out: SensitivityGridBlock["outputs"][number] & {
+        base?: string;
+        year?: string;
+      } = {
+        key,
+        mode: o.mode,
+        label: o.label.trim() || sgGridOutputLabel(o),
+      };
+      // Informative extras (parsers ignore unknown keys); helps a human reader.
+      if (base) out.base = base;
+      if (year) out.year = year;
+      return out;
+    }),
   };
 }
 
@@ -979,12 +1062,18 @@ export interface UseAdminPanelData {
   sgGridDriverCatalog: DriverCatalogEntry[];
   /** The full drivers registry (any driver can be an axis). */
   sgGridDrivers: StockGuideDriver[];
-  /** The 4 selectable output metrics (checkbox catalog). */
-  sgGridOutputCatalog: SgGridOutputDraft[];
+  /** The 4 base metrics an output row can use (dropdown catalog). */
+  sgGridBaseCatalog: SgGridBaseMetric[];
   /** Toggle SCENARIO-GRID mode for the current draft. */
   handleToggleSgGrid: (on: boolean) => void;
-  /** Toggle one output metric on/off (≥1 must stay on). */
-  handleToggleSgGridOutput: (key: string) => void;
+  /** Append a new output row (capped at 12). */
+  handleAddSgGridOutput: () => void;
+  /** Remove one output row by index (≥1 must stay). */
+  handleRemoveSgGridOutput: (idx: number) => void;
+  /** Change the base metric of one output row (re-syncs mode + label). */
+  handleChangeSgGridOutputBase: (idx: number, base: string) => void;
+  /** Change the optional 4-digit year of one output row (re-syncs label). */
+  handleChangeSgGridOutputYear: (idx: number, year: string) => void;
   /** Add a new axis to the grid (capped at 3). */
   handleAddSgGridAxis: () => void;
   /** Remove an axis from the grid (floor 1). */
@@ -2369,23 +2458,50 @@ export function useAdminPanelData(): UseAdminPanelData {
     });
   }, []);
 
-  /** Toggle one output metric on/off (≥1 must stay on). */
-  const handleToggleSgGridOutput = useCallback((key: string) => {
+  /** Append a new output row (capped at 12) — defaults to the first base metric. */
+  const handleAddSgGridOutput = useCallback(() => {
+    setSgTableDraft((d) => {
+      if (!d || d.gridDef.outputs.length >= 12) return d;
+      return {
+        ...d,
+        gridDef: { ...d.gridDef, outputs: [...d.gridDef.outputs, blankGridOutput()] },
+      };
+    });
+  }, []);
+
+  /** Remove one output row by index (≥1 must stay). */
+  const handleRemoveSgGridOutput = useCallback((idx: number) => {
+    setSgTableDraft((d) => {
+      if (!d || d.gridDef.outputs.length <= 1) return d;
+      const outputs = d.gridDef.outputs.filter((_, i) => i !== idx);
+      return { ...d, gridDef: { ...d.gridDef, outputs } };
+    });
+  }, []);
+
+  /** Change the base metric of one output row (re-syncs mode + auto-label). */
+  const handleChangeSgGridOutputBase = useCallback((idx: number, base: string) => {
     setSgTableDraft((d) => {
       if (!d) return d;
-      const has = d.gridDef.outputs.some((o) => o.key === key);
-      let outputs: SgGridOutputDraft[];
-      if (has) {
-        if (d.gridDef.outputs.length <= 1) return d; // keep at least one output
-        outputs = d.gridDef.outputs.filter((o) => o.key !== key);
-      } else {
-        const cat = SG_GRID_OUTPUT_CATALOG.find((o) => o.key === key);
-        if (!cat) return d;
-        // Preserve catalog order when adding.
-        outputs = SG_GRID_OUTPUT_CATALOG.filter(
-          (o) => o.key === key || d.gridDef.outputs.some((x) => x.key === o.key),
-        ).map((o) => ({ ...o }));
-      }
+      const meta = SG_GRID_BASE_CATALOG.find((m) => m.base === base);
+      if (!meta) return d;
+      const outputs = d.gridDef.outputs.map((o, i) =>
+        i === idx
+          ? { ...o, base: meta.base, mode: meta.mode, label: sgGridOutputLabel({ base: meta.base, year: o.year }) }
+          : o,
+      );
+      return { ...d, gridDef: { ...d.gridDef, outputs } };
+    });
+  }, []);
+
+  /** Change the optional 4-digit year of one output row (re-syncs auto-label). */
+  const handleChangeSgGridOutputYear = useCallback((idx: number, year: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      // Keep only digits, max 4 — the field is a year qualifier.
+      const clean = year.replace(/\D/g, "").slice(0, 4);
+      const outputs = d.gridDef.outputs.map((o, i) =>
+        i === idx ? { ...o, year: clean, label: sgGridOutputLabel({ base: o.base, year: clean }) } : o,
+      );
       return { ...d, gridDef: { ...d.gridDef, outputs } };
     });
   }, []);
@@ -2523,8 +2639,9 @@ export function useAdminPanelData(): UseAdminPanelData {
     wb.created = new Date();
 
     for (const o of outputs) {
-      // Sheet name = output key (Excel caps at 31 chars / forbids some symbols).
-      const safe = o.key.replace(/[\\/?*[\]:]/g, "_").slice(0, 31) || "output";
+      // Sheet name = EFFECTIVE output key (`base_year` or `base`); Excel caps at
+      // 31 chars / forbids some symbols.
+      const safe = sgGridOutputKey(o).replace(/[\\/?*[\]:]/g, "_").slice(0, 31) || "output";
       const ws = wb.addWorksheet(safe);
       const headers = [
         ...axes.map((a, i) => a.label.trim() || a.driverKey.trim() || `axis_${i + 1}`),
@@ -2821,7 +2938,20 @@ export function useAdminPanelData(): UseAdminPanelData {
         if (st <= 0) return "Each axis template step must be greater than zero.";
       }
       if (g.outputs.length === 0)
-        return "Select at least one output (e.g. Target price).";
+        return "Add at least one output (e.g. Target price).";
+      // Every output needs a known base metric; an optional year must be 4 digits;
+      // effective storage keys (`base_year` / `base`) must be unique.
+      const seenKeys = new Set<string>();
+      for (const o of g.outputs) {
+        if (!SG_GRID_BASE_CATALOG.some((m) => m.base === o.base.trim()))
+          return "Every output must select a metric.";
+        const yr = o.year.trim();
+        if (yr && !/^\d{4}$/.test(yr))
+          return "An output year must be a 4-digit year (e.g. 2026).";
+        const key = sgGridOutputKey(o);
+        if (seenKeys.has(key)) return `Duplicate output: ${key}`;
+        seenKeys.add(key);
+      }
       if (d.gridCompanies.length === 0)
         return "Select at least one company for the scenario grid.";
       return null;
@@ -3025,11 +3155,17 @@ export function useAdminPanelData(): UseAdminPanelData {
             if (a.driverKey.trim()) axis.driver_key = a.driverKey.trim();
             return axis;
           }),
-          outputs: g.outputs.map((o) => ({
-            key: o.key.trim(),
-            mode: o.mode,
-            label: o.label.trim() || o.key.trim(),
-          })),
+          outputs: g.outputs.map((o) => {
+            const out: Record<string, unknown> = {
+              key: sgGridOutputKey(o),
+              mode: o.mode,
+              label: o.label.trim() || sgGridOutputLabel(o),
+            };
+            // Informative extras (parsers ignore unknown keys) for human readers.
+            if (o.base.trim()) out.base = o.base.trim();
+            if (o.year.trim()) out.year = o.year.trim();
+            return out;
+          }),
         };
         definition = {
           row_axis: { kind: "company", companies: [...d.gridCompanies] },
@@ -3290,9 +3426,12 @@ export function useAdminPanelData(): UseAdminPanelData {
     // scenario grid
     sgGridDriverCatalog: MARKET_DRIVER_CATALOG,
     sgGridDrivers: sgDrivers,
-    sgGridOutputCatalog: SG_GRID_OUTPUT_CATALOG,
+    sgGridBaseCatalog: SG_GRID_BASE_CATALOG,
     handleToggleSgGrid,
-    handleToggleSgGridOutput,
+    handleAddSgGridOutput,
+    handleRemoveSgGridOutput,
+    handleChangeSgGridOutputBase,
+    handleChangeSgGridOutputYear,
     handleAddSgGridAxis,
     handleRemoveSgGridAxis,
     handleChangeSgGridAxisField,

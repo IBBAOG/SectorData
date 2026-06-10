@@ -27,8 +27,9 @@ import {
   type SgSubTab,
   type SgValueMode,
   type SgTableDraft,
-  type SgGridOutputDraft,
+  type SgGridBaseMetric,
   type SgUploadState,
+  sgGridOutputKey,
 } from "../useAdminPanelData";
 import type {
   SensitivityAxis,
@@ -280,9 +281,12 @@ export default function DesktopView(): React.ReactElement | null {
     handleChangeSgTableCellSecondary,
     sgGridDriverCatalog,
     sgGridDrivers,
-    sgGridOutputCatalog,
+    sgGridBaseCatalog,
     handleToggleSgGrid,
-    handleToggleSgGridOutput,
+    handleAddSgGridOutput,
+    handleRemoveSgGridOutput,
+    handleChangeSgGridOutputBase,
+    handleChangeSgGridOutputYear,
     handleAddSgGridAxis,
     handleRemoveSgGridAxis,
     handleChangeSgGridAxisField,
@@ -2558,9 +2562,12 @@ export default function DesktopView(): React.ReactElement | null {
                   onChangeCellSecondary={handleChangeSgTableCellSecondary}
                   gridDriverCatalog={sgGridDriverCatalog}
                   gridDrivers={sgGridDrivers}
-                  gridOutputCatalog={sgGridOutputCatalog}
+                  gridBaseCatalog={sgGridBaseCatalog}
                   onToggleGrid={handleToggleSgGrid}
-                  onToggleGridOutput={handleToggleSgGridOutput}
+                  onAddGridOutput={handleAddSgGridOutput}
+                  onRemoveGridOutput={handleRemoveSgGridOutput}
+                  onChangeGridOutputBase={handleChangeSgGridOutputBase}
+                  onChangeGridOutputYear={handleChangeSgGridOutputYear}
                   onAddGridAxis={handleAddSgGridAxis}
                   onRemoveGridAxis={handleRemoveSgGridAxis}
                   onChangeGridAxisField={handleChangeSgGridAxisField}
@@ -2865,10 +2872,13 @@ interface SensitivityBuilderProps {
   gridDriverCatalog: DriverCatalogEntry[];
   /** The full drivers registry — any driver can drive an axis. */
   gridDrivers: StockGuideDriver[];
-  /** The 4 selectable output metrics. */
-  gridOutputCatalog: SgGridOutputDraft[];
+  /** The 4 base metrics an output row can use (dropdown). */
+  gridBaseCatalog: SgGridBaseMetric[];
   onToggleGrid: (on: boolean) => void;
-  onToggleGridOutput: (key: string) => void;
+  onAddGridOutput: () => void;
+  onRemoveGridOutput: (idx: number) => void;
+  onChangeGridOutputBase: (idx: number, base: string) => void;
+  onChangeGridOutputYear: (idx: number, year: string) => void;
   onAddGridAxis: () => void;
   onRemoveGridAxis: (axisIdx: number) => void;
   onChangeGridAxisField: (
@@ -2907,8 +2917,9 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
     onChangeCellSecondary,
-    gridDrivers, gridOutputCatalog, onToggleGrid,
-    onToggleGridOutput, onAddGridAxis,
+    gridDrivers, gridBaseCatalog, onToggleGrid,
+    onAddGridOutput, onRemoveGridOutput, onChangeGridOutputBase, onChangeGridOutputYear,
+    onAddGridAxis,
     onRemoveGridAxis, onChangeGridAxisField, onToggleGridCompany,
     onDownloadGridTemplate, gridTemplateWarning,
     gridPointCount, gridPointCountLoading,
@@ -3314,31 +3325,76 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
           })}
         </div>
 
-        {/* Outputs (one column + one mesh metric each) */}
+        {/* Outputs (one column + one mesh metric sheet each). Each row = a base
+            metric + an optional 4-digit year → effective key `base_year` / `base`. */}
         <div style={{ marginBottom: 16 }}>
           <span style={labelSpan}>Outputs (each becomes a column + a metric sheet in the template)</span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {gridOutputCatalog.map((o) => {
-              const on = g.outputs.some((x) => x.key === o.key);
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {g.outputs.map((o, idx) => {
+              const key = sgGridOutputKey(o);
               return (
-                <button
-                  key={o.key}
-                  type="button"
-                  onClick={() => onToggleGridOutput(o.key)}
-                  aria-pressed={on}
-                  style={{
-                    padding: "4px 11px", borderRadius: 14, cursor: "pointer",
-                    border: on ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
-                    background: on ? "rgba(255,80,0,0.10)" : "#fff",
-                    color: on ? ORANGE : "#666", fontSize: 12, fontWeight: 700,
-                    fontFamily: "Arial, sans-serif",
-                  }}
+                <div
+                  key={idx}
+                  style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}
                 >
-                  {o.label}
-                </button>
+                  <select
+                    value={o.base}
+                    onChange={(e) => onChangeGridOutputBase(idx, e.target.value)}
+                    style={{ ...inputStyle, width: 160 }}
+                  >
+                    {gridBaseCatalog.map((m) => (
+                      <option key={m.base} value={m.base}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={o.year}
+                    onChange={(e) => onChangeGridOutputYear(idx, e.target.value)}
+                    placeholder="e.g. 2026"
+                    maxLength={4}
+                    style={{ ...inputStyle, width: 90 }}
+                  />
+                  <span style={{ fontSize: 12, color: "#888", fontFamily: "Arial, sans-serif" }}>
+                    → <strong style={{ color: "#555" }}>{o.label}</strong>
+                    <span style={{ color: "#bbb" }}> (sheet: {key})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveGridOutput(idx)}
+                    disabled={g.outputs.length <= 1}
+                    title="Remove output"
+                    style={{
+                      marginLeft: "auto", padding: "2px 9px", borderRadius: 6,
+                      border: "1px solid #e0e0e0", background: "#fff",
+                      color: g.outputs.length <= 1 ? "#ccc" : "#c00",
+                      cursor: g.outputs.length <= 1 ? "not-allowed" : "pointer",
+                      fontSize: 12, fontWeight: 700, fontFamily: "Arial, sans-serif",
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
               );
             })}
           </div>
+          <button
+            type="button"
+            onClick={onAddGridOutput}
+            disabled={g.outputs.length >= 12}
+            style={{
+              marginTop: 8, padding: "4px 12px", borderRadius: 14,
+              border: `1px solid ${ORANGE}`,
+              background: g.outputs.length >= 12 ? "#f5f5f5" : "rgba(255,80,0,0.10)",
+              color: g.outputs.length >= 12 ? "#bbb" : ORANGE,
+              cursor: g.outputs.length >= 12 ? "not-allowed" : "pointer",
+              fontSize: 12, fontWeight: 700, fontFamily: "Arial, sans-serif",
+            }}
+          >
+            + Add output
+          </button>
         </div>
 
         {/* Companies */}
