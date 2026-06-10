@@ -11,11 +11,28 @@
 -- ---------------------------------------------------------------------------
 -- (1) Data migration — idempotent. y1 is the NPV proxy; only fill when the
 --     target is still NULL so re-runs never clobber a real npv_tax_credit.
+--     Guarded so a re-run of this file AFTER the column is dropped (db push
+--     --include-all + phantom revert — pegadinha #22) does not fail with 42703.
+--     The UPDATE is wrapped in EXECUTE on a string so plpgsql never parses the
+--     dropped column unless it still exists.
 -- ---------------------------------------------------------------------------
-UPDATE public.stock_guide_companies
-SET npv_tax_credit = COALESCE(npv_tax_credit, mcap_adj_y1)
-WHERE mcap_adj_y1 IS NOT NULL
-  AND npv_tax_credit IS NULL;
+DO $do$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name   = 'stock_guide_companies'
+      AND column_name  = 'mcap_adj_y1'
+  ) THEN
+    EXECUTE $upd$
+      UPDATE public.stock_guide_companies
+      SET npv_tax_credit = COALESCE(npv_tax_credit, mcap_adj_y1)
+      WHERE mcap_adj_y1 IS NOT NULL
+        AND npv_tax_credit IS NULL
+    $upd$;
+  END IF;
+END
+$do$;
 
 -- ---------------------------------------------------------------------------
 -- (2) Recreate the 3 RPCs WITHOUT mcap_adj_y1/y2 (everything else identical,
@@ -57,7 +74,8 @@ AS $function$
     FROM public.stock_guide_companies c
     ORDER BY c.display_order, c.ticker;
   $function$;
-GRANT EXECUTE ON FUNCTION public.get_stock_guide_comps() TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_stock_guide_comps() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_stock_guide_comps() TO anon, authenticated;
 
 DROP FUNCTION IF EXISTS public.admin_get_stock_guide_companies();
 CREATE FUNCTION public.admin_get_stock_guide_companies()
@@ -84,7 +102,8 @@ AS $function$
       ORDER BY c.display_order, c.ticker;
   END;
   $function$;
-GRANT EXECUTE ON FUNCTION public.admin_get_stock_guide_companies() TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_get_stock_guide_companies() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_get_stock_guide_companies() TO authenticated;
 
 DROP FUNCTION IF EXISTS public.admin_upsert_stock_guide_company(text, jsonb);
 CREATE FUNCTION public.admin_upsert_stock_guide_company(p_ticker text, p_data jsonb)
@@ -177,7 +196,8 @@ AS $function$
       updated_at         = EXCLUDED.updated_at;
   END;
   $function$;
-GRANT EXECUTE ON FUNCTION public.admin_upsert_stock_guide_company(text, jsonb) TO anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.admin_upsert_stock_guide_company(text, jsonb) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_upsert_stock_guide_company(text, jsonb) TO authenticated;
 
 -- ---------------------------------------------------------------------------
 -- (3) Drop the retired columns (after the RPCs no longer reference them).
