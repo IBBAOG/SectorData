@@ -27,7 +27,7 @@
 // Binding sync rule: any new filter / KPI / column added here must also land in
 // desktop/View.tsx in the same commit, or declare [mobile-only] with reason.
 
-import { useState } from "react";
+import { useState, useEffect, type CSSProperties } from "react";
 
 import {
   BottomSheet,
@@ -722,8 +722,25 @@ function mobileFmtSlider(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-/** One axis slider row inside the mobile grid panel. */
-function MobileAxisSlider({
+/**
+ * Fixed ±5 step for the scenario-grid axis steppers (analyst request — NOT the
+ * dynamic `axis.step`). Manual typing is still free-form, clamped on commit.
+ */
+const MOBILE_GRID_AXIS_STEP = 5;
+
+/** Clamp `v` to [min,max], returning `fallback` for non-finite input. */
+function mobileClampAxis(
+  v: number,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  if (!Number.isFinite(v)) return fallback;
+  return v < min ? min : v > max ? max : v;
+}
+
+/** One axis numeric stepper row inside the mobile grid panel (big ±5 buttons). */
+function MobileAxisStepper({
   tableId,
   axisIdx,
   axis,
@@ -736,57 +753,144 @@ function MobileAxisSlider({
   onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
   onResetAxis: (tableId: number, axisIdx: number) => void;
 }): React.ReactElement {
+  // Local draft so manual typing isn't clamped mid-keystroke; commit on blur/Enter.
+  const [draft, setDraft] = useState<string>(mobileFmtSlider(axis.value));
+  useEffect(() => {
+    setDraft(mobileFmtSlider(axis.value));
+  }, [axis.value]);
+
+  const commit = (raw: string) => {
+    const next = mobileClampAxis(Number(raw), axis.min, axis.max, axis.value);
+    onSetAxis(tableId, axisIdx, next);
+    setDraft(mobileFmtSlider(next));
+  };
+  const bump = (delta: number) => {
+    const next = mobileClampAxis(axis.value + delta, axis.min, axis.max, axis.value);
+    onSetAxis(tableId, axisIdx, next);
+  };
+
+  const stepBtnStyle: CSSProperties = {
+    width: 44,
+    minHeight: 40,
+    flex: "0 0 auto",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: `1px solid ${MOBILE_ACCENT}`,
+    background: "rgba(255,80,0,0.06)",
+    color: MOBILE_ACCENT,
+    fontSize: 22,
+    fontWeight: 700,
+    lineHeight: 1,
+    cursor: "pointer",
+    fontFamily: "inherit",
+  };
+
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
         <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
           {axis.label} ({axis.unit})
         </span>
-        {axis.disabled ? (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "var(--mobile-text-muted)",
-              fontVariantNumeric: "tabular-nums",
-              background: "var(--mobile-surface-elevated)",
-              border: "1px solid var(--mobile-border)",
-              borderRadius: 12,
-              padding: "1px 8px",
-            }}
-          >
-            fixed {mobileFmtSlider(axis.value)} {axis.unit}
-          </span>
-        ) : (
-          <span style={{ fontSize: 15, fontWeight: 700, color: MOBILE_ACCENT, fontVariantNumeric: "tabular-nums" }}>
-            {mobileFmtSlider(axis.value)}
-            <span style={{ color: "var(--mobile-text-muted)", fontWeight: 600, fontSize: 11 }}> {axis.unit}</span>
-          </span>
-        )}
-      </div>
-      <input
-        type="range"
-        min={axis.min}
-        max={axis.max}
-        step={axis.step}
-        value={axis.value}
-        disabled={axis.disabled}
-        onChange={(e) => onSetAxis(tableId, axisIdx, Number(e.target.value))}
-        aria-label={`${axis.label} (${axis.unit})`}
-        style={{
-          width: "100%",
-          accentColor: MOBILE_ACCENT,
-          height: 28,
-          opacity: axis.disabled ? 0.5 : 1,
-        }}
-      />
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums" }}>
-        <span>{mobileFmtSlider(axis.min)}</span>
-        <span style={{ color: axis.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)", fontWeight: 600 }}>
+        <span
+          style={{
+            color: axis.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)",
+            fontWeight: 600,
+            fontSize: 11,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
           {axis.liveValue != null ? `live ${mobileFmtSlider(axis.liveValue)}` : "live —"}
         </span>
-        <span>{mobileFmtSlider(axis.max)}</span>
       </div>
+
+      {axis.disabled ? (
+        <span
+          style={{
+            display: "inline-block",
+            marginTop: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            color: "var(--mobile-text-muted)",
+            fontVariantNumeric: "tabular-nums",
+            background: "var(--mobile-surface-elevated)",
+            border: "1px solid var(--mobile-border)",
+            borderRadius: 8,
+            padding: "8px 12px",
+          }}
+        >
+          fixed {mobileFmtSlider(axis.value)} {axis.unit}
+        </span>
+      ) : (
+        <div style={{ display: "flex", alignItems: "stretch", gap: 0, marginTop: 6 }}>
+          <button
+            type="button"
+            onClick={() => bump(-MOBILE_GRID_AXIS_STEP)}
+            disabled={axis.value <= axis.min}
+            aria-label={`Decrease ${axis.label} by ${MOBILE_GRID_AXIS_STEP}`}
+            style={{
+              ...stepBtnStyle,
+              borderRadius: "10px 0 0 10px",
+              opacity: axis.value <= axis.min ? 0.45 : 1,
+            }}
+          >
+            −
+          </button>
+          <input
+            type="number"
+            inputMode="decimal"
+            step={MOBILE_GRID_AXIS_STEP}
+            min={axis.min}
+            max={axis.max}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={(e) => commit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commit((e.target as HTMLInputElement).value);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            aria-label={`${axis.label} (${axis.unit})`}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              textAlign: "center",
+              border: "1px solid var(--mobile-border)",
+              borderLeft: "none",
+              borderRight: "none",
+              padding: "8px 4px",
+              fontSize: 16,
+              fontWeight: 700,
+              color: MOBILE_ACCENT,
+              background: "var(--mobile-surface)",
+              fontFamily: "inherit",
+              fontVariantNumeric: "tabular-nums",
+              outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => bump(MOBILE_GRID_AXIS_STEP)}
+            disabled={axis.value >= axis.max}
+            aria-label={`Increase ${axis.label} by ${MOBILE_GRID_AXIS_STEP}`}
+            style={{
+              ...stepBtnStyle,
+              borderRadius: "0 10px 10px 0",
+              opacity: axis.value >= axis.max ? 0.45 : 1,
+            }}
+          >
+            +
+          </button>
+        </div>
+      )}
+
+      {!axis.disabled && (
+        <div style={{ fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums", marginTop: 3 }}>
+          range {mobileFmtSlider(axis.min)}–{mobileFmtSlider(axis.max)} {axis.unit}
+        </div>
+      )}
+
       {axis.overridden && (
         <button
           type="button"
@@ -849,14 +953,14 @@ function MobileGridPanel({
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12, lineHeight: 1.4 }}>
-        Drag the assumptions to interpolate live across our scenario mesh. Markers
+        Adjust the assumptions to re-price live across our scenario mesh. Markers
         show today&rsquo;s values.
       </div>
 
-      {/* Axis sliders (1..3, stacked) */}
+      {/* Axis steppers (1..3, stacked) */}
       <div style={{ marginBottom: 12 }}>
         {model.axes.map((axis, i) => (
-          <MobileAxisSlider
+          <MobileAxisStepper
             key={`${axis.key}-${i}`}
             tableId={table.id}
             axisIdx={i}

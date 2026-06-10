@@ -21,6 +21,7 @@
 // Binding sync rule: any new filter / column / KPI added here must also land in
 // mobile/View.tsx in the same commit, or declare [desktop-only] with reason.
 
+import { useState, useEffect, type CSSProperties } from "react";
 import NavBar from "../../../../components/NavBar";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
@@ -885,8 +886,20 @@ function fmtSlider(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
-/** One axis slider row inside the GridPanel. */
-function AxisSlider({
+/**
+ * Fixed ±5 step for the scenario-grid axis steppers (analyst request — NOT the
+ * dynamic `axis.step`). Manual typing is still free-form, clamped on commit.
+ */
+const GRID_AXIS_STEP = 5;
+
+/** Clamp `v` to [min,max], returning `fallback` for non-finite input. */
+function clampAxis(v: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(v)) return fallback;
+  return v < min ? min : v > max ? max : v;
+}
+
+/** One axis numeric stepper row inside the GridPanel (±5 buttons + number input). */
+function AxisStepper({
   tableId,
   axisIdx,
   axis,
@@ -899,6 +912,40 @@ function AxisSlider({
   onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
   onResetAxis: (tableId: number, axisIdx: number) => void;
 }): React.ReactElement {
+  // Local draft so manual typing isn't clamped mid-keystroke; commit on blur/Enter.
+  const [draft, setDraft] = useState<string>(fmtSlider(axis.value));
+  useEffect(() => {
+    setDraft(fmtSlider(axis.value));
+  }, [axis.value]);
+
+  const commit = (raw: string) => {
+    const parsed = Number(raw);
+    const next = clampAxis(parsed, axis.min, axis.max, axis.value);
+    onSetAxis(tableId, axisIdx, next);
+    setDraft(fmtSlider(next));
+  };
+  const bump = (delta: number) => {
+    const next = clampAxis(axis.value + delta, axis.min, axis.max, axis.value);
+    onSetAxis(tableId, axisIdx, next);
+  };
+
+  const stepBtnStyle: CSSProperties = {
+    width: 32,
+    height: 32,
+    flex: "0 0 auto",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    border: "1px solid #e6e6e6",
+    background: "#fff",
+    color: axis.disabled ? "#cbd5e1" : BRAND_ORANGE,
+    fontSize: 16,
+    fontWeight: 700,
+    lineHeight: 1,
+    cursor: axis.disabled ? "not-allowed" : "pointer",
+    fontFamily: "Arial, Helvetica, sans-serif",
+  };
+
   return (
     <div style={{ marginBottom: 16 }}>
       <div
@@ -914,62 +961,108 @@ function AxisSlider({
         <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1f2937" }}>
           {axis.label} ({axis.unit})
         </span>
-        {axis.disabled ? (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#9ca3af",
-              fontVariantNumeric: "tabular-nums",
-              background: "#f3f4f6",
-              border: "1px solid #e5e7eb",
-              borderRadius: 12,
-              padding: "1px 9px",
-            }}
-          >
-            fixed {fmtSlider(axis.value)} {axis.unit}
-          </span>
-        ) : (
-          <span style={{ fontSize: 15, fontWeight: 700, color: BRAND_ORANGE, fontVariantNumeric: "tabular-nums" }}>
-            {fmtSlider(axis.value)}
-            <span style={{ color: "#9ca3af", fontWeight: 600, fontSize: 11 }}> {axis.unit}</span>
-          </span>
-        )}
-      </div>
-      <input
-        type="range"
-        min={axis.min}
-        max={axis.max}
-        step={axis.step}
-        value={axis.value}
-        disabled={axis.disabled}
-        onChange={(e) => onSetAxis(tableId, axisIdx, Number(e.target.value))}
-        aria-label={`${axis.label} (${axis.unit})`}
-        style={{
-          width: "100%",
-          accentColor: BRAND_ORANGE,
-          cursor: axis.disabled ? "not-allowed" : "pointer",
-          opacity: axis.disabled ? 0.5 : 1,
-        }}
-      />
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 10,
-          color: "#9ca3af",
-          fontVariantNumeric: "tabular-nums",
-          marginTop: 2,
-        }}
-      >
-        <span>{fmtSlider(axis.min)}</span>
-        <span style={{ color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af", fontWeight: 600 }}>
+        <span
+          style={{
+            color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af",
+            fontWeight: 600,
+            fontSize: 11,
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
           {axis.liveValue != null ? `live ${fmtSlider(axis.liveValue)}` : "live —"}
         </span>
-        <span>{fmtSlider(axis.max)}</span>
       </div>
+
+      {axis.disabled ? (
+        <span
+          style={{
+            display: "inline-block",
+            fontSize: 12,
+            fontWeight: 700,
+            color: "#9ca3af",
+            fontVariantNumeric: "tabular-nums",
+            background: "#f3f4f6",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: "6px 12px",
+          }}
+        >
+          fixed {fmtSlider(axis.value)} {axis.unit}
+        </span>
+      ) : (
+        <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
+          <button
+            type="button"
+            onClick={() => bump(-GRID_AXIS_STEP)}
+            disabled={axis.value <= axis.min}
+            aria-label={`Decrease ${axis.label} by ${GRID_AXIS_STEP}`}
+            style={{
+              ...stepBtnStyle,
+              borderRadius: "8px 0 0 8px",
+              opacity: axis.value <= axis.min ? 0.45 : 1,
+            }}
+          >
+            −
+          </button>
+          <input
+            type="number"
+            inputMode="decimal"
+            step={GRID_AXIS_STEP}
+            min={axis.min}
+            max={axis.max}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={(e) => commit(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commit((e.target as HTMLInputElement).value);
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            aria-label={`${axis.label} (${axis.unit})`}
+            style={{
+              width: 96,
+              textAlign: "center",
+              border: "1px solid #e6e6e6",
+              borderLeft: "none",
+              borderRight: "none",
+              padding: "6px 4px",
+              fontSize: 14,
+              fontWeight: 700,
+              color: BRAND_ORANGE,
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontVariantNumeric: "tabular-nums",
+              outline: "none",
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => bump(GRID_AXIS_STEP)}
+            disabled={axis.value >= axis.max}
+            aria-label={`Increase ${axis.label} by ${GRID_AXIS_STEP}`}
+            style={{
+              ...stepBtnStyle,
+              borderRadius: "0 8px 8px 0",
+              opacity: axis.value >= axis.max ? 0.45 : 1,
+            }}
+          >
+            +
+          </button>
+          <span
+            style={{
+              alignSelf: "center",
+              marginLeft: 10,
+              fontSize: 11,
+              color: "#9ca3af",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            range {fmtSlider(axis.min)}–{fmtSlider(axis.max)}
+          </span>
+        </div>
+      )}
+
       {axis.overridden && (
         <button
           type="button"
@@ -1041,7 +1134,7 @@ function GridPanel({
           marginBottom: 14,
         }}
       >
-        Drag the assumptions to interpolate live across our scenario mesh. Markers
+        Adjust the assumptions to re-price live across our scenario mesh. Markers
         show today&rsquo;s values.
       </div>
 
@@ -1064,7 +1157,7 @@ function GridPanel({
           }}
         >
           {model.axes.map((axis, i) => (
-            <AxisSlider
+            <AxisStepper
               key={`${axis.key}-${i}`}
               tableId={table.id}
               axisIdx={i}

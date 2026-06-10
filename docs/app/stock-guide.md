@@ -234,7 +234,7 @@ Two pure helpers (unit-tested in `src/lib/__tests__/stockGuideSensitivity.test.t
 
 ### Hook (`useStockGuideData.ts`)
 
-The shared brain owns the grid state so **both Views drag the same sliders**:
+The shared brain owns the grid state so **both Views drive the same axis steppers**:
 
 - `isGridTable(table)` — true when `definition.grid != null`.
 - **Lazy mesh fetch + cache:** when a selected table is a grid, the hook fetches `rpcGetStockGuideScenarioGrid(table.id)` once (cached by id, guarded by a fetched-set ref) and stores the raw `ScenarioGridPoint[]`. `gridLoading` is true while a selected grid's mesh is in flight.
@@ -246,11 +246,11 @@ The shared brain owns the grid state so **both Views drag the same sliders**:
 
 When a `selectedTable` is a grid, the View renders a **grid panel** in place of the static matrix:
 
-- **A stack of up to 3 sliders** — one per axis, each labelled from `definition.grid.axes[i]` (`label` / `unit`), domain = the union of that axis's mesh levels, current value in **orange**, a **live marker** ("live N") at today's value, a degenerate axis (single level) renders **disabled** with a fixed-value chip, and a **per-axis "Reset to live"** appears once dragged. A **"Reset all to live"** button appears when any axis is overridden.
+- **A stack of up to 3 numeric steppers** — one per axis, each labelled from `definition.grid.axes[i]` (`label` / `unit`), domain = the union of that axis's mesh levels. Each axis is a number input flanked by **− / +** buttons in a **fixed step of 5** (the analyst-requested step, NOT the dynamic `axis.step`); manual typing is allowed and clamps to the domain on blur/Enter (invalid input falls back to the current value). The live "today" value shows as a **"live N"** caption beside the field, the axis range as a "range min–max" hint, a degenerate axis (single level) renders **disabled** with a fixed-value chip, and a **per-axis "Reset to live"** appears once overridden. A **"Reset all to live"** button appears when any axis is overridden.
 - **Output table** — rows = the visible companies with points; **one column per configured output** (e.g. Target price · FCFE yield · Div yield · P/E), each formatted by its mode (% for yield/upside, × for pe, BRL for an absolute/price). An `upside` output renders TWO columns — the interpolated target PRICE then a derived **Upside** column (vs live price, coloured by sign). Cells "—" while quotes load or when a ticker lacks that metric's mesh.
-- Copy: *"Drag the assumptions to interpolate live across our scenario mesh. Markers show today's values."*
+- Copy: *"Adjust the assumptions to re-price live across our scenario mesh. Markers show today's values."*
 - While a selected grid's mesh is still loading → `BarrelLoading`; when no points are uploaded → an empty card ("No scenario-grid points uploaded for this table yet").
-- **[mobile-only] divergence:** the sliders + output stack vertically (the desktop lays the slider stack beside the output table) and the resets honour the ≥34px touch target — same shared brain, adapted layout.
+- **[mobile-only] divergence:** the steppers + output stack vertically (the desktop lays the stepper stack beside the output table), the − / + buttons are ≥40px touch targets, and the resets honour the ≥34px touch target — same shared brain, adapted layout.
 
 ### Admin scenario-grid editor (admin-panel, desktop-only)
 
