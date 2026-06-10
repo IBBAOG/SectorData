@@ -29,6 +29,8 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
       02_precos_produtores_sync.py  Preços Produtores
     producao/                       (workflow etl_dg_margins.yml — input D&G Margins)
       anp_producao_derivados_sync.py  Produção mensal de derivados (Gasolina A / Óleo Diesel, m³) → anp_producao_derivados
+    sintese/                        (workflow etl_dg_margins.yml — input D&G Margins, fonte primária de impostos)
+      anp_sintese_taxes_sync.py       LEAN scraper da Síntese ANP: parseia a edição mais recente (pdfplumber, painel de composição) → Tributos Federais + ICMS (R$/L) de Gasolina C / Diesel B S10 → anp_sintese_taxes (upsert por (data_fim, fuel_type)). `--last N` (cap 3). Hard timeouts, fail-fast, nunca trava.
     glp_sync.py                     GLP (rodado em etl_anp_precos.yml)
     lpc_sync.py                     Levantamento Preços ao Consumidor
     vendas_watch.py                 ANP vendas combustíveis (vintage anp-watcher)
@@ -156,6 +158,40 @@ timeout`) ~31s in (GitHub run 27223589112).
 > `imp_pct` optimization that brings the full recompute well under 30s, and (b) the
 > ETL's bounded-window call (a 12-week recompute runs in ~2s). See
 > `docs/supabase/PRD.md` for the RPC-side detail.
+
+### D&G Margins — auto-updating federal + ICMS taxes from the ANP Síntese (step 2b, 2026-06-08)
+
+`etl_dg_margins.yml` gained a **step 2b** between the producao scrape (step 2) and the
+recompute (step 3):
+
+```
+- name: Sync ANP Síntese tax lines → anp_sintese_taxes
+  id: sintese
+  if: always()
+  continue-on-error: true
+  run: python scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py
+```
+
+- **What it does:** `anp_sintese_taxes_sync.py` is a LEAN, fail-fast scraper of the ANP
+  "Síntese Semanal do Comportamento dos Preços dos Combustíveis" PDF. It fetches the
+  index page once, takes the **latest** edition (`--last N`, hard cap 3), opens the PDF
+  with pdfplumber, and reads the price-composition stacked-bar panel as an **ordinal**
+  mapping (`[2]=ICMS`, `[3]=Tributos Federais` in the left R$ column) cross-checked
+  three ways before it trusts a value: legend label order (Margens → Tributo Estadual →
+  Tributos Federais), the five components summing to the total (± epsilon), and a
+  per-value sanity range (federal `[0,1.5]`, ICMS `[0.5,2.5]`). It upserts `federal_rs_litro`
+  + `icms_rs_litro` for `Gasoline C` / `Diesel B` into `anp_sintese_taxes` on
+  `(data_fim, fuel_type)`. Hard request timeouts `(10, 30)`, never advertises `br`
+  (Pegadinha #12), never hangs — 0 records is a loud `SystemExit`, not a silent skip.
+- **`continue-on-error` BEFORE the recompute, never gates it:** the recompute's own `if:`
+  gates only on `cepea.outcome == 'success' || producao.outcome == 'success'`. A Síntese
+  miss therefore can never block a margins refresh — the recompute simply falls back to
+  `fuel_tax_reference` for that week.
+- **Why it matters:** the weekly run grabs the newest Síntese edition, so `recompute_dg_margins`
+  now sets `federal_tax`/`state_tax` from `anp_sintese_taxes` (COALESCE → `fuel_tax_reference`
+  fallback). When ANP changes a published tax, the scraper captures it and the next
+  recompute adopts it — the taxes **auto-update going forward** with no manual
+  `fuel_tax_reference` edit. Síntese == seeded reference today → no value shift now.
 
 ### ANP Vendas — dispatcher death & frozen partial month (incident 2026-06-01→10)
 
