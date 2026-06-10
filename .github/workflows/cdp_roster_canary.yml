@@ -1,0 +1,53 @@
+name: CDP Roster Canary
+
+# OPS canary for a DIMENSION lag in ANP's daily production Power BI panel: a
+# brand-new installation (and its wells) appears in the monthly CDP data
+# (anp_cdp_producao) months before ANP adds it to the daily panel's dimensions
+# (real case: FPSO P-78, ~87 kbpd, absent for ~5 months). Neither the Data
+# Freshness Guardian (data keeps advancing) nor the Workflow Failure Pager
+# (every run is green) can see this — the upstream data is simply incomplete.
+#
+# Compares the well roster of the latest complete month in anp_cdp_producao
+# against the wells seen in anp_cdp_diaria_poco over the last ~10 days of data
+# (plus a fuzzy installation comparison), and emails ops when the missing
+# wells' aggregate monthly production exceeds 10 kbpd. Pure read-only SQL over
+# our own tables — no Power BI calls.
+#
+# Failure semantics: RED only when the CHECK ITSELF breaks (env/RPC/SMTP). A
+# roster gap is a data condition — it emails and the run stays green.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '15 12 * * *'   # daily at 12:15 UTC (offset from freshness monitor)
+
+# Own group so a run never collides with the next dispatch.
+concurrency:
+  group: cdp-roster-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Compare monthly CDP roster vs daily panel and email ops on a gap
+        run: python -m scripts.cdp_roster_canary
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:             ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD:        ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTAS_DEST_EMAIL:        ${{ secrets.ALERTAS_DEST_EMAIL }}
