@@ -65,17 +65,21 @@ export interface StockGuideCompany {
   net_income_y1: number | null;
   net_income_y2: number | null;
   /**
-   * Optional NPV (BRL million) of recognized tax credits for this company. When
-   * present and > 0, the comps table renders an EXTRA "{Company} ex-tax credit"
-   * companion row right below the company, whose market cap is the LIVE market
-   * cap MINUS this NPV (`mktcap_ex = marketCapBrlMn − npv_tax_credit`); every
-   * mcap-derived figure (EV/EBITDA, P/E, FCFE Yield, Div Yield) is recomputed on
-   * that ex-credit basis. NULL/undefined/≤0 → no companion row. Analyst-locked
-   * formula — this is the SOLE tax-credit mechanism (the per-year in-place
-   * `mcap_adj_y1/y2` market-cap adjustment was retired 2026-06-21). Persisted via
-   * `admin_upsert_stock_guide_company`.
+   * Optional NPV (BRL million) of recognized tax credits for this company, PER
+   * FORWARD YEAR (`npv_tax_credit_y1` → year 1, `npv_tax_credit_y2` → year 2).
+   * When EITHER is > 0, the comps table renders an EXTRA "{Company} ex-tax credit"
+   * companion row right below the company, whose equity-value basis is the LIVE
+   * market cap MINUS that year's NPV (`basisY1 = marketCapBrlMn − (npv_y1 ?? 0)`,
+   * `basisY2 = marketCapBrlMn − (npv_y2 ?? 0)`); every mcap-derived figure
+   * (EV/EBITDA, P/E, FCFE Yield, Div Yield) is recomputed per year on that
+   * ex-credit basis (26E columns on `basisY1`, 27E on `basisY2`). NULL/undefined
+   * (and both ≤ 0) → no companion row. Analyst-locked formula — this is the SOLE
+   * tax-credit mechanism (the per-year in-place `mcap_adj_y1/y2` market-cap
+   * adjustment was retired 2026-06-21; the scalar `npv_tax_credit` was split into
+   * per-year y1/y2 on 2026-06-22). Persisted via `admin_upsert_stock_guide_company`.
    */
-  npv_tax_credit: number | null;
+  npv_tax_credit_y1: number | null;
+  npv_tax_credit_y2: number | null;
   /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
   fcfe_y1: number | null;
   fcfe_y2: number | null;
@@ -96,9 +100,11 @@ export interface StockGuideCompany {
 export interface StockGuideComputedRow extends StockGuideCompany {
   /**
    * True when this is the synthetic "ex-tax credit" COMPANION row (rendered right
-   * below its parent company when `npv_tax_credit > 0`). The companion's market cap
-   * = the parent's LIVE market cap − `npv_tax_credit`; every mcap-derived multiple
-   * is recomputed on that basis, while TP / recommendation / upside / current
+   * below its parent company when `npv_tax_credit_y1 > 0` OR `npv_tax_credit_y2 > 0`).
+   * The companion's per-year equity basis is the parent's LIVE market cap minus
+   * that year's NPV (`basisY1 = marketCapBrlMn − (npv_y1 ?? 0)`, `basisY2` likewise);
+   * every mcap-derived multiple is recomputed per year on that basis, while TP /
+   * recommendation / upside / current
    * price / fundamentals (EBITDA, Net income, Volumes) REPEAT the parent's values.
    * `false`/undefined on every normal company row.
    */
@@ -115,11 +121,16 @@ export interface StockGuideComputedRow extends StockGuideCompany {
   /**
    * The equity-value basis that feeds the four multiples for THIS row, year 1.
    * For a normal company row it equals the RAW `marketCapBrlMn`; for the
-   * ex-tax-credit companion row it is `marketCapBrlMn − npv_tax_credit`. Null when
-   * `marketCapBrlMn` is null.
+   * ex-tax-credit companion row it is `marketCapBrlMn − (npv_tax_credit_y1 ?? 0)`.
+   * Null when `marketCapBrlMn` is null.
    */
   adjMcapY1: number | null;
-  /** Year-2 equity-value basis — same value as `adjMcapY1` (mcap is a single current value). */
+  /**
+   * Year-2 equity-value basis. For a normal company row it equals the RAW
+   * `marketCapBrlMn`; for the ex-tax-credit companion row it is
+   * `marketCapBrlMn − (npv_tax_credit_y2 ?? 0)` — so the two years may now differ
+   * on the companion row (per-year NPV, 2026-06-22).
+   */
   adjMcapY2: number | null;
   /** `target_price / livePrice − 1`. Null unless `livePrice > 0` and TP present. */
   upsidePct: number | null;

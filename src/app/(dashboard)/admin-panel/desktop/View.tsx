@@ -323,7 +323,7 @@ export default function DesktopView(): React.ReactElement | null {
     | "shares_outstanding" | "target_price" | "display_order"
     | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
-    | "npv_tax_credit"
+    | "npv_tax_credit_y1" | "npv_tax_credit_y2"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
   const renderSgNumField = (
@@ -2153,14 +2153,17 @@ export default function DesktopView(): React.ReactElement | null {
                             NPV of tax credits — ex-tax-credit companion row (optional)
                           </div>
                           <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, lineHeight: 1.5 }}>
-                            When &gt; 0, the comps table renders an extra
+                            When EITHER year is &gt; 0, the comps table renders an extra
                             &ldquo;{sgEditorRow?.company_name || "Company"} ex-tax credit&rdquo;
-                            row right below this company, whose market cap is the live market
-                            cap minus this NPV (multiples recomputed on that basis). Empty = no
-                            ex-tax-credit row.
+                            row right below this company, whose per-year market cap is the live
+                            market cap minus that year&rsquo;s NPV (multiples recomputed per year
+                            on that basis). Both empty = no ex-tax-credit row.
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
-                            {renderSgNumField("npv_tax_credit", "NPV of tax credits (BRL mn)", {
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 12 }}>
+                            {renderSgNumField("npv_tax_credit_y1", `NPV of tax credits ${sgConfigDraft.y1_label || "2026E"} (BRL mn)`, {
+                              placeholder: "empty = no ex-tax-credit row",
+                            })}
+                            {renderSgNumField("npv_tax_credit_y2", `NPV of tax credits ${sgConfigDraft.y2_label || "2027E"} (BRL mn)`, {
                               placeholder: "empty = no ex-tax-credit row",
                             })}
                           </div>

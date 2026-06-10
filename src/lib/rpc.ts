@@ -4293,7 +4293,8 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     ebitda_y2: toNumOrNull(r.ebitda_y2),
     net_income_y1: toNumOrNull(r.net_income_y1),
     net_income_y2: toNumOrNull(r.net_income_y2),
-    npv_tax_credit: toNumOrNull(r.npv_tax_credit),
+    npv_tax_credit_y1: toNumOrNull(r.npv_tax_credit_y1),
+    npv_tax_credit_y2: toNumOrNull(r.npv_tax_credit_y2),
     fcfe_y1: toNumOrNull(r.fcfe_y1),
     fcfe_y2: toNumOrNull(r.fcfe_y2),
     dividends_y1: toNumOrNull(r.dividends_y1),
@@ -4436,10 +4437,11 @@ export async function rpcAdminGetStockGuideSensitivity(
  * object whose keys mirror the comps columns: company_name, yahoo_symbol,
  * sector, volume_unit, shares_outstanding, last_update, target_price,
  * recommendation, display_order, and the FUNDAMENTALS — `net_debt_y1/y2`
- * (forward per year), `ebitda_y1/y2`, `net_income_y1/y2`, optional
- * `npv_tax_credit` (BRL mn — the SOLE tax-credit mechanism: when > 0 the comps
- * table renders an extra "{Company} ex-tax credit" companion row whose market cap
- * is the live market cap MINUS this NPV; empty = no companion row),
+ * (forward per year), `ebitda_y1/y2`, `net_income_y1/y2`, optional per-year
+ * `npv_tax_credit_y1` / `npv_tax_credit_y2` (BRL mn — the SOLE tax-credit
+ * mechanism: when EITHER > 0 the comps table renders an extra "{Company} ex-tax
+ * credit" companion row whose per-year market-cap basis is the live market cap
+ * MINUS that year's NPV; both empty = no companion row),
  * `fcfe_y1/y2`, `dividends_y1/y2`,
  * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the

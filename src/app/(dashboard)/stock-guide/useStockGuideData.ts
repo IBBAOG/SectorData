@@ -625,10 +625,10 @@ export function useStockGuideData(): UseStockGuideData {
     // Derive the four mcap-driven multiples + the per-year EV from a given pair
     // of market-cap bases (year-1 / year-2). Pure; null-safe; every denominator
     // guarded. Shared by the NORMAL row (basis = the RAW live market cap, same
-    // value both years) and the EX-TAX-CREDIT companion row (basis = mcap −
-    // npv_tax_credit, same value both years). Net income / EBITDA / dividends /
-    // FCFE are the company's own fundamentals in both cases — only the
-    // equity-value basis differs.
+    // value both years) and the EX-TAX-CREDIT companion row (basis PER YEAR =
+    // mcap − npv_tax_credit_yN, so the two years may differ). Net income / EBITDA
+    // / dividends / FCFE are the company's own fundamentals in both cases — only
+    // the equity-value basis differs.
     const deriveMultiples = (
       r: StockGuideCompany,
       basisY1: number | null,
@@ -721,29 +721,31 @@ export function useStockGuideData(): UseStockGuideData {
       });
 
       // ── EX-TAX-CREDIT companion row ───────────────────────────────────────
-      // Analyst-locked: when npv_tax_credit > 0, render an extra row right below
-      // this company whose equity basis is the LIVE market cap MINUS the NPV
-      // (`mktcap_ex`, SAME value both years). Every mcap-derived figure
-      // recomputes on `mktcap_ex`; the Market
-      // cap column shows `mktcap_ex`. TP / recommendation / upside / current
-      // price + the fundamentals (EBITDA, Net income, Volumes) REPEAT the
-      // parent's values verbatim (explicit analyst decision).
-      if (
-        r.npv_tax_credit != null &&
-        r.npv_tax_credit > 0 &&
-        marketCapBrlMn != null
-      ) {
-        const mktcapEx = marketCapBrlMn - r.npv_tax_credit;
-        const mEx = deriveMultiples(r, mktcapEx, mktcapEx);
+      // Analyst-locked: when npv_tax_credit_y1 > 0 OR npv_tax_credit_y2 > 0,
+      // render an extra row right below this company whose equity basis is the
+      // LIVE market cap MINUS that year's NPV — PER YEAR (`basisY1 = mcap −
+      // (npv_y1 ?? 0)`, `basisY2 = mcap − (npv_y2 ?? 0)`), so the two years may
+      // differ. Every mcap-derived figure recomputes per year on that basis (26E
+      // columns on basisY1, 27E on basisY2). The Market cap column shows the
+      // YEAR-1 basis (`basisY1`) — the headline convention, consistent with
+      // forward-per-year EV. TP / recommendation / upside / current price + the
+      // fundamentals (EBITDA, Net income, Volumes) REPEAT the parent's values
+      // verbatim (explicit analyst decision).
+      const npv1 = r.npv_tax_credit_y1 ?? 0;
+      const npv2 = r.npv_tax_credit_y2 ?? 0;
+      if ((npv1 > 0 || npv2 > 0) && marketCapBrlMn != null) {
+        const basisY1 = marketCapBrlMn - npv1;
+        const basisY2 = marketCapBrlMn - npv2;
+        const mEx = deriveMultiples(r, basisY1, basisY2);
         out.push({
           ...r,
           isExTaxCredit: true,
           displayName: `${r.company_name} ex-tax credit`,
           livePrice,
-          // Market cap column shows the ex-credit equity value.
-          marketCapBrlMn: mktcapEx,
-          adjMcapY1: mktcapEx,
-          adjMcapY2: mktcapEx,
+          // Market cap column shows the year-1 ex-credit equity value (headline).
+          marketCapBrlMn: basisY1,
+          adjMcapY1: basisY1,
+          adjMcapY2: basisY2,
           // Upside REPEATS the parent (TP + current price unchanged).
           upsidePct,
           ...mEx,
