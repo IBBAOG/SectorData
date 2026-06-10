@@ -101,6 +101,21 @@ jobs:
           SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
 
+      # ── 2b) ANP Síntese weekly tax lines → anp_sintese_taxes ───────────────
+      # LEAN scraper: index page once → most recent edition → composition panel
+      # → Gasoline C / Diesel B S10 federal + ICMS (R$/L). Hard timeouts, never
+      # hangs. continue-on-error: a Síntese miss must NEVER block the recompute
+      # (the recompute's own `if:` gates only on cepea/producao). The weekly run
+      # grabs the latest edition so the tax lines auto-update going forward.
+      - name: Sync ANP Síntese tax lines → anp_sintese_taxes
+        id: sintese
+        if: always()
+        continue-on-error: true
+        run: python scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
       # ── 3) Recompute d_g_margins from all sources ──────────────────────────
       # SECURITY DEFINER RPC granted to service_role; UPSERTs d_g_margins on
       # (fuel_type, week). Runs as long as AT LEAST ONE source sync actually
