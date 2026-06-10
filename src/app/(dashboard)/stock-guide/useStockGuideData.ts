@@ -736,9 +736,20 @@ export function useStockGuideData(): UseStockGuideData {
       if ((npv1 > 0 || npv2 > 0) && marketCapBrlMn != null) {
         const basisY1 = marketCapBrlMn - npv1;
         const basisY2 = marketCapBrlMn - npv2;
-        const mEx = deriveMultiples(r, basisY1, basisY2);
-        out.push({
+        // Optional ADJUSTED net income for the ex-credit row's P/E denominator:
+        // `net_income_ex_yN ?? net_income_yN` (filled → adjusted; NULL → reported).
+        // We derive on a CLONE of `r` whose `net_income_yN` carries the effective
+        // (adjusted) earnings, so deriveMultiples' P/E and the displayed Net Income
+        // column (spread below) stay consistent. Every OTHER fundamental is
+        // untouched — only the P/E denominator + the Net Income figure change.
+        const exR: StockGuideCompany = {
           ...r,
+          net_income_y1: r.net_income_ex_y1 ?? r.net_income_y1,
+          net_income_y2: r.net_income_ex_y2 ?? r.net_income_y2,
+        };
+        const mEx = deriveMultiples(exR, basisY1, basisY2);
+        out.push({
+          ...exR,
           isExTaxCredit: true,
           displayName: `${r.company_name} ex-tax credit`,
           livePrice,

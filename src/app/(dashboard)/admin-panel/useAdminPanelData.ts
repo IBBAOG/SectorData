@@ -188,6 +188,13 @@ export interface SgEditorRow {
   net_income_y1: string;
   net_income_y2: string;
   /**
+   * Optional ADJUSTED net income (BRL mn), PER FORWARD YEAR, used ONLY on the
+   * ex-tax-credit companion row's P/E denominator + its displayed Net Income.
+   * Empty = the companion row falls back to the reported net income.
+   */
+  net_income_ex_y1: string;
+  net_income_ex_y2: string;
+  /**
    * Optional NPV of recognized tax credits (BRL mn), PER FORWARD YEAR. When
    * EITHER is > 0, the comps table renders an extra "{Company} ex-tax credit"
    * companion row whose per-year market-cap basis is the live market cap MINUS
@@ -235,6 +242,8 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     ebitda_y2: numToStr(c.ebitda_y2),
     net_income_y1: numToStr(c.net_income_y1),
     net_income_y2: numToStr(c.net_income_y2),
+    net_income_ex_y1: numToStr(c.net_income_ex_y1),
+    net_income_ex_y2: numToStr(c.net_income_ex_y2),
     npv_tax_credit_y1: numToStr(c.npv_tax_credit_y1),
     npv_tax_credit_y2: numToStr(c.npv_tax_credit_y2),
     fcfe_y1: numToStr(c.fcfe_y1),
@@ -2054,6 +2063,8 @@ export function useAdminPanelData(): UseAdminPanelData {
         ebitda_y2: strToNum(r.ebitda_y2),
         net_income_y1: strToNum(r.net_income_y1),
         net_income_y2: strToNum(r.net_income_y2),
+        net_income_ex_y1: strToNum(r.net_income_ex_y1),
+        net_income_ex_y2: strToNum(r.net_income_ex_y2),
         npv_tax_credit_y1: strToNum(r.npv_tax_credit_y1),
         npv_tax_credit_y2: strToNum(r.npv_tax_credit_y2),
         fcfe_y1: strToNum(r.fcfe_y1),
