@@ -1468,7 +1468,7 @@ export default function DesktopView(): React.ReactElement {
     computedRows,
     restrictedNames,
     unitMarginNote,
-    adjustedEarningsNote,
+    mcapAdjNote,
     quotesLoading,
     refreshQuotes,
     selectedTicker,
@@ -1571,7 +1571,7 @@ export default function DesktopView(): React.ReactElement {
                   published estimates (net debt, EBITDA, net income, FCFE, dividends).
                 </div>
                 {unitMarginNote && <div>{unitMarginNote}</div>}
-                {adjustedEarningsNote && <div>{adjustedEarningsNote}</div>}
+                {mcapAdjNote && <div>{mcapAdjNote}</div>}
                 {restrictedNames.length > 0 && (
                   <div style={{ marginTop: 4 }}>
                     <strong style={{ color: "#6b7280" }}>Currently restricted:</strong>{" "}

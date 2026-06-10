@@ -4293,8 +4293,8 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     ebitda_y2: toNumOrNull(r.ebitda_y2),
     net_income_y1: toNumOrNull(r.net_income_y1),
     net_income_y2: toNumOrNull(r.net_income_y2),
-    net_income_adj_y1: toNumOrNull(r.net_income_adj_y1),
-    net_income_adj_y2: toNumOrNull(r.net_income_adj_y2),
+    mcap_adj_y1: toNumOrNull(r.mcap_adj_y1),
+    mcap_adj_y2: toNumOrNull(r.mcap_adj_y2),
     fcfe_y1: toNumOrNull(r.fcfe_y1),
     fcfe_y2: toNumOrNull(r.fcfe_y2),
     dividends_y1: toNumOrNull(r.dividends_y1),
@@ -4438,8 +4438,9 @@ export async function rpcAdminGetStockGuideSensitivity(
  * sector, volume_unit, shares_outstanding, last_update, target_price,
  * recommendation, display_order, and the FUNDAMENTALS — `net_debt_y1/y2`
  * (forward per year), `ebitda_y1/y2`, `net_income_y1/y2`, optional
- * `net_income_adj_y1/y2` (adjusted earnings used as the P/E denominator when
- * present — omit/null = use reported net income), `fcfe_y1/y2`, `dividends_y1/y2`,
+ * `mcap_adj_y1/y2` (per-year NPV of tax credits / non-operating assets, BRL mn,
+ * SUBTRACTED from the live market cap before the 4 multiples + the Upside price;
+ * omit/null = no adjustment), `fcfe_y1/y2`, `dividends_y1/y2`,
  * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the
  * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).

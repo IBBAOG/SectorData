@@ -65,13 +65,16 @@ export interface StockGuideCompany {
   net_income_y1: number | null;
   net_income_y2: number | null;
   /**
-   * Optional ADJUSTED net income in BRL million (e.g. Vibra, which strips
-   * non-recurring tax credits). When non-null it is the P/E denominator instead
-   * of the reported net income; the Net Income column still shows the reported
-   * value. NULL/undefined → the P/E falls back to `net_income_yN` (default).
+   * Optional MARKET-CAP ADJUSTMENT in BRL million, PER FORWARD YEAR — the NPV of
+   * a non-operating asset (e.g. the recognized tax credits of Vibra / Ultrapar)
+   * that is SUBTRACTED from the live market cap before computing the four
+   * multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) and the Upside-adjusted
+   * price. NULL/undefined → no adjustment (subtract 0). The Net Income column and
+   * the P/E numerator always use REPORTED earnings — this only shrinks the
+   * equity value, never the earnings.
    */
-  net_income_adj_y1: number | null;
-  net_income_adj_y2: number | null;
+  mcap_adj_y1: number | null;
+  mcap_adj_y2: number | null;
   /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
   fcfe_y1: number | null;
   fcfe_y2: number | null;
@@ -94,23 +97,37 @@ export interface StockGuideComputedRow extends StockGuideCompany {
   livePrice: number | null;
   /** `shares_outstanding × livePrice / 1e6` (BRL million). Null if either input missing. */
   marketCapBrlMn: number | null;
-  /** `target_price / livePrice − 1`. Null unless `livePrice > 0` and TP present. */
+  /**
+   * Market cap MINUS the per-year tax-credit NPV (`mcap_adj_y1`, treated as 0 when
+   * null) — `marketCapBrlMn − (mcap_adj_y1 ?? 0)`. This adjusted basis feeds the
+   * year-1 EV, P/E, FCFE yield and div yield. Null when `marketCapBrlMn` is null.
+   */
+  adjMcapY1: number | null;
+  /** Year-2 adjusted market cap — `marketCapBrlMn − (mcap_adj_y2 ?? 0)`. */
+  adjMcapY2: number | null;
+  /**
+   * Upside computed against the NPV-ADJUSTED price (the year-1 NPV per share is
+   * subtracted from the live price; the target price is NOT adjusted) —
+   * `target_price / (livePrice − npvPerShareY1) − 1`. Coherent with `adjMcapY1`,
+   * which equals `shares × adjustedPrice / 1e6`. When `mcap_adj_y1` is null the
+   * adjusted price = the live price, so this matches the unadjusted upside.
+   */
   upsidePct: number | null;
-  /** `marketCapBrlMn + net_debt_y1` (BRL million). Null if either input is null. */
+  /** `adjMcapY1 + net_debt_y1` (BRL million). Null if either input is null. */
   evBrlMnY1: number | null;
-  /** `marketCapBrlMn + net_debt_y2` (BRL million). Null if either input is null. */
+  /** `adjMcapY2 + net_debt_y2` (BRL million). Null if either input is null. */
   evBrlMnY2: number | null;
   /** `evBrlMnY1 / ebitda_y1` — null unless `ebitda_y1 > 0` (same for Y2). */
   evEbitdaY1: number | null;
   /** `evBrlMnY2 / ebitda_y2` — null unless `ebitda_y2 > 0`. */
   evEbitdaY2: number | null;
-  /** `marketCapBrlMn / net_income_y1` — null unless `net_income_y1 > 0` (same for Y2). */
+  /** `adjMcapY1 / net_income_y1` (REPORTED earnings) — null unless `net_income_y1 > 0` (same for Y2). */
   peY1: number | null;
   peY2: number | null;
-  /** `(fcfe_y1 / marketCapBrlMn) × 100` percent points — may be negative (same for Y2). */
+  /** `(fcfe_y1 / adjMcapY1) × 100` percent points — may be negative (same for Y2). */
   fcfeYieldY1: number | null;
   fcfeYieldY2: number | null;
-  /** `(dividends_y1 / marketCapBrlMn) × 100` percent points (same for Y2). */
+  /** `(dividends_y1 / adjMcapY1) × 100` percent points (same for Y2). */
   divYieldY1: number | null;
   divYieldY2: number | null;
 }
