@@ -35,7 +35,7 @@ jobs:
       - name: Instalar dependências
         run: |
           pip install --upgrade pip
-          pip install requests pandas supabase python-dotenv schedule
+          pip install requests pandas supabase python-dotenv schedule jinja2
 
       - name: Verificar variáveis de ambiente
         run: |
