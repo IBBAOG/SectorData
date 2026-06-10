@@ -79,23 +79,46 @@ export const BRAND_ORANGE = "#ff5000";
 //   - '#FFAE66' peach relocates to the fallback tier (pos 10); '#73C6A1'
 //     medium mint stays at pos 7 (kept distinct from the lighter pastel
 //     '#9bd9a9' at pos 3, and still pins Ethanol/UAE/Retail/Raízen).
+//
+// 2026-06-10 distinguishability reorder of the fallback tier (CTO directive —
+// positions 1-3 leader order LOCKED, only positions 4-14 reordered):
+//   - Motivation: positional consumers that filter orange (e.g.
+//     /anp-cdp-diaria company view → COMPANY_FIELD_COLORS = PALETTE minus
+//     orange) were taking positions 0,3,4 = #1f2937 slate, #000000 black,
+//     #1D4080 navy on a ≤5-series chart — THREE near-identical darks in the
+//     same chart (PRIO fields PEREGRINO / TUBARÃO MARTELO / POLVO were
+//     indistinguishable). This is the same "two series, one color" class of
+//     bug that triggered the whole color reform.
+//   - Fix: front-load maximally distinct hues into positions 4-8 (sky blue →
+//     purple → amber → magenta → teal) and push the redundant darks
+//     (#000000 black, #1D4080 royal navy), the slate-grey #52525B and the 2nd
+//     mint #73C6A1 (near the #9bd9a9 light mint of pos 3) to the tail (pos
+//     10-13). Result: any chart with ≤7 series never picks two darks nor two
+//     near-greens. #7F7F7F mid grey stays LAST (pos 14) — it is the canonical
+//     "Others" color and must not leak into ordinary series early.
+//   - All 14 colors stay DISTINCT (none dropped) — this is a pure reorder of
+//     positions 4-13; positions 1-3 (leader order) and 14 (Others grey) fixed.
+//   - Canonical maps (PRODUCT/COUNTRY/REGION/SEGMENT/COMPANY_COLORS) reference
+//     hex by NAME, not by index — this reorder does not affect them.
 export const PALETTE = [
-  // Leader order — first 3 positions, consumed first (navy → orange → mint).
+  // Leader order — first 3 positions, consumed first (navy → orange → mint). LOCKED.
   "#1f2937",  // 1. Navy/slate — leader (Pre-Salt of the /well-by-well PDF).
   "#FF5000",  // 2. Brand orange — legitimate 2nd series (Post-Salt of the PDF).
   "#9bd9a9",  // 3. Light mint — 3rd series (Onshore/Terra of the PDF).
   // Fallback tier — only when the leader order is exhausted (≥4 series).
+  // Reordered 2026-06-10 for max distinguishability: distinct hues first,
+  // redundant darks/greys/2nd-mint pushed to the tail.
   "#0EA5E9",  // 4. Sky blue   (replaces previous #FFFFFF white — 2026-05-28)
-  "#000000",  // 5. Black
-  "#1D4080",  // 6. Navy (royal — distinct from the #1f2937 slate leader)
-  "#73C6A1",  // 7. Medium mint (distinct from the #9bd9a9 light mint leader)
-  "#8258A0",  // 8. Purple
-  "#0F766E",  // 9. Teal       (replaces previous #D2FF00 lime — 2026-05-28)
-  "#FFAE66",  // 10. Peach     (relocated from pos 2 — 2026-06-09 reorder)
-  "#D97706",  // 11. Amber     (replaces previous #FFFF99 pale yellow — 2026-05-28)
-  "#52525B",  // 12. Slate     (replaces previous #F2F2F2 near-white — 2026-05-28)
-  "#BE185D",  // 13. Magenta   (replaces previous #D8D8D8 light grey — 2026-05-28)
-  "#7F7F7F",  // 14. Mid grey
+  "#8258A0",  // 5. Purple     (front-loaded 2026-06-10 — distinct from leaders)
+  "#D97706",  // 6. Amber      (replaces previous #FFFF99 pale yellow — 2026-05-28)
+  "#BE185D",  // 7. Magenta    (replaces previous #D8D8D8 light grey — 2026-05-28)
+  "#0F766E",  // 8. Teal       (replaces previous #D2FF00 lime — 2026-05-28)
+  "#FFAE66",  // 9. Peach      (warm, near brand orange — kept off the front)
+  "#000000",  // 10. Black     (pushed to tail 2026-06-10 — avoid clustered darks)
+  "#1D4080",  // 11. Royal navy (pushed to tail 2026-06-10 — distinct from #1f2937 slate)
+  "#52525B",  // 12. Slate-grey (replaces previous #F2F2F2 near-white — 2026-05-28)
+  "#73C6A1",  // 13. Medium mint (pushed to tail 2026-06-10 — near the #9bd9a9 light mint of pos 3)
+  "#7F7F7F",  // 14. Mid grey — canonical "Others"; always LAST, never leaks into series early.
 ] as const;
 
 // ─── Canonical entity-color maps ──────────────────────────────────────────────
@@ -185,14 +208,14 @@ export const REGION_COLORS: Record<string, string> = {
  *  Aliases (e.g. "Atem's", "Raizen") map to the same color as their canonical
  *  spelling so source-data label drift never breaks the pinning. */
 export const COMPANY_COLORS: Record<string, string> = {
-  Petrobras:   "#000000",  // black   (PALETTE pos 5)
-  Vibra:       "#0F766E",  // teal    (PALETTE pos 9)
-  Ipiranga:    "#1D4080",  // royal navy (PALETTE pos 6)
-  Raízen:      "#73C6A1",  // medium mint (PALETTE pos 7)
+  Petrobras:   "#000000",  // black   (PALETTE pos 10)
+  Vibra:       "#0F766E",  // teal    (PALETTE pos 8)
+  Ipiranga:    "#1D4080",  // royal navy (PALETTE pos 11)
+  Raízen:      "#73C6A1",  // medium mint (PALETTE pos 13)
   Raizen:      "#73C6A1",  // alias (no-tilde spelling sometimes in source data)
-  Atem:        "#8258A0",  // purple  (PALETTE pos 8)
+  Atem:        "#8258A0",  // purple  (PALETTE pos 5)
   "Atem's":    "#8258A0",  // alias (source data renders "Atem's")
-  "Royal FIC": "#D97706",  // amber   (PALETTE pos 11) — replaces the old #D2FF00
+  "Royal FIC": "#D97706",  // amber   (PALETTE pos 6) — replaces the old #D2FF00
                            //          lime that collided + was removed in the
                            //          2026-05-28 "no near-yellow" audit.
   "Royal Fic": "#D97706",  // alias (casing variant)

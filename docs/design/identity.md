@@ -51,7 +51,7 @@ Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/
 
 Paleta canônica para gráficos com múltiplas séries (stacked area, multi-line, bar charts, dots em tabelas). Fonte da verdade: `PALETTE` em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
 
-Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos") e em 2026-06-09 (**reorder da ordem-líder navy→orange→mint**): **14 cores em 2 tiers** — 3 da *ordem-líder* consumidas primeiro, 11 *fallback* quando a ordem-líder se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
+Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos"), em 2026-06-09 (**reorder da ordem-líder navy→orange→mint**) e em 2026-06-10 (**reorder do fallback tier por distinguibilidade**): **14 cores em 2 tiers** — 3 da *ordem-líder* consumidas primeiro, 11 *fallback* quando a ordem-líder se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
 
 #### Ordem-líder (posições 1-3) — navy → orange → mint
 
@@ -65,26 +65,28 @@ Reorder de 2026-06-09 (diretiva do CTO): a ordem-líder global passou a ser a pa
 
 #### Fallback tier (posições 4-14)
 
-Usadas apenas quando a ordem-líder se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28.
+Usadas apenas quando a ordem-líder se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28. **Reorder de 2026-06-10 (distinguibilidade):** matizes bem distintos foram trazidos para a frente (pos 4-8) e os escuros redundantes / o slate-grey / o 2º mint foram empurrados para o fim (pos 10-13), para que charts posicionais com ≤7 séries nunca peguem dois escuros nem dois verdes próximos.
 
 | Pos | Hex | Cor |
 |---|---|---|
 | 4 | `#0EA5E9` | Sky blue *(substituiu `#FFFFFF` branco — 2026-05-28)* |
-| 5 | `#000000` | Preto |
-| 6 | `#1D4080` | Royal navy *(distinto do slate `#1f2937` da pos 1)* |
-| 7 | `#73C6A1` | Medium mint *(distinto do light mint `#9bd9a9` da pos 3)* |
-| 8 | `#8258A0` | Purple |
-| 9 | `#0F766E` | Teal *(substituiu `#D2FF00` lime — quase-amarelo ilegível)* |
-| 10 | `#FFAE66` | Peach *(realocado da antiga pos 2 — reorder 2026-06-09)* |
-| 11 | `#D97706` | Amber *(substituiu `#FFFF99` amarelo claro)* |
-| 12 | `#52525B` | Slate *(substituiu `#F2F2F2` near-white)* |
-| 13 | `#BE185D` | Magenta *(substituiu `#D8D8D8` light grey)* |
-| 14 | `#7F7F7F` | Mid grey |
+| 5 | `#8258A0` | Purple *(trazido para a frente — reorder 2026-06-10)* |
+| 6 | `#D97706` | Amber *(substituiu `#FFFF99` amarelo claro)* |
+| 7 | `#BE185D` | Magenta *(substituiu `#D8D8D8` light grey)* |
+| 8 | `#0F766E` | Teal *(substituiu `#D2FF00` lime — quase-amarelo ilegível)* |
+| 9 | `#FFAE66` | Peach *(quente, próximo do brand orange — fora da frente)* |
+| 10 | `#000000` | Preto *(empurrado para o fim — reorder 2026-06-10, evita cluster de escuros)* |
+| 11 | `#1D4080` | Royal navy *(empurrado para o fim — distinto do slate `#1f2937` da pos 1)* |
+| 12 | `#52525B` | Slate-grey *(substituiu `#F2F2F2` near-white)* |
+| 13 | `#73C6A1` | Medium mint *(empurrado para o fim — próximo do light mint `#9bd9a9` da pos 3)* |
+| 14 | `#7F7F7F` | Mid grey — canônico "Others", sempre por último |
+
+**Motivo do reorder de 2026-06-10:** consumers posicionais que filtram orange (ex.: `/anp-cdp-diaria` company view → `COMPANY_FIELD_COLORS = PALETTE` sem orange) pegavam as posições 0,3,4 = `#1f2937` slate, `#000000` preto, `#1D4080` navy num chart de ≤5 séries — **três escuros quase idênticos** no mesmo gráfico (campos da PRIO PEREGRINO / TUBARÃO MARTELO / POLVO indistinguíveis). É a mesma classe de bug "duas séries, uma cor" que originou a reforma de cores. Fix: front-load de matizes distintos (sky → purple → amber → magenta → teal) e tail dos escuros/grey/2º-mint. Pos 1-3 (ordem-líder) e pos 14 (grey de Others) ficaram travadas; só 4-13 foram reordenadas. As 14 cores seguem distintas (nenhuma dropada).
 
 **Cores removidas no reorder de 2026-06-09** (para manter 14 distintas ao injetar navy+mint no topo):
 
-- `#000512` (antiga pos 3, near-black com nuance navy) — redundante contra `#000000` (pos 5) **e** o novo líder `#1f2937`; três near-blacks ficavam indistinguíveis num gráfico. `SEGMENT_COLORS.Total` mantém o literal `#000512` (pin fixo de entidade pode usar hex fora da PALETTE).
-- `#7030A0` (antiga pos 10, deep purple) — near-duplicate do purple `#8258A0` (pos 8); par mais fraco em distinção e não referenciado por nenhum canonical map.
+- `#000512` (antiga pos 3, near-black com nuance navy) — redundante contra `#000000` **e** o novo líder `#1f2937`; três near-blacks ficavam indistinguíveis num gráfico. `SEGMENT_COLORS.Total` mantém o literal `#000512` (pin fixo de entidade pode usar hex fora da PALETTE).
+- `#7030A0` (antiga pos 10, deep purple) — near-duplicate do purple `#8258A0`; par mais fraco em distinção e não referenciado por nenhum canonical map.
 
 #### Regras
 
@@ -156,12 +158,12 @@ Source of truth: `COMPANY_COLORS` in [`src/lib/plotlyDefaults.ts`](../../src/lib
 
 | Company | Hex | PALETTE pos | Aliases |
 |---|---|---|---|
-| Petrobras | `#000000` (black) | 5 | — |
-| Vibra | `#0F766E` (teal) | 9 | — |
-| Ipiranga | `#1D4080` (navy) | 6 | — |
-| Raízen | `#73C6A1` (mint) | 7 | Raizen |
-| Atem | `#8258A0` (purple) | 8 | Atem's |
-| Royal FIC | `#D97706` (amber) | 11 | Royal Fic |
+| Petrobras | `#000000` (black) | 10 | — |
+| Vibra | `#0F766E` (teal) | 8 | — |
+| Ipiranga | `#1D4080` (navy) | 11 | — |
+| Raízen | `#73C6A1` (mint) | 13 | Raizen |
+| Atem | `#8258A0` (purple) | 5 | Atem's |
+| Royal FIC | `#D97706` (amber) | 6 | Royal Fic |
 | Others | `#7F7F7F` (mid grey) | 14 | always last |
 
 Contract: every hex is a PALETTE member; `BRAND_ORANGE` is **not** used to pin a
