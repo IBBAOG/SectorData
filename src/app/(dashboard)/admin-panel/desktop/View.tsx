@@ -323,6 +323,7 @@ export default function DesktopView(): React.ReactElement | null {
     | "shares_outstanding" | "target_price" | "display_order"
     | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
+    | "net_income_ex_y1" | "net_income_ex_y2"
     | "npv_tax_credit_y1" | "npv_tax_credit_y2"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
@@ -2165,6 +2166,14 @@ export default function DesktopView(): React.ReactElement | null {
                             })}
                             {renderSgNumField("npv_tax_credit_y2", `NPV of tax credits ${sgConfigDraft.y2_label || "2027E"} (BRL mn)`, {
                               placeholder: "empty = no ex-tax-credit row",
+                            })}
+                            {renderSgNumField("net_income_ex_y1", `Ex-credit net income ${sgConfigDraft.y1_label || "2026E"} (BRL mn)`, {
+                              placeholder: "empty = uses reported net income on the ex-credit row",
+                              hint: "empty = uses reported net income on the ex-credit row",
+                            })}
+                            {renderSgNumField("net_income_ex_y2", `Ex-credit net income ${sgConfigDraft.y2_label || "2027E"} (BRL mn)`, {
+                              placeholder: "empty = uses reported net income on the ex-credit row",
+                              hint: "empty = uses reported net income on the ex-credit row",
                             })}
                           </div>
                         </div>

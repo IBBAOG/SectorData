@@ -4293,6 +4293,8 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     ebitda_y2: toNumOrNull(r.ebitda_y2),
     net_income_y1: toNumOrNull(r.net_income_y1),
     net_income_y2: toNumOrNull(r.net_income_y2),
+    net_income_ex_y1: toNumOrNull(r.net_income_ex_y1),
+    net_income_ex_y2: toNumOrNull(r.net_income_ex_y2),
     npv_tax_credit_y1: toNumOrNull(r.npv_tax_credit_y1),
     npv_tax_credit_y2: toNumOrNull(r.npv_tax_credit_y2),
     fcfe_y1: toNumOrNull(r.fcfe_y1),
@@ -4441,8 +4443,11 @@ export async function rpcAdminGetStockGuideSensitivity(
  * `npv_tax_credit_y1` / `npv_tax_credit_y2` (BRL mn — the SOLE tax-credit
  * mechanism: when EITHER > 0 the comps table renders an extra "{Company} ex-tax
  * credit" companion row whose per-year market-cap basis is the live market cap
- * MINUS that year's NPV; both empty = no companion row),
- * `fcfe_y1/y2`, `dividends_y1/y2`,
+ * MINUS that year's NPV; both empty = no companion row), optional per-year
+ * `net_income_ex_y1` / `net_income_ex_y2` (ADJUSTED net income BRL mn used as the
+ * EX-TAX-CREDIT row's P/E denominator + displayed Net Income when filled; empty =
+ * the companion uses the reported `net_income_yN`; the normal row always uses
+ * reported), `fcfe_y1/y2`, `dividends_y1/y2`,
  * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the
  * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
