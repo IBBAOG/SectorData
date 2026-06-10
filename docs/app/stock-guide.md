@@ -39,6 +39,20 @@ Everything renders `—` (never `NaN`) when null. Every divide-by-zero / non-pos
 
 The 4 live multiples render `—` while `quotesLoading` (they depend on the live price); EBITDA and Volumes are direct data and never gate on the quote.
 
+### Ex-tax-credit companion row (`npv_tax_credit`, 2026-06-20)
+
+A per-company **`npv_tax_credit` numeric** (BRL mn, nullable; migration `20260620000000`, exposed hide-aware in `get_stock_guide_comps` + `admin_get_stock_guide_companies`, persisted by `admin_upsert_stock_guide_company`). When it is **`> 0`**, the comps table renders ONE EXTRA companion row right below the company — `"{Company} ex-tax credit"` (e.g. "Ultrapar" + "Ultrapar ex-tax credit"). `NULL` or `≤ 0` → no companion row (current behaviour intact).
+
+Analyst-locked formula for the companion row:
+
+- **`mktcapEx = marketCapBrlMn − npv_tax_credit`** (the LIVE market cap minus the NPV — a **single** value used for BOTH forward years, NOT the per-year `mcap_adj_yN` basis). EVERY mcap-derived figure recomputes on `mktcapEx`: EV/EBITDA (`EV = mktcapEx + net_debt_yN`), P/E (`mktcapEx ÷ net_income_yN`), FCFE yield (`fcfe_yN ÷ mktcapEx`), Div yield (`dividends_yN ÷ mktcapEx`). The **Market cap** column shows `mktcapEx`.
+- **TP / Recommendation / Upside / Current price REPEAT the parent's** values (explicit analyst decision — the upside is NOT recomputed against `mktcapEx`).
+- **Fundamentals (EBITDA, Net income, Volumes) repeat the parent's** values (only the equity-value basis differs).
+
+In the hook this is built in `computedRows` by a shared pure `deriveMultiples(r, basisY1, basisY2)` helper (used by the normal row with `adjMcapYN` and by the companion with `mktcapEx`). The companion carries `isExTaxCredit: true` + `displayName` (the normal row carries `displayName = company_name`). Both Views render the companion with the same identity but visually de-emphasised (italic, muted, slight indent, no select accent). The companion row **is included in the Excel + CSV exports** (Company column = `displayName`). It is the same ticker, so clicking it opens the same company's sensitivity drill-down.
+
+> **Interaction with `mcap_adj_y1/y2`.** `npv_tax_credit` and `mcap_adj_yN` are TWO independent mechanisms that both model a tax-credit NPV but apply it differently. `mcap_adj_yN` is **per-forward-year** and silently shrinks the equity basis of the **normal** row's four multiples + the upside-adjusted price (no extra row). `npv_tax_credit` is a **single** value that spawns a **separate companion row** and leaves the normal row untouched. They are NOT additive in the companion: the companion subtracts `npv_tax_credit` from the **raw live** market cap (`marketCapBrlMn`), not from `adjMcapYN`, so there is no double-counting. If an analyst populates BOTH for the same company, the normal row's multiples reflect `mcap_adj` while the companion reflects `npv_tax_credit` — the two could diverge confusingly. **Flagged to the analyst as a likely redundancy** (the two were specified one day apart by parallel work); a future cleanup may consolidate to one mechanism.
+
 ### Live-quote wiring & cadence
 
 - The hook collects the `yahoo_symbol` (fallback `ticker`) of **visible** rows into one de-duplicated list and passes it to `useStockQuote(symbols)` → a single batched `GET /api/stocks/quote?tickers=…` request (the proxy auto-appends `.SA` for B3 tickers and returns an array).

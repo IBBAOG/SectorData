@@ -75,6 +75,17 @@ export interface StockGuideCompany {
    */
   mcap_adj_y1: number | null;
   mcap_adj_y2: number | null;
+  /**
+   * Optional NPV (BRL million) of recognized tax credits for this company. When
+   * present and > 0, the comps table renders an EXTRA "{Company} ex-tax credit"
+   * companion row right below the company, whose market cap is the LIVE market
+   * cap MINUS this NPV (`mktcap_ex = marketCapBrlMn − npv_tax_credit`); every
+   * mcap-derived figure (EV/EBITDA, P/E, FCFE Yield, Div Yield) is recomputed on
+   * that ex-credit basis. NULL/undefined/≤0 → no companion row. Analyst-locked
+   * formula; independent of the per-year `mcap_adj_y1/y2` mechanism (see the hook
+   * for the interaction note). Persisted via `admin_upsert_stock_guide_company`.
+   */
+  npv_tax_credit: number | null;
   /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
   fcfe_y1: number | null;
   fcfe_y2: number | null;
@@ -93,6 +104,20 @@ export interface StockGuideCompany {
  * are dimensionless and the yields are ×100 for percent points.
  */
 export interface StockGuideComputedRow extends StockGuideCompany {
+  /**
+   * True when this is the synthetic "ex-tax credit" COMPANION row (rendered right
+   * below its parent company when `npv_tax_credit > 0`). The companion's market cap
+   * = the parent's LIVE market cap − `npv_tax_credit`; every mcap-derived multiple
+   * is recomputed on that basis, while TP / recommendation / upside / current
+   * price / fundamentals (EBITDA, Net income, Volumes) REPEAT the parent's values.
+   * `false`/undefined on every normal company row.
+   */
+  isExTaxCredit?: boolean;
+  /**
+   * The label shown in the Company column. For a normal row this is the
+   * `company_name`; for the companion row it is `"{company_name} ex-tax credit"`.
+   */
+  displayName: string;
   /** `quote.regularMarketPrice` matched on `yahoo_symbol` (fallback `ticker`). */
   livePrice: number | null;
   /** `shares_outstanding × livePrice / 1e6` (BRL million). Null if either input missing. */

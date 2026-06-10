@@ -276,12 +276,15 @@ function CompsTable({
             </tr>
           ) : (
             rows.map((r, i) => {
+              const isExCredit = r.isExTaxCredit === true;
               const isSel = r.ticker === selectedTicker;
-              const rowBg = isSel
-                ? "var(--mobile-accent-fill)"
-                : i % 2 === 0
-                  ? "var(--mobile-surface)"
-                  : "var(--mobile-surface-elevated)";
+              const rowBg = isExCredit
+                ? "var(--mobile-surface-elevated)"
+                : isSel
+                  ? "var(--mobile-accent-fill)"
+                  : i % 2 === 0
+                    ? "var(--mobile-surface)"
+                    : "var(--mobile-surface-elevated)";
               const upsideColor =
                 r.upsidePct == null
                   ? "var(--mobile-text)"
@@ -292,9 +295,9 @@ function CompsTable({
                       : "var(--mobile-text-muted)";
               return (
                 <tr
-                  key={r.ticker}
+                  key={isExCredit ? `${r.ticker}__ex` : r.ticker}
                   onClick={() => onSelect(r.ticker)}
-                  aria-label={`${r.company_name} — tap for sensitivity`}
+                  aria-label={`${r.displayName} — tap for sensitivity`}
                   style={{ cursor: "pointer", borderBottom: "1px solid var(--mobile-divider)" }}
                 >
                   {/* Sticky Company cell */}
@@ -307,19 +310,23 @@ function CompsTable({
                       textAlign: "left",
                       width: STICKY_COL_WIDTH,
                       minWidth: STICKY_COL_WIDTH,
-                      padding: "8px 10px",
+                      padding: isExCredit ? "8px 10px 8px 18px" : "8px 10px",
                       background: rowBg,
                       borderRight: "1px solid var(--mobile-border)",
-                      borderLeft: isSel
-                        ? `3px solid ${MOBILE_ACCENT}`
-                        : "3px solid transparent",
+                      borderLeft:
+                        isSel && !isExCredit
+                          ? `3px solid ${MOBILE_ACCENT}`
+                          : "3px solid transparent",
                       boxShadow: STICKY_SHADOW,
                     }}
                   >
                     <div
                       style={{
-                        fontWeight: 700,
-                        color: "var(--mobile-text)",
+                        fontWeight: isExCredit ? 500 : 700,
+                        fontStyle: isExCredit ? "italic" : "normal",
+                        color: isExCredit
+                          ? "var(--mobile-text-muted)"
+                          : "var(--mobile-text)",
                         fontSize: 12,
                         lineHeight: 1.2,
                         overflow: "hidden",
@@ -327,7 +334,7 @@ function CompsTable({
                         whiteSpace: "nowrap",
                       }}
                     >
-                      {r.company_name}
+                      {r.displayName}
                     </div>
                   </th>
                   {SINGLE_COLS.map((c) => {

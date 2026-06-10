@@ -646,7 +646,72 @@ export function useStockGuideData(): UseStockGuideData {
       ? visibleRows.filter((r) => r.sector === filters.sectorFilter)
       : visibleRows;
 
-    return scoped.map((r) => {
+    // Derive the four mcap-driven multiples + the per-year EV from a given pair
+    // of adjusted market-cap bases (year-1 / year-2). Pure; null-safe; every
+    // denominator guarded. Shared by the NORMAL row (basis = mcap − mcap_adj_yN)
+    // and the EX-TAX-CREDIT companion row (basis = mcap − npv_tax_credit, same
+    // value both years). Net income / EBITDA / dividends / FCFE are the company's
+    // own fundamentals in both cases — only the equity-value basis differs.
+    const deriveMultiples = (
+      r: StockGuideCompany,
+      basisY1: number | null,
+      basisY2: number | null,
+    ) => {
+      // EV is FORWARD PER YEAR: the year's market-cap basis + that forward year's
+      // net debt (net debt may be negative = net cash → lowers EV).
+      const evBrlMnY1 =
+        basisY1 != null && r.net_debt_y1 != null ? basisY1 + r.net_debt_y1 : null;
+      const evBrlMnY2 =
+        basisY2 != null && r.net_debt_y2 != null ? basisY2 + r.net_debt_y2 : null;
+      const evEbitdaY1 =
+        evBrlMnY1 != null && r.ebitda_y1 != null && r.ebitda_y1 > 0
+          ? evBrlMnY1 / r.ebitda_y1
+          : null;
+      const evEbitdaY2 =
+        evBrlMnY2 != null && r.ebitda_y2 != null && r.ebitda_y2 > 0
+          ? evBrlMnY2 / r.ebitda_y2
+          : null;
+      // P/E uses the REPORTED net income; not meaningful for non-positive earnings.
+      const peY1 =
+        basisY1 != null && r.net_income_y1 != null && r.net_income_y1 > 0
+          ? basisY1 / r.net_income_y1
+          : null;
+      const peY2 =
+        basisY2 != null && r.net_income_y2 != null && r.net_income_y2 > 0
+          ? basisY2 / r.net_income_y2
+          : null;
+      const fcfeYieldY1 =
+        r.fcfe_y1 != null && basisY1 != null && basisY1 > 0
+          ? (r.fcfe_y1 / basisY1) * 100
+          : null;
+      const fcfeYieldY2 =
+        r.fcfe_y2 != null && basisY2 != null && basisY2 > 0
+          ? (r.fcfe_y2 / basisY2) * 100
+          : null;
+      const divYieldY1 =
+        r.dividends_y1 != null && basisY1 != null && basisY1 > 0
+          ? (r.dividends_y1 / basisY1) * 100
+          : null;
+      const divYieldY2 =
+        r.dividends_y2 != null && basisY2 != null && basisY2 > 0
+          ? (r.dividends_y2 / basisY2) * 100
+          : null;
+      return {
+        evBrlMnY1,
+        evBrlMnY2,
+        evEbitdaY1,
+        evEbitdaY2,
+        peY1,
+        peY2,
+        fcfeYieldY1,
+        fcfeYieldY2,
+        divYieldY1,
+        divYieldY2,
+      };
+    };
+
+    const out: StockGuideComputedRow[] = [];
+    for (const r of scoped) {
       const livePrice = livePriceFor(r);
       // Market cap (BRL mn) = absolute share count × live BRL price / 1e6 — a
       // single current value.
@@ -685,85 +750,52 @@ export function useStockGuideData(): UseStockGuideData {
           ? r.target_price / adjustedPrice - 1
           : null;
 
-      // ── Live derivation of the 4 price-sensitive multiples ────────────────
-      // All monetary inputs are BRL mn → EV/EBITDA and P/E are dimensionless;
-      // the yields are ×100 for percent points. Every denominator is guarded:
-      // EBITDA≤0 and Net income≤0 → null (multiple not meaningful); the adjusted
-      // market cap must be > 0 for the yields. Null-safe throughout → "—", no NaN.
+      // ── Live derivation of the 4 price-sensitive multiples (normal basis) ──
+      const m = deriveMultiples(r, adjMcapY1, adjMcapY2);
 
-      // EV is FORWARD PER YEAR: the year's ADJUSTED market cap + the net debt of
-      // that forward year. Net debt may be negative (net cash), which
-      // legitimately lowers EV.
-      const evBrlMnY1 =
-        adjMcapY1 != null && r.net_debt_y1 != null
-          ? adjMcapY1 + r.net_debt_y1
-          : null;
-      const evBrlMnY2 =
-        adjMcapY2 != null && r.net_debt_y2 != null
-          ? adjMcapY2 + r.net_debt_y2
-          : null;
-
-      const evEbitdaY1 =
-        evBrlMnY1 != null && r.ebitda_y1 != null && r.ebitda_y1 > 0
-          ? evBrlMnY1 / r.ebitda_y1
-          : null;
-      const evEbitdaY2 =
-        evBrlMnY2 != null && r.ebitda_y2 != null && r.ebitda_y2 > 0
-          ? evBrlMnY2 / r.ebitda_y2
-          : null;
-
-      // P/E uses the REPORTED net income (the adjusted-earnings override is gone;
-      // tax credits now shrink the equity value via `adjMcapYN`, not the
-      // earnings). P/E is not meaningful for non-positive earnings → null.
-      const peY1 =
-        adjMcapY1 != null && r.net_income_y1 != null && r.net_income_y1 > 0
-          ? adjMcapY1 / r.net_income_y1
-          : null;
-      const peY2 =
-        adjMcapY2 != null && r.net_income_y2 != null && r.net_income_y2 > 0
-          ? adjMcapY2 / r.net_income_y2
-          : null;
-
-      // FCFE yield = FCFE / adjusted market cap × 100. FCFE may be negative →
-      // negative yield is fine to show; only require adjusted market cap > 0.
-      const fcfeYieldY1 =
-        r.fcfe_y1 != null && adjMcapY1 != null && adjMcapY1 > 0
-          ? (r.fcfe_y1 / adjMcapY1) * 100
-          : null;
-      const fcfeYieldY2 =
-        r.fcfe_y2 != null && adjMcapY2 != null && adjMcapY2 > 0
-          ? (r.fcfe_y2 / adjMcapY2) * 100
-          : null;
-
-      // Dividend yield = total dividends / adjusted market cap × 100.
-      const divYieldY1 =
-        r.dividends_y1 != null && adjMcapY1 != null && adjMcapY1 > 0
-          ? (r.dividends_y1 / adjMcapY1) * 100
-          : null;
-      const divYieldY2 =
-        r.dividends_y2 != null && adjMcapY2 != null && adjMcapY2 > 0
-          ? (r.dividends_y2 / adjMcapY2) * 100
-          : null;
-
-      return {
+      out.push({
         ...r,
+        isExTaxCredit: false,
+        displayName: r.company_name,
         livePrice,
         marketCapBrlMn,
         adjMcapY1,
         adjMcapY2,
         upsidePct,
-        evBrlMnY1,
-        evBrlMnY2,
-        evEbitdaY1,
-        evEbitdaY2,
-        peY1,
-        peY2,
-        fcfeYieldY1,
-        fcfeYieldY2,
-        divYieldY1,
-        divYieldY2,
-      };
-    });
+        ...m,
+      });
+
+      // ── EX-TAX-CREDIT companion row ───────────────────────────────────────
+      // Analyst-locked: when npv_tax_credit > 0, render an extra row right below
+      // this company whose equity basis is the LIVE market cap MINUS the NPV
+      // (`mktcap_ex`, SAME value both years — this is NOT the per-year mcap_adj
+      // basis). Every mcap-derived figure recomputes on `mktcap_ex`; the Market
+      // cap column shows `mktcap_ex`. TP / recommendation / upside / current
+      // price + the fundamentals (EBITDA, Net income, Volumes) REPEAT the
+      // parent's values verbatim (explicit analyst decision).
+      if (
+        r.npv_tax_credit != null &&
+        r.npv_tax_credit > 0 &&
+        marketCapBrlMn != null
+      ) {
+        const mktcapEx = marketCapBrlMn - r.npv_tax_credit;
+        const mEx = deriveMultiples(r, mktcapEx, mktcapEx);
+        out.push({
+          ...r,
+          isExTaxCredit: true,
+          displayName: `${r.company_name} ex-tax credit`,
+          livePrice,
+          // Market cap column shows the ex-credit equity value.
+          marketCapBrlMn: mktcapEx,
+          adjMcapY1: mktcapEx,
+          adjMcapY2: mktcapEx,
+          // Upside REPEATS the parent (TP + current price unchanged).
+          upsidePct,
+          ...mEx,
+        });
+      }
+    }
+    return out;
     // priceByKey captures the quote dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleRows, filters.sectorFilter, priceByKey]);
@@ -1187,7 +1219,7 @@ export function useStockGuideData(): UseStockGuideData {
         sheetName: "Comps",
         mergeTitleCells: true,
         columns: [
-          { header: "Company",            key: "company_name",  width: 20, align: "left"   },
+          { header: "Company",            key: "displayName",   width: 24, align: "left"   },
           { header: "Ticker",             key: "ticker",        width: 10, align: "left"   },
           { header: "Last update",        key: "last_update",   width: 13, align: "center" },
           { header: "Recommendation",     key: "recommendation",width: 15, align: "center" },
@@ -1226,7 +1258,7 @@ export function useStockGuideData(): UseStockGuideData {
       const y2 = config.y2_label;
       downloadCsv({
         rows: computedRows.map((r) => ({
-          company: r.company_name,
+          company: r.displayName,
           ticker: r.ticker,
           last_update: r.last_update,
           recommendation: r.recommendation,

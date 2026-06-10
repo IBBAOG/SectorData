@@ -320,8 +320,15 @@ function CompsTable({
             </tr>
           ) : (
             rows.map((r, i) => {
+              const isExCredit = r.isExTaxCredit === true;
               const isSel = r.ticker === selectedTicker;
-              const rowBg = isSel ? "rgba(255,80,0,0.06)" : i % 2 === 0 ? "#fff" : "#fbfbfb";
+              const rowBg = isExCredit
+                ? "#f5f5f5"
+                : isSel
+                  ? "rgba(255,80,0,0.06)"
+                  : i % 2 === 0
+                    ? "#fff"
+                    : "#fbfbfb";
               const upsideColor =
                 r.upsidePct == null
                   ? "#1a1a1a"
@@ -332,7 +339,7 @@ function CompsTable({
                       : "#6b7280";
               return (
                 <tr
-                  key={r.ticker}
+                  key={isExCredit ? `${r.ticker}__ex` : r.ticker}
                   data-sel={isSel ? "1" : "0"}
                   onClick={() => onSelect(r.ticker)}
                   style={{ cursor: "pointer", background: rowBg }}
@@ -345,17 +352,19 @@ function CompsTable({
                       left: 0,
                       zIndex: 2,
                       textAlign: "left",
-                      fontWeight: 700,
-                      color: "#111827",
+                      fontWeight: isExCredit ? 500 : 700,
+                      fontStyle: isExCredit ? "italic" : "normal",
+                      color: isExCredit ? "#6b7280" : "#111827",
+                      ...(isExCredit ? { padding: "8px 12px 8px 24px" } : null),
                       width: STICKY_COL_WIDTH,
                       minWidth: STICKY_COL_WIDTH,
                       background: rowBg,
                       borderRight: "1px solid #e0e0e0",
-                      borderLeft: isSel ? `3px solid ${BRAND_ORANGE}` : "3px solid transparent",
+                      borderLeft: isSel && !isExCredit ? `3px solid ${BRAND_ORANGE}` : "3px solid transparent",
                       boxShadow: STICKY_SHADOW,
                     }}
                   >
-                    {r.company_name}
+                    {r.displayName}
                   </td>
                   {SINGLE_COLS.map((c) => {
                     switch (c.id) {

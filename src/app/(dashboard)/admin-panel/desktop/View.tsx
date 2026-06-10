@@ -323,7 +323,7 @@ export default function DesktopView(): React.ReactElement | null {
     | "shares_outstanding" | "target_price" | "display_order"
     | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
-    | "mcap_adj_y1" | "mcap_adj_y2"
+    | "mcap_adj_y1" | "mcap_adj_y2" | "npv_tax_credit"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
   const renderSgNumField = (
@@ -2164,6 +2164,25 @@ export default function DesktopView(): React.ReactElement | null {
                             })}
                             {renderSgNumField("mcap_adj_y2", `Tax-credit NPV ${sgConfigDraft.y2_label || "Y2"} (BRL mn)`, {
                               placeholder: "empty = no adjustment",
+                            })}
+                          </div>
+                        </div>
+
+                        {/* NPV of tax credits — ex-tax-credit companion row (optional) */}
+                        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 }}>
+                            NPV of tax credits — ex-tax-credit companion row (optional)
+                          </div>
+                          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, lineHeight: 1.5 }}>
+                            When &gt; 0, the comps table renders an extra
+                            &ldquo;{sgEditorRow?.company_name || "Company"} ex-tax credit&rdquo;
+                            row right below this company, whose market cap is the live market
+                            cap minus this NPV (multiples recomputed on that basis). Empty = no
+                            ex-tax-credit row.
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 12 }}>
+                            {renderSgNumField("npv_tax_credit", "NPV of tax credits (BRL mn)", {
+                              placeholder: "empty = no ex-tax-credit row",
                             })}
                           </div>
                         </div>
