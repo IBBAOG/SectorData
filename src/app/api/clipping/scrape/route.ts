@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { scrape } from "@/lib/clipping/scrape";
 import { parseNetscapeCookies, buildCookieHeader, canonicalDomain } from "@/lib/clipping/cookies";
-import { isBrasilEnergiaDomain, getBrasilEnergiaCookieHeader } from "@/lib/clipping/brasilEnergiaAuth";
+import { isBrasilEnergiaDomain, getBrasilEnergiaCookieHeader, getBrasilEnergiaLastDiagnostic } from "@/lib/clipping/brasilEnergiaAuth";
 import { scrapeLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 import type { ScrapeResult } from "@/lib/clipping/types";
 
@@ -143,6 +143,18 @@ export async function POST(req: NextRequest) {
         error: s.reason instanceof Error ? s.reason.message : String(s.reason),
       };
     });
+
+    // Surface the Brasil Energia auto-login outcome on any failed BE result, so
+    // a login failure is debuggable from the Status tab (no runtime logs needed).
+    const beDiag = getBrasilEnergiaLastDiagnostic();
+    for (const r of results) {
+      if (
+        r.status !== "ok" &&
+        isBrasilEnergiaDomain(canonicalDomain(r.url))
+      ) {
+        r.error = `${r.error ?? ""} [be-login: ${beDiag}]`;
+      }
+    }
 
     return NextResponse.json({ results: [...results, ...skipped] });
   } catch (err: unknown) {

@@ -39,6 +39,11 @@ import { bblDiaToKbpd } from "../../../../lib/units";
 import { ExportButton } from "@/lib/export";
 import { anpCdpDiariaExport } from "@/lib/export/dashboards/anpCdpDiaria";
 
+// TEMPORARY — P-78 daily-panel coverage banner. Remove when ANP registers
+// FPSO P-78 in the daily panel (the cdp_roster_canary ops email is the
+// trigger; the ETL auto-backfills the history). See P78CoverageNotice.tsx.
+import P78CoverageNotice from "../P78CoverageNotice";
+
 import type { Layout, PlotData } from "plotly.js";
 import {
   useAnpCdpDiariaData,
@@ -131,6 +136,12 @@ export default function DesktopView(): React.ReactElement | null {
                 period={periodBadge}
                 rightSlot={<ExportButton spec={anpCdpDiariaExport} />}
               />
+
+              {/* TEMPORARY P-78 coverage banner — above the tab bar so the
+                  company tabs AND the Explore surface all see it. */}
+              <div style={{ marginBottom: 14 }}>
+                <P78CoverageNotice variant="desktop" />
+              </div>
 
               {/* Primary tab bar: [PRIO] [Petrobras] [Explore raw data] */}
               <PrimaryTabBar

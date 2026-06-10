@@ -89,6 +89,13 @@ let cached: CachedSession | null = null;
 // have several Brasil Energia URLs resolving cookies at once).
 let inFlight: Promise<string | null> | null = null;
 
+// Last login diagnostic — surfaced to the clipping route's Status so a failed
+// login can be debugged without serverless runtime logs. Coarse, no secrets.
+let lastDiagnostic = "not_attempted";
+export function getBrasilEnergiaLastDiagnostic(): string {
+  return lastDiagnostic;
+}
+
 /** Domain helper — true for the brasilenergia.com.br apex and www host. */
 export function isBrasilEnergiaDomain(domain: string): boolean {
   const d = (domain || "").toLowerCase().replace(/^www\./, "");
@@ -251,10 +258,12 @@ async function login(user: string, pass: string): Promise<string | null> {
   try {
     getResp = await httpGet(LOGIN_URL);
   } catch (e) {
+    lastDiagnostic = `get_exec_error:${String(e).slice(0, 60)}`;
     console.warn("[brasilEnergiaAuth] GET login page failed:", String(e));
     return null;
   }
   if (!getResp.ok) {
+    lastDiagnostic = `get_status_${getResp.status}(bodylen=${getResp.body.length})`;
     console.warn(`[brasilEnergiaAuth] GET login page HTTP ${getResp.status}`);
     return null;
   }
@@ -262,6 +271,7 @@ async function login(user: string, pass: string): Promise<string | null> {
 
   const token = readRequestVerificationToken(getResp.body);
   if (!token) {
+    lastDiagnostic = `no_token(get_status_${getResp.status},bodylen=${getResp.body.length},getcookies=[${getResp.setCookies.length}])`;
     console.warn(
       "[brasilEnergiaAuth] could not find __RequestVerificationToken on login page",
     );
@@ -282,6 +292,7 @@ async function login(user: string, pass: string): Promise<string | null> {
   try {
     postResp = await httpPostForm(LOGIN_URL, form.toString(), buildCookieHeaderFromJar(jar));
   } catch (e) {
+    lastDiagnostic = `post_exec_error:${String(e).slice(0, 60)}`;
     console.warn("[brasilEnergiaAuth] login POST failed:", String(e));
     return null;
   }
@@ -291,6 +302,7 @@ async function login(user: string, pass: string): Promise<string | null> {
   // Success = a be-auth cookie is now present (the POST returns 302 to ReturnUrl;
   // a failed login re-renders the form as HTTP 200 with no be-auth cookie).
   if (!jar.has(AUTH_COOKIE)) {
+    lastDiagnostic = `post_status_${postResp.status}_no_be_auth(postcookies=[${postResp.setCookies.length}],jar=[${[...jar.keys()].join(",")}])`;
     console.warn(
       `[brasilEnergiaAuth] login did not yield a ${AUTH_COOKIE} cookie ` +
         `(status ${postResp.status}) — check credentials`,
@@ -298,6 +310,7 @@ async function login(user: string, pass: string): Promise<string | null> {
     return null;
   }
 
+  lastDiagnostic = "ok";
   return buildCookieHeaderFromJar(jar);
 }
 
@@ -333,6 +346,7 @@ export async function getBrasilEnergiaCookieHeader(
   const pass = (process.env.BRASIL_ENERGIA_PASS ?? "").trim();
   if (!user || !pass) {
     // Credentials not configured — disable the layer silently (callers fall back).
+    lastDiagnostic = `no_credentials(user=${user ? "set" : "empty"},pass=${pass ? "set" : "empty"})`;
     return null;
   }
 

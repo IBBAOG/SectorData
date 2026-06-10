@@ -55,6 +55,11 @@ import {
 } from "../useAnpCdpDiariaData";
 import { bblDiaToKbpd } from "../../../../lib/units";
 
+// TEMPORARY — P-78 daily-panel coverage banner. Remove when ANP registers
+// FPSO P-78 in the daily panel (the cdp_roster_canary ops email is the
+// trigger; the ETL auto-backfills the history). See P78CoverageNotice.tsx.
+import P78CoverageNotice from "../P78CoverageNotice";
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const TOP_CHART_TRACES  = 5;   // chart legibility on 375px screens
@@ -392,6 +397,12 @@ export default function MobileView(): React.ReactElement | null {
         )}
       </section>
 
+      {/* ── TEMPORARY P-78 coverage banner (near the top, more prominent than
+             a footnote; repeated inside the Explore sheet, which covers it) ── */}
+      <section style={{ padding: "12px 16px 0", marginBottom: 4 }}>
+        <P78CoverageNotice variant="mobile" />
+      </section>
+
       {/* ── Sticky period preset row ───────────────────────────────────────── */}
       <div
         style={{
@@ -485,6 +496,12 @@ export default function MobileView(): React.ReactElement | null {
         title="Explore raw data"
         height="90vh"
       >
+        {/* TEMPORARY P-78 coverage banner — the sheet covers the landing card,
+            so the granular (field) view repeats the notice. */}
+        <div style={{ marginBottom: 10 }}>
+          <P78CoverageNotice variant="mobile" />
+        </div>
+
         {/* Caption — signals gross vs net */}
         <div style={{ fontSize: 12, color: "var(--mobile-text-muted, #6b6b73)", marginBottom: 10 }}>
           Unweighted ANP daily feed — all operators.
