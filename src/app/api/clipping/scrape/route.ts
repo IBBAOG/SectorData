@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { scrape } from "@/lib/clipping/scrape";
 import { parseNetscapeCookies, buildCookieHeader, canonicalDomain } from "@/lib/clipping/cookies";
+import { isBrasilEnergiaDomain, getBrasilEnergiaCookieHeader } from "@/lib/clipping/brasilEnergiaAuth";
 import { scrapeLimiter, enforceLimit, rateLimitResponse, getClientIp } from "@/lib/rateLimit";
 import type { ScrapeResult } from "@/lib/clipping/types";
 
@@ -99,6 +100,18 @@ export async function POST(req: NextRequest) {
           if (parsed.length > 0) {
             cookieHeaderByDomain[row.domain] = buildCookieHeader(parsed);
           }
+        }
+      }
+
+      // Brasil Energia: the manually-pasted clipping_cookies row expires fast and
+      // silently downgrades to paywalled bodies. When the batch touches it, log in
+      // automatically and OVERRIDE the DB cookie with a fresh logged-in session.
+      // If login returns null (no credentials / failure), keep the DB cookie.
+      const beDomain = domains.find((d) => isBrasilEnergiaDomain(d));
+      if (beDomain) {
+        const freshCookie = await getBrasilEnergiaCookieHeader();
+        if (freshCookie) {
+          cookieHeaderByDomain[beDomain] = freshCookie;
         }
       }
     }

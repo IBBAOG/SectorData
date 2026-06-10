@@ -289,6 +289,123 @@ export async function fetchHtmlViaImpersonate(
 }
 
 // ---------------------------------------------------------------------------
+// curlImpersonateRequest — low-level Chrome-fingerprint request (GET/POST)
+// ---------------------------------------------------------------------------
+
+export interface ImpersonateResponse {
+  ok: boolean;
+  status: number;
+  body: string;
+  /** Raw Set-Cookie header lines from the response (may be empty). */
+  setCookies: string[];
+  detail?: string;
+}
+
+/**
+ * Perform a single HTTP request through curl-impersonate chrome131, exposing
+ * the status code, body, and Set-Cookie lines. Unlike fetchHtmlViaImpersonate,
+ * this does NOT follow redirects by default and supports POST bodies + an
+ * inbound Cookie string — it's used by the Brasil Energia login flow, which
+ * needs to read antiforgery/be-auth cookies off the response and treat a 302
+ * as success.
+ *
+ * Returns ok=false with detail "curl_impersonate_not_found" on non-Linux dev
+ * environments (the ELF binary can't run there) so callers can fall back.
+ */
+export async function curlImpersonateRequest(
+  url: string,
+  opts: {
+    method?: "GET" | "POST";
+    body?: string;
+    cookieHeader?: string;
+    extraHeaders?: Record<string, string>;
+    followRedirects?: boolean;
+    signal?: AbortSignal;
+    timeoutSecs?: number;
+  } = {},
+): Promise<ImpersonateResponse> {
+  const curlPath = await resolveCurlImpersonatePath();
+  if (!curlPath) {
+    return { ok: false, status: 0, body: "", setCookies: [], detail: "curl_impersonate_not_found" };
+  }
+
+  const {
+    method = "GET",
+    body,
+    cookieHeader,
+    extraHeaders = {},
+    followRedirects = false,
+    signal,
+    timeoutSecs = 20,
+  } = opts;
+
+  // -D - dumps response headers (incl. Set-Cookie) to stdout before the body.
+  const args = [
+    "-sS",
+    "--max-time", String(timeoutSecs),
+    "-D", "-",
+    "-w", "\n---STATUS:%{http_code}",
+  ];
+  if (followRedirects) args.push("-L");
+  if (method === "POST") {
+    args.push("-X", "POST");
+    if (body !== undefined) args.push("--data-raw", body);
+  }
+  if (cookieHeader) args.push("-H", `Cookie: ${cookieHeader}`);
+  for (const [k, v] of Object.entries(extraHeaders)) {
+    args.push("-H", `${k}: ${v}`);
+  }
+  args.push(url);
+
+  try {
+    const { stdout } = await execFileAsync(curlPath, args, {
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+      timeout: (timeoutSecs + 2) * 1000,
+    });
+
+    const statusMatch = stdout.match(/\n---STATUS:(\d+)$/);
+    const status = statusMatch ? parseInt(statusMatch[1], 10) : 0;
+    const withoutMarker = statusMatch ? stdout.slice(0, statusMatch.index) : stdout;
+
+    // Split the dumped header block(s) from the body. With -D -, each response
+    // (one per redirect hop) emits its headers followed by a blank line, then
+    // the body. Collect Set-Cookie from every hop; the body is everything after
+    // the LAST header block.
+    const setCookies: string[] = [];
+    const lines = withoutMarker.split("\n");
+    let bodyStart = 0;
+    let inHeaders = false;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^HTTP\/\d/.test(line)) {
+        inHeaders = true;
+        continue;
+      }
+      if (inHeaders) {
+        if (line.replace(/\r$/, "") === "") {
+          inHeaders = false;
+          bodyStart = i + 1;
+          continue;
+        }
+        const m = line.match(/^set-cookie:\s*(.*)$/i);
+        if (m) setCookies.push(m[1].replace(/\r$/, ""));
+      }
+    }
+    const respBody = lines.slice(bodyStart).join("\n");
+
+    return { ok: status >= 200 && status < 400, status, body: respBody, setCookies };
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    const detail =
+      code === "ENOENT" ? "curl_impersonate_not_found"
+      : code === "ETIMEDOUT" ? "curl_impersonate_timeout"
+      : `curl_impersonate_exit_${(err as NodeJS.ErrnoException & { exitCode?: number }).exitCode ?? "unknown"}`;
+    return { ok: false, status: 0, body: "", setCookies: [], detail };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // fetchFromWayback — Wayback Machine snapshot
 // ---------------------------------------------------------------------------
 

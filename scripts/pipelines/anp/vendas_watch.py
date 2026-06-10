@@ -9,6 +9,14 @@ Two data sources checked in parallel:
 
 CSV is preferred when both are available.
 
+Upload semantics (idempotent under frequent re-runs — 30-min external dispatch
+plus the 2h internal cron are both safe):
+  - Strictly NEWER source period          -> upload that month only.
+  - SAME period, MORE source rows than DB -> in-place refresh of that month
+    (delete+insert; partial month grows to complete; never shrinks, never
+    touches other months).
+  - Same period, same/fewer rows          -> no-op.
+
 Scheduling:
   - Days 1-17: no check (data not published yet)
   - Day 18+: check every 10 minutes
@@ -366,21 +374,43 @@ def _safe_int(v) -> int | None:
         return None
 
 
-def detect_new_data(source_result: dict) -> tuple[bool, str | None]:
+def _get_period_row_count(period: str) -> int | None:
+    """Returns the exact number of vendas rows for 'YYYY-MM', or None on error."""
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        from supabase import create_client
+        client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        parts = period.split("-")
+        result = (
+            client.table("vendas")
+            .select("id", count="exact")
+            .eq("ano", int(parts[0]))
+            .eq("mes", int(parts[1]))
+            .limit(1)
+            .execute()
+        )
+        return result.count
+    except Exception as e:
+        log.error(f"Failed to count vendas rows for {period}: {e}")
+        return None
+
+
+def detect_new_data(source_result: dict) -> tuple[bool, str | None, str | None]:
     """
-    Returns (is_new_data, period_str).
+    Returns (is_new_data, source_period, supabase_period).
     is_new_data is True when the source has a period newer than what's in Supabase.
     """
     period = _source_period(source_result)
     if not period:
-        return False, None
+        return False, None, None
 
     supabase_period = _get_latest_supabase_period()
     log.info(f"Source period: {period}  |  Supabase latest: {supabase_period or 'empty'}")
 
     if supabase_period is None or period > supabase_period:
-        return True, period
-    return False, period
+        return True, period, supabase_period
+    return False, period, supabase_period
 
 
 # ─── Classification helpers ──────────────────────────────────────────────────
@@ -723,21 +753,61 @@ def run_check(dry_run: bool = False, force: bool = False):
     else:
         source_result = csv_result or powerbi_result
 
-    is_new, period = detect_new_data(source_result)
+    is_new, period, supabase_period = detect_new_data(source_result)
 
-    if not is_new and not dry_run:
+    if period is None:
+        log.warning("Could not determine the source period — nothing to do.")
+        save_state(state)
+        return
+
+    # ── Same-period in-place refresh (partial month → complete month) ────────
+    # ANP grows the latest month at the source while the period label stays the
+    # same: the Power BI panel publishes a PARTIAL month early (agents still
+    # reporting) and the official CSV later carries the COMPLETE month under the
+    # very same (ano, mes). A strictly-newer period gate alone freezes a
+    # partially-ingested month forever (2026-06 incident: Apr/2026 stuck at
+    # 4,043 rows in `vendas` while Liquidos_Vendas_Atual.csv already carried the
+    # complete 11,813-row month). When the source reports the SAME period as the
+    # DB max, re-ingest IF AND ONLY IF the source now yields MORE rows than the
+    # DB holds for that month — replacing that month only (delete+insert), never
+    # touching history, never shrinking a month (a source glitch returning fewer
+    # rows is a no-op). Counts compare post-transform records vs the DB exact
+    # count, so a re-run right after a refresh is an exact-equality no-op.
+    refresh_in_place = False
+    records: list[dict] | None = None
+    if not is_new and period == supabase_period:
+        source_result = _filter_to_period(source_result, period)
+        records = transform_to_supabase(source_result)
+        db_count = _get_period_row_count(period)
+        if db_count is not None and len(records) > db_count:
+            refresh_in_place = True
+            log.info(
+                f"[Refresh] Period {period} grew at the source: {len(records)} "
+                f"source rows > {db_count} DB rows — refreshing the month in place."
+            )
+        else:
+            log.info(
+                f"No new data (source period: {period} already in Supabase; "
+                f"source rows: {len(records)}, DB rows: {db_count})."
+            )
+            if not dry_run:
+                save_state(state)
+                return
+
+    if not is_new and not refresh_in_place and not dry_run:
         log.info(f"No new data (source period: {period} already in Supabase).")
         save_state(state)
         return
 
-    log.info(f"New data detected — period: {period}")
+    if is_new:
+        log.info(f"New data detected — period: {period}")
 
-    # Filter source to ONLY the new period before transforming.
-    # The ANP CSV contains the full historical series (2017–present).
-    # We must not re-insert years already in Supabase.
-    source_result = _filter_to_period(source_result, period)
-
-    records = transform_to_supabase(source_result)
+    if records is None:
+        # Filter source to ONLY the new period before transforming.
+        # The ANP CSV contains the full historical series (2017–present).
+        # We must not re-insert years already in Supabase.
+        source_result = _filter_to_period(source_result, period)
+        records = transform_to_supabase(source_result)
     log.info(f"Transformed {len(records)} records.")
 
     if dry_run:
