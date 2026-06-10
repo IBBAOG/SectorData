@@ -162,7 +162,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 4 | `etl_ais_positions.yml` | Every 6h+15min | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | 5 | `etl_ais_candidates.yml` | Every 4h | `import_candidates` |
 | 6 | `etl_anp_cdp.yml` | Monthly cron + external dispatch every ~2h | `anp_cdp_producao` (Selenium + ddddocr CAPTCHA) |
-| 7 | `etl_anp_vendas.yml` | Internal cron every 2h (fallback) + external cron-job.org dispatch every 30 min when armed (serialized by the `anp-vendas` concurrency group) | `vendas` |
+| 7 | `etl_anp_vendas.yml` | Internal cron every 30 min (`7,37 * * * *`, PRIMARY since 2026-06-10 — cron-job.org dependency retired) + `workflow_dispatch` for manual/future external triggers (serialized by the `anp-vendas` concurrency group) | `vendas` |
 | 8 | `etl_anp_fase3.yml` | Monthly 1st 13:00 UTC | `anp_daie`, `anp_desembaracos` (importador/cnpj/uf_cnpj preserved) |
 | 9 | `etl_anp_lpc.yml` | Daily 14:30 UTC | `anp_lpc` (ANP publishes the weekly LPC survey on an unstable weekday — daily scrape is idempotent + incremental, ingests the new week within ~24h) |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |

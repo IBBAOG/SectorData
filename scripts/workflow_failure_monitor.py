@@ -130,11 +130,11 @@ FAILURE_THRESHOLD = 3
 # For the workflows listed here, ALSO page when the most recent run (ANY
 # conclusion, cancelled included — what matters is that the trigger fired) was
 # created more than the given number of hours ago. Workflows NOT listed keep
-# pure failure semantics. Thresholds assume the workflow's own internal cron
-# (both below have a 2h-class trigger → 26h gives 12+ missed chances before
-# paging, and slack for GHA schedule jitter).
+# pure failure semantics. Thresholds assume the workflow's own trigger cadence
+# (vendas fires every 30 min, cdp every ~2h → 26h gives dozens of missed
+# chances before paging, and slack for GHA schedule jitter).
 SILENCE_THRESHOLD_HOURS: dict[str, float] = {
-    "etl_anp_vendas.yml": 26.0,  # external 30-min dispatch + internal 2h cron fallback
+    "etl_anp_vendas.yml": 26.0,  # internal 30-min cron (primary since 2026-06-10; cron-job.org retired)
     "etl_anp_cdp.yml": 26.0,     # external ~2h dispatch + internal monthly cron
 }
 
