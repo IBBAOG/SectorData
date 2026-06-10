@@ -281,6 +281,16 @@ Front (localStorage):
 Scanner (GitHub Actions secrets em IBBAOG/news-hunter-scanner):
     SUPABASE_URL
     SUPABASE_SERVICE_KEY     (BYPASSA RLS — nunca em qualquer outro lugar)
+    BRASIL_ENERGIA_USER      (paying account email for Brasil Energia login)
+    BRASIL_ENERGIA_PASS      (Brasil Energia account password)
+
+    Brasil Energia auth: brasilenergia.com.br is a subscriber paywall. The
+    scanner logs in with these credentials to fetch full article bodies (see
+    section 6.5). Both secrets are also mirrored in the local gitignored .env
+    for local probing; never commit them. The workflow scan.yml passes them in
+    the run step's env: alongside SUPABASE_URL / SUPABASE_SERVICE_KEY. If they
+    are absent, the scanner skips Brasil Energia gracefully (logged warning) and
+    the rest of the scan still runs.
 
 
 ================================================================================
@@ -300,6 +310,49 @@ IBBAOG/news-hunter-scanner em dois arquivos:
 
   news_hunter/_clipinator_shim.py
     SOURCE_NAMES[dominio]           -- nome legivel exibido no dashboard
+    IMPERSONATE_DOMAINS             -- domains that fetch_html routes through a
+                                       non-default HTTP path (Brasil Energia ->
+                                       authenticated session; otherwise curl_cffi)
+
+  news_hunter/brasilenergia_auth.py  -- authenticated session for Brasil Energia
+
+Authenticated source — Brasil Energia (added 2026-06-10):
+  brasilenergia.com.br is a subscriber paywall (ASP.NET Core, NOT WordPress).
+  Anonymous requests return HTTP 200 but with truncated article bodies plus a
+  login link and "conteudo exclusivo / assinante" markers. The scanner now logs
+  in with a paying account and fetches full bodies.
+
+  Login flow (reverse-engineered against the live site):
+    1. GET  /login?ReturnUrl=<path>  -> sets .AspNetCore.Antiforgery.* + be_uuid
+       cookies; the login <form> carries a hidden __RequestVerificationToken.
+    2. POST /login?ReturnUrl=<path>  (form-encoded) with fields:
+         Tipo=login, LoginForm.Email, LoginForm.Password,
+         LoginForm.AcceptTerms=true, g-recaptcha-response="" (the server accepts
+         an empty reCAPTCHA token for this account), __RequestVerificationToken.
+       Success -> HTTP 302 to ReturnUrl + Set-Cookie be-auth (the session).
+       Failure -> HTTP 200 re-rendering the form, no be-auth cookie.
+
+  Expiry signal (classic silent-expiry trap — a 200 that is really logged-out):
+    an authenticated request returns 401/403, OR a 200 whose body still shows
+    the login link (/login?ReturnUrl) or the paywall markers. The get() wrapper
+    in brasilenergia_auth detects this, re-logs in once, and retries; if it
+    still fails it logs and gives up so the rest of the scan keeps running.
+
+  Wiring:
+    - news_hunter/sources.py: HOMEPAGE_SCRAPERS["www.brasilenergia.com.br"] =
+      ".../petroleoegas/ultimasnoticias" (the listing). The scraper collects
+      article links; enrich fetches each page. Both go through fetch_html.
+    - news_hunter/_clipinator_shim.py: fetch_html routes IMPERSONATE_DOMAINS
+      (Brasil Energia) through brasilenergia_auth.get_auth().get(), which carries
+      the be-auth cookie and auto-renews on expiry. If creds are absent it falls
+      back to curl_cffi impersonation (anonymous, paywalled teasers only).
+    - news_hunter/brasilenergia_auth.py: login(), authenticated get() with
+      transparent re-login, in-memory session + best-effort on-disk cookie cache
+      (.be_session.json, gitignored, ~6h TTL) so cloud runs reuse a session
+      across the ~5 min cron invocations.
+    - Credentials read from BRASIL_ENERGIA_USER / BRASIL_ENERGIA_PASS (env). No
+      Brotli advertised in Accept-Encoding (gzip/deflate only) to avoid the
+      undecoded-br silent-empty-page trap.
 
 Passos para adicionar uma fonte nova:
   1. WebFetch da URL alvo. Descobrir: SSR vs JS? Tem RSS / sitemap Google News
@@ -317,8 +370,15 @@ Pegadinhas conhecidas:
   etc. Hoje so a ANS esta registrada. Se uma segunda fonte gov.br for
   cadastrada, source_name_for() precisara virar path-aware.
 
+- Brasil Energia is an AUTHENTICATED source: it is not just an HTML scrape, it
+  needs the be-auth session cookie (see "Authenticated source" above). Adding a
+  similar paywalled source means writing a small auth module like
+  brasilenergia_auth.py and routing its domain through fetch_html.
+
 Historico de cadastros via dashboard:
   2026-05-20  ANS  (PR #1: github.com/IBBAOG/news-hunter-scanner/pull/1)
+  2026-06-10  Brasil Energia re-enabled as an authenticated source (auto-renewing
+              be-auth session); previously treated as 403-blocked / GNews-only
 
 
 ================================================================================
