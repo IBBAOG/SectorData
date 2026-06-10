@@ -276,18 +276,28 @@ Todas com `RLS: SELECT TO authenticated USING (true)` — padrão Phase 3.
 - **Schedule**: 3×/dia (10:00, 15:00, 20:00 UTC)
 - **Range**: dataset começa em **2025-11-09** (base point — primeira data com dados Power BI; `--start` default ajustado em commit `397a108c`)
 
-### Semântica de upload — append-only (desde 2026-05-08)
+### Semântica de upload — per-level (append-only desde 2026-05-08; upsert em instalacao/poco desde 2026-06-10)
 
-Upload usa `ignore_duplicates=True` (PostgREST `Prefer: resolution=ignore-duplicates` → SQL `ON CONFLICT DO NOTHING`). Comportamento:
+All 3 tables still go through the same `upload_to_supabase()`, but conflict semantics are now **per level**, driven by the `DO_UPDATE_BY_LEVEL` map in `scripts/extractors/anp_cdp_powerbi.py`:
+
+| Tabela | Conflict key | Semantics |
+|---|---|---|
+| `anp_cdp_diaria` (field) | `data,campo,bacia` | `ignore_duplicates=True` → `ON CONFLICT DO NOTHING` (append-only, unchanged since 2026-05-08) |
+| `anp_cdp_diaria_instalacao` | `data,instalacao` | `ON CONFLICT DO UPDATE` (self-healing upsert, since 2026-06-10) |
+| `anp_cdp_diaria_poco` | `data,poco` | `ON CONFLICT DO UPDATE` (self-healing upsert, since 2026-06-10) |
+
+Behavior at the **field level** (append-only):
 
 | Caso | Resultado |
 |---|---|
 | (data, dim) inédito | INSERT |
 | (data, dim) já existe | SKIP — valor original preservado |
 
-Aplica-se às 3 tabelas (`anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco`) — todas passam pela mesma `upload_to_supabase()`.
+**Field-level trade-off:** revisões retroativas do Power BI ANP não são refletidas (ex: se a ANP revisar a produção de um poço de Nov/2025 em Jun/2026, o valor original persiste). Decisão explícita do usuário — snapshot histórico tem prioridade sobre fidelidade a revisões. Re-confirmed for the field level on 2026-06-10: it stays append-only.
 
-**Trade-off:** revisões retroativas do Power BI ANP não são refletidas (ex: se a ANP revisar a produção de um poço de Nov/2025 em Jun/2026, o valor original persiste). Decisão explícita do usuário — snapshot histórico tem prioridade sobre fidelidade a revisões.
+**Why instalacao/poco moved to DO UPDATE (2026-06-10):** required so a full-range re-run self-heals the historical damage from (a) the DSR Ø null-mask parser bug at the installation level (garbage `campo` values + mis-assigned measures) and (b) the `v_instalacoes_final` join at the well level, which intermittently dropped entire well-days (the well query is now join-free). With DO NOTHING those corrupted/missing rows would persist forever. The instalacao path also runs a one-shot idempotent `purge_instalacao_garbage()` before upserting, deleting zombie rows keyed by numeric garbage installation names left behind by the pre-fix parser.
+
+> **2026-06-10:** doc updated to reflect the per-level split above (`DO_UPDATE_BY_LEVEL`). Until then this section claimed `ON CONFLICT DO NOTHING` for all 3 tables, which was true from 2026-05-08 until the parser-fix + join-free-query change landed in the extractor.
 
 > Installation e Well começam vazios até o primeiro run pós-deploy do ETL atualizado. UI lida bem com `data: []` (mensagem amigável "Sem dados de produção <level> ainda. O ETL desta granularidade roda 3×/dia — aguarde primeiro pull pós-deploy.").
 

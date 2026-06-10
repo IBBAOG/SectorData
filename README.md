@@ -81,7 +81,7 @@ Tech debt: `/market-share` still uses the legacy `ExportPanel` / `ExportModal` i
 ```
 dashboard_projeto/
 ├── .claude/                  local-only — agent definitions and worktrees
-├── .github/workflows/        19 workflows (ETL scrapers + client-alerts digest + supabase deploy + monitoring)
+├── .github/workflows/        20 workflows (ETL scrapers + client-alerts digest + supabase deploy + monitoring)
 ├── docs/                     internal collaboration docs (start at master.md)
 ├── scripts/                  pipelines/ (auto), manual/ (human upload), utils/
 ├── src/                      Next.js app (see below)
@@ -184,6 +184,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `freshness_monitor.yml` | Daily 12:00 UTC | **Freshness guardian** — emails ops if any base's data is overdue vs a per-source cadence threshold (catches a *silent* stall: green workflow, stale data) |
 | `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck` |
 | `etl_mdic_comex_drift.yml` | Monthly day 5 07:00 UTC | **MDIC ComexStat drift detector** — fetches cheap live monthly aggregates, diffs them against `mdic_comex`, and self-heals only the months that drifted (re-pulls them); catches retroactive ComexStat revisions outside the daily 3-month / weekly 12-month `etl_mdic_comex.yml` window (e.g. the annual *fechamento*). Green = no drift or clean heal; red = a heal failed |
+| `cdp_roster_canary.yml` | Daily 12:15 UTC | **CDP roster canary** — runs `scripts/cdp_roster_canary.py`: read-only SQL comparing the well/installation roster of the latest complete month in `anp_cdp_producao` (wells >1 kbpd) against the wells seen in `anp_cdp_diaria_poco` over the last 10 data-days (+ digit-aware fuzzy installation match vs `anp_cdp_diaria_instalacao`); emails ops when the missing wells aggregate >10 kbpd — catches an ANP-side dimension/roster lag in the daily Power BI panel that neither the freshness guardian nor the failure pager can see (e.g. FPSO P-78: 2 Búzios wells ~87 kbpd absent for 5 months). Red only when the check itself breaks; a found gap emails and exits green |
 | `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for the hook-less Data Input base (`price_bands`) and backstops every ETL hook |
 | `client_alerts_test.yml` | `workflow_dispatch` | **Test harness** — `run_base --test --source <slug>`; simulates a base update → SMTP send without touching the data table or watermark. Per-base plan: [`docs/alerts/TEST_PLAN.md`](docs/alerts/TEST_PLAN.md) |
 | `alertas_monitor.yml` | **DISABLED** | Legacy local-only Gmail monitor — retired (subsumed by the freshness guardian + failure pager); workflow disabled (reversible), 3 internal recipients migrated to Client Alerts |
