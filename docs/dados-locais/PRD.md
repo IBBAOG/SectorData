@@ -13,6 +13,7 @@ data/
 
 scripts/manual/price_bands_upload.py            Upload de price_bands → Supabase
 scripts/manual/field_stakes_upload.py           Upload (seed) de field_stakes → Supabase
+scripts/manual/make_brent_grid_template.py      Gera o template Excel vazio da malha Brent (tickers de stock_guide_companies)
 scripts/manual/stock_guide_brent_grid_upload.py Upload (snapshot) da malha Brent → stock_guide_scenario_grid
 ```
 
@@ -211,6 +212,18 @@ brent | PETR4 | PRIO3 | RECV3
 ```
 
 Melt wide→long: cada célula `(brent, ticker)` com valor numérico não-nulo vira 1 linha. Células vazias são puladas.
+
+### Gerar o template vazio
+
+`scripts/manual/make_brent_grid_template.py` — gera o esqueleto WIDE pronto pra preencher: coluna `brent` pré-populada (default 40→150 step 5 = 23 linhas) + uma coluna por ticker com células vazias. Os tickers são descobertos de `stock_guide_companies` (visíveis, ordenados por `display_order`) via RPC anon `get_stock_guide_comps`. Não sobrescreve arquivo existente sem `--force` (protege input do analista).
+
+```bash
+# Default (descobre tickers, Brent 40→150 step 5, escreve em data/stock_guide_brent_grid.xlsx):
+python scripts/manual/make_brent_grid_template.py
+
+# Regenerar do zero (DESTRÓI input do analista) + tickers/range custom:
+python scripts/manual/make_brent_grid_template.py --force --tickers PETR4,PRIO3,RECV3 --min 50 --max 120 --step 5
+```
 
 ### Alvo
 
