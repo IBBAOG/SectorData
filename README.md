@@ -137,6 +137,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `profiles` | id (FK auth.users) | role (`Admin` / `Client`), full_name, avatar_url |
 | `mdic_comex` | id | MDIC/ComexStat import/export trade data — feeds `/imports-exports` unit-price RPCs, the By Origin Country stacked chart, and the YoY table `paises` scope (ComexStat publishes month M weeks ahead of ANP Desembaraços) |
 | `anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc` | — | 3 source tables joined by `get_anp_prices_serie` (UNION ALL) |
+| `anp_lpc_brasil` | (data_fim, produto) | ANP-published **national** ("BRASIL" sheet) volume-weighted weekly resale price (R$/L) for `GASOLINA COMUM` / `DIESEL S10`; used directly as the pump price in `recompute_dg_margins` (station-weighted `anp_lpc` fallback on gap weeks). ~146 weeks 2023-05→present, with gaps. Ingested by `lpc_sync.py` (`etl_anp_lpc.yml`) |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | GLP sales by category (`P13` / `Outros - *`) |
 | `anp_daie` | (ano, mes, produto, operacao) | DAIE imports/exports (operacao: `EXPORTAÇÃO` / `IMPORTAÇÃO`) |
 | `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | Enriched with `importador`/`cnpj`/`uf_cnpj` since 2026-05-25. Feeds the `/imports-exports` By Importer (Brazil) chart + YoY `importers` scope (only source with CNPJ/importer); the By Origin Country chart migrated to `mdic_comex` on 2026-06-03 |

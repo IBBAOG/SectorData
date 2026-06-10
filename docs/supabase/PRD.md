@@ -55,6 +55,7 @@ supabase/
 | `anp_producao_derivados` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/anp/producao/anp_producao_derivados_sync.py`) — produção mensal nacional m³ (Gasolina A / Óleo Diesel, 1990→presente) |
 | `fuel_tax_reference` | input do `recompute_dg_margins` (D&G Margins) | Imposto federal + ICMS R$/L por período — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS) |
 | `fuel_blend_ratio` | input do `recompute_dg_margins` (D&G Margins) | % de mandato de etanol/biodiesel por período |
+| `anp_lpc_brasil` | input do `recompute_dg_margins` (D&G Margins — pump price) | ETL (`scripts/pipelines/anp/lpc_sync.py`, mesmo run do `etl_anp_lpc.yml`) — preço de **revenda nacional** publicado pela ANP (volume-weighted, aba BRASIL do resumo semanal); ~146 semanas 2023-05→presente com lacunas |
 | `field_stakes` | future `/production` dashboard (read) + dash-admin "Field Stakes" editor (write via SECURITY DEFINER + `is_admin()`) | Admin via `admin_upsert_field_stakes(p_campo, p_stakes jsonb)` — replace-all-in-1-tx with `SUM(stake_pct)=100` validation. Migration `20260527600000_field_stakes.sql`. |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
@@ -657,6 +658,7 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | quantidade_kg, **importador**, **cnpj**, **uf_cnpj** — enriquecida em `20260525000010` (Imports & Exports reform). PK estendida com `cnpj`. Rows pré-backfill carregam sentinela `cnpj='__legacy__'` até Worktree B ETL backfill rodar. Desde `20260608400000` alimenta apenas o lado By Importer (Brazil) do `/imports-exports` (única fonte com CNPJ); o gráfico By Origin Country + YoY `paises` migraram para `mdic_comex`/ComexStat. | `20260504000003_anp_fase3.sql` + `20260525000010_imports_exports_enrichment.sql` | `pipelines/anp/fase3/02_desembaracos_sync.py` |
 | ~~`anp_painel_imp_dist`~~ | — | **DROPADA** em `20260525000010_imports_exports_enrichment.sql` (CASCADE) — substituída pela `anp_desembaracos` enriquecida na reforma Imports & Exports | — | — |
 | `anp_lpc` | (data_fim, produto, estado) | preco_medio_venda, preco_medio_compra, n_postos | `20260504000004_lpc_sindicom.sql` | `pipelines/anp/lpc_sync.py` |
+| `anp_lpc_brasil` | (data_fim, produto) | preco_revenda, n_postos, fonte. Preço de **revenda nacional** publicado pela ANP (volume-weighted por região), aba **BRASIL** do `resumo_semanal_lpc_*.xlsx`. `produto` normalizado: `GASOLINA COMUM` / `DIESEL S10`. Consumida diretamente como **pump price** pelo `recompute_dg_margins` (D&G Margins) — substitui o cálculo station-weighted sobre `anp_lpc`, que rodava ~R$0,04 alto. **Separada de propósito** de `anp_lpc` (per-UF, consumida por `/anp-prices`) — não fundir. ~146 semanas (2023-05→presente) **com lacunas** (ANP não publica o resumo toda semana). RLS: SELECT `authenticated`; writes só service-role. | `20260617000000_anp_lpc_brasil.sql` | `pipelines/anp/lpc_sync.py` (mesmo run do `etl_anp_lpc.yml` que popula `anp_lpc`) |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, agua_bbl_dia, operador, local (PosSal/PreSal/Terra), instalacao_destino, tipo_instalacao, tempo_prod_hs_mes | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final) → `20260504000013` (RLS authenticated) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
 | `anp_precos_distribuicao` | (data_referencia, distribuidora, produto, uf) | preco_distribuicao, unidade | `20260507000005_anp_precos_distribuicao.sql` | `pipelines/anp/precos_distribuicao_sync.py` |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 (limitação da fonte Power BI). Populada por `scripts/extractors/anp_cdp_powerbi.py` 3×/dia em modo **append-only** (`ON CONFLICT DO NOTHING`). Linhas existentes nunca são sobrescritas — snapshot histórico imutável a partir de 2025-11-09. | `20260508000001_anp_cdp_diaria.sql` | `scripts/extractors/anp_cdp_powerbi.py` (workflow `etl_anp_cdp_diaria.yml`, 3×/dia) |
@@ -1314,6 +1316,27 @@ Migration `20260616100000_recompute_dg_margins_timeout_guard.sql` (live in prod)
 - The things that actually fix the **prod (ETL → PostgREST) path** are (a) the **set-based optimization** (full recompute now runs well under 30s) and (b) the **ETL's bounded-window call** (`etl_dg_margins.yml` recomputes only the last ~12 ISO weeks, ~2s). See `docs/etl-pipelines/PRD.md` § "D&G Margins — ordering & bounded recompute (incident 2026-06-09)".
 
 > Incident origin: GitHub run 27223589112 (2026-06-09 17:22 UTC) died at the recompute step with PostgREST `57014` (`canceling statement due to statement timeout`) ~31s in; the failed step skipped the gated Client Alerts hook, so subscribers got no alert and `/diesel-gasoline-margins` went stale.
+
+### `recompute_dg_margins` — pump = ANP national (Brasil) resale price (2026-06-08)
+
+Migrations `20260617000000_anp_lpc_brasil.sql` (new table) + `20260617100000_recompute_dg_margins_brasil_pump.sql` (recompute body; commit `1f83077f`). Signature, `SECURITY DEFINER`, `SET search_path`, `SET statement_timeout = '300s'`, and service-role-only grants are **unchanged**; `CREATE OR REPLACE` + explicit REVOKE/GRANT re-application (Pegadinha #18 defence).
+
+**Only behavioural change vs `20260616100000`** — the `pump` value:
+
+```
+pump(fuel, week) = COALESCE(
+  -- (1) ANP-published Brasil value for the same ISO (week, isoyear) of the grid's
+  --     monday, matched to the fuel's anp_lpc_brasil produto
+  --     ('GASOLINA COMUM' for Gasoline C, 'DIESEL S10' for Diesel B):
+  anp_lpc_brasil.preco_revenda,   -- ORDER BY data_fim DESC LIMIT 1 (defensive)
+  -- (2) fallback ONLY on gap weeks with no Brasil row — byte-for-byte the old
+  --     station-weighted anp_lpc aggregation:
+  SUM(preco_medio_venda * n_postos) / NULLIF(SUM(n_postos), 0)
+)
+```
+
+- New table `anp_lpc_brasil(data_fim, produto, preco_revenda, n_postos, fonte)` (PK `(data_fim, produto)`) holds ANP's official **volume-weighted national** resale price (`GASOLINA COMUM` / `DIESEL S10`), ~146 weeks 2023-05→present **with gaps**. `pump` now matches the ANP national figure exactly on covered weeks (e.g. wk23/2026 Gasolina 6.61 / Diesel 7.12); the prior always-station-weighted pump ran ~R$0.04 high.
+- `total = pump` (unchanged definition). `distribution_and_resale_margin` is the residual off `pump`, so **only `total` and `dist_margin` shift** on covered weeks (~ −R$0.04); `base_fuel`, `biofuel_component`, `federal_tax`, `state_tax` are identical. The skip-if-NULL guard still fires only when **both** the Brasil row and the `anp_lpc` rows are absent for a week.
 
 ## Contratos com outros departamentos
 
