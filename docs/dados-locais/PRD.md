@@ -238,7 +238,9 @@ Records: `metric = <nome da aba>`, `x_value = coords[0]`, `y_value = coords[1]` 
 
 Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`, estendida para multi-eixo por `20260618200000_stock_guide_scenario_grid_multi_axis.sql` (ALTER + PK 5-col) e para multi-métrica por `20260619000000_stock_guide_scenario_grid_multi_metric.sql` (`metric text NOT NULL DEFAULT 'target_price'` + PK 6-col + RPC recriada com a coluna `metric`). RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id)`; escritas só via service role.
 
-### Script de upload (v2)
+### Script de upload (v2) — fallback de automação
+
+> Desde `20260619100000` o caminho **principal** de upload da malha é **no próprio Admin Panel** (parse ExcelJS + validação client-side no browser → RPCs admin `admin_replace_stock_guide_scenario_grid` / `admin_count_stock_guide_scenario_grid`). Este script vira **fallback de automação** (service role); a paridade de parse/validação está em `src/lib/stockGuideGridUpload.ts`.
 
 `scripts/manual/stock_guide_brent_grid_upload.py` — loader **replace-total** (snapshot, não série temporal). Cada run apaga **TODAS** as linhas do `sensitivity_id` alvo (**todas as métricas de uma vez**) e reinsere o conteúdo do workbook. Idempotente (rodar 2× = mesmo estado). A regra "nunca deletar mês parcial" **não se aplica** aqui — replace-total é o correto.
 
