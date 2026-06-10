@@ -182,8 +182,9 @@ export interface UseStockGuideData {
   isGridTable: (table: SensitivityTable) => boolean;
   /**
    * Resolve the FULL live grid model for a table: one slider PER AXIS (1..3,
-   * domain from the uploaded mesh + the live "today" marker) and one MULTILINEARLY
-   * interpolated Target price / Upside row per visible ticker that has points.
+   * domain from the uploaded mesh + the live "today" marker), the configured
+   * OUTPUT columns, and one row per visible ticker with a MULTILINEARLY
+   * interpolated display cell per output (target price/upside, FCFE yield, …).
    * Returns null for a non-grid table or while the mesh is still loading / empty.
    * The per-axis values live in SHARED per-table state, so both Views drag the
    * same sliders. The mesh is fetched lazily on first selection, and each
@@ -258,16 +259,45 @@ export interface GridAxisModel {
   overridden: boolean;
 }
 
+/** One configured output column of a scenario-grid table (resolved for the panel). */
+export interface GridOutputModel {
+  /** The metric key (matches a `stock_guide_scenario_grid.metric`). */
+  key: string;
+  /** Column label (e.g. "Target price", "FCFE yield"). */
+  label: string;
+  /** How the interpolated raw value is turned into the displayed number. */
+  mode: SensitivityTable["value_mode"];
+  /**
+   * The DISPLAY unit the View formats with: 'absolute' → the table's unit;
+   * 'yield'/'upside' → '%'; 'pe'/'ev_ebitda' → '×'. Use `formatSensitivityCell`.
+   */
+  unit: string;
+}
+
+/** One interpolated cell of a scenario-grid output row (per (ticker, output)). */
+export interface GridCellValue {
+  /**
+   * Raw multilinearly interpolated value at the current axis levels (the metric's
+   * native units — BRL/share for a target price, BRL mn for a flow, …). Null when
+   * the ticker has no mesh for this metric or a required corner is missing.
+   */
+  raw: number | null;
+  /**
+   * Display value after the output's `mode` transform (`computeSensitivityCellValue`):
+   * upside/yield in percent points, pe/ev_ebitda a multiple, absolute = raw. Null →
+   * render "—". Format with `formatSensitivityCell(value, unit)`.
+   */
+  value: number | null;
+}
+
 /** One interpolated output row of a scenario-grid table (per visible ticker with points). */
 export interface GridCompanyRow {
   ticker: string;
   companyName: string;
-  /** Multilinearly interpolated target price at the current axis values (BRL/share). */
-  targetPrice: number | null;
-  /** `targetPrice / livePrice − 1` (ratio). Null unless livePrice > 0. */
-  upside: number | null;
   /** Live share price (BRL). */
   livePrice: number | null;
+  /** One display cell per configured output, keyed by the output's `key`. */
+  values: Record<string, GridCellValue>;
 }
 
 /** The whole resolved scenario-grid model for one table (sliders + interpolated rows). */
@@ -276,8 +306,8 @@ export interface GridTableModel {
   axes: GridAxisModel[];
   /** Interpolated rows for every visible ticker that has points in the mesh. */
   rows: GridCompanyRow[];
-  /** The output label (e.g. "Target price"). */
-  outputLabel: string;
+  /** Configured output columns (≥1), in definition order. */
+  outputs: GridOutputModel[];
   /** True when ANY axis has been dragged away from its live value (drives "Reset all"). */
   anyOverridden: boolean;
 }
@@ -928,30 +958,41 @@ export function useStockGuideData(): UseStockGuideData {
     });
   }, []);
 
-  // Per-table, per-ticker mesh INDEX — built ONCE per fetch (NOT per drag). Maps
-  // tableId → (ticker → GridMesh), dimensioned by the table's axis count. The
-  // dimension comes from `definition.grid.axes.length`, so a degenerate axis (a
-  // single level) is still a real axis (its slider just renders disabled).
+  // Per-table, per-ticker, per-METRIC mesh INDEX — built ONCE per fetch (NOT per
+  // drag). Maps tableId → (ticker → (metric → GridMesh)), dimensioned by the
+  // table's axis count. The dimension comes from `definition.grid.axes.length`,
+  // so a degenerate axis (a single level) is still a real axis (its slider just
+  // renders disabled). Each configured output interpolates its OWN metric mesh on
+  // the SAME axis coordinates.
   const gridIndexById = useMemo(() => {
-    const out: Record<number, Map<string, GridMesh>> = {};
+    const out: Record<number, Map<string, Map<string, GridMesh>>> = {};
     for (const table of sensitivityTables) {
       const grid = table.definition.grid;
       if (grid == null) continue;
       const mesh = gridMeshById[table.id];
       if (!mesh || mesh.length === 0) continue;
       const dim = Math.min(Math.max(grid.axes.length, 1), 3);
-      // Bucket the flat point cloud by ticker, projecting to `dim` coords.
-      const byTicker = new Map<string, MeshPoint[]>();
+      // Bucket the flat point cloud by ticker → metric, projecting to `dim` coords.
+      const byTicker = new Map<string, Map<string, MeshPoint[]>>();
       for (const p of mesh) {
         const coords = [p.x_value, p.y_value, p.z_value].slice(0, dim);
-        const arr = byTicker.get(p.ticker);
+        let byMetric = byTicker.get(p.ticker);
+        if (!byMetric) {
+          byMetric = new Map<string, MeshPoint[]>();
+          byTicker.set(p.ticker, byMetric);
+        }
+        const arr = byMetric.get(p.metric);
         if (arr) arr.push({ coords, value: p.primary_value });
-        else byTicker.set(p.ticker, [{ coords, value: p.primary_value }]);
+        else byMetric.set(p.metric, [{ coords, value: p.primary_value }]);
       }
-      const meshes = new Map<string, GridMesh>();
-      for (const [ticker, points] of byTicker.entries()) {
-        const built = buildGridMesh(points, dim);
-        if (built) meshes.set(ticker, built);
+      const meshes = new Map<string, Map<string, GridMesh>>();
+      for (const [ticker, byMetric] of byTicker.entries()) {
+        const metricMeshes = new Map<string, GridMesh>();
+        for (const [metric, points] of byMetric.entries()) {
+          const built = buildGridMesh(points, dim);
+          if (built) metricMeshes.set(metric, built);
+        }
+        if (metricMeshes.size > 0) meshes.set(ticker, metricMeshes);
       }
       if (meshes.size > 0) out[table.id] = meshes;
     }
@@ -969,13 +1010,15 @@ export function useStockGuideData(): UseStockGuideData {
       const dim = Math.min(Math.max(grid.axes.length, 1), 3);
       const overrides = gridAxisValuesById[table.id] ?? [];
 
-      // Per-axis: union of distinct levels across all tickers → domain + value.
+      // Per-axis: union of distinct levels across all tickers + metrics → domain.
       const axes: GridAxisModel[] = [];
       const atValues: number[] = []; // the interpolation query, one per axis
       for (let a = 0; a < dim; a++) {
         const levelSet = new Set<number>();
-        for (const m of meshes.values()) {
-          for (const lvl of m.levels[a] ?? []) levelSet.add(lvl);
+        for (const byMetric of meshes.values()) {
+          for (const m of byMetric.values()) {
+            for (const lvl of m.levels[a] ?? []) levelSet.add(lvl);
+          }
         }
         const sorted = Array.from(levelSet).sort((x, y) => x - y);
         if (sorted.length === 0) continue;
@@ -985,8 +1028,21 @@ export function useStockGuideData(): UseStockGuideData {
         const step = gridSliderStep(min, max);
 
         const axisDef = grid.axes[a];
-        const key = axisDef?.driver_key ?? "";
-        const rawLive = key ? marketValues[key] : undefined;
+        // Resolve the axis's live "today" value: prefer the registry driver_id
+        // (static current_value OR dynamic market value via resolveDriverValue),
+        // else the legacy direct catalog key.
+        const driver =
+          axisDef?.driver_id != null
+            ? (driversById.get(axisDef.driver_id) ?? null)
+            : null;
+        const key = axisDef?.driver_key ?? driver?.source ?? "";
+        let rawLive: number | null = null;
+        if (driver != null) {
+          rawLive = resolveDriverValue(driver, marketValues);
+        } else if (key) {
+          const mv = marketValues[key];
+          rawLive = mv != null && Number.isFinite(mv) ? mv : null;
+        }
         const liveValue =
           rawLive != null && Number.isFinite(rawLive) ? rawLive : null;
 
@@ -1003,12 +1059,14 @@ export function useStockGuideData(): UseStockGuideData {
 
         const label =
           axisDef?.label ||
+          driver?.name ||
           (key ? MARKET_DRIVER_CATALOG_BY_KEY[key]?.label : "") ||
-          "Brent";
+          "Driver";
         const unit =
           axisDef?.unit ||
+          driver?.unit ||
           (key ? MARKET_DRIVER_CATALOG_BY_KEY[key]?.unit : "") ||
-          "USD/bbl";
+          "";
 
         axes.push({
           key,
@@ -1026,23 +1084,42 @@ export function useStockGuideData(): UseStockGuideData {
       }
       if (axes.length === 0) return null;
 
+      // Resolved output columns (display unit per mode). ≥1 (legacy → 1).
+      const outputs: GridOutputModel[] = grid.outputs.map((o) => ({
+        key: o.key,
+        label: o.label || o.key,
+        mode: o.mode,
+        unit: unitForValueMode(o.mode, table.unit),
+      }));
+
       // One MULTILINEARLY interpolated row per VISIBLE ticker that has a mesh
       // (the RPC only returns visible tickers, so every mesh ticker is renderable).
       const rows: GridCompanyRow[] = [];
-      for (const [ticker, mesh] of meshes.entries()) {
-        const targetPrice = interpolateMesh(mesh, atValues);
+      for (const [ticker, byMetric] of meshes.entries()) {
         const live = liveByTicker.get(ticker);
         const livePrice = live?.livePrice ?? null;
-        const upside =
-          targetPrice != null && livePrice != null && livePrice > 0
-            ? targetPrice / livePrice - 1
-            : null;
+        const marketCapBrlMn = live?.marketCapBrlMn ?? null;
+
+        const values: Record<string, GridCellValue> = {};
+        for (const o of grid.outputs) {
+          const mesh = byMetric.get(o.key);
+          const raw = mesh ? interpolateMesh(mesh, atValues) : null;
+          // Reuse the static-sensitivity math: the interpolated value is the
+          // "primary" base; the mode turns it into the displayed number.
+          const value = computeSensitivityCellValue({
+            valueMode: o.mode,
+            primary: raw,
+            secondary: null,
+            marketCapBrlMn,
+            livePrice,
+          });
+          values[o.key] = { raw, value };
+        }
         rows.push({
           ticker,
           companyName: companyNameByTicker.get(ticker) ?? ticker,
-          targetPrice,
-          upside,
           livePrice,
+          values,
         });
       }
       rows.sort(
@@ -1051,21 +1128,17 @@ export function useStockGuideData(): UseStockGuideData {
           (displayOrderByTicker.get(b.ticker) ?? 0),
       );
 
-      const outputLabel =
-        grid.output === "target_price" || !grid.output
-          ? "Target price"
-          : grid.output;
-
       return {
         axes,
         rows,
-        outputLabel,
+        outputs,
         anyOverridden: axes.some((ax) => ax.overridden),
       };
     },
     [
       gridIndexById,
       gridAxisValuesById,
+      driversById,
       marketValues,
       liveByTicker,
       companyNameByTicker,

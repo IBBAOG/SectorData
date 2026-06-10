@@ -845,7 +845,7 @@ function MobileGridPanel({
             textTransform: "uppercase",
           }}
         >
-          Scenario grid · {model.outputLabel}
+          Scenario grid · {model.outputs.map((o) => o.label).join(" · ")}
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12, lineHeight: 1.4 }}>
@@ -888,47 +888,52 @@ function MobileGridPanel({
         )}
       </div>
 
-      {/* Output list (Target price / Upside per company) */}
+      {/* Output list (one column per configured output, per company) */}
       <div
         style={{
           border: "1px solid var(--mobile-border)",
           borderRadius: "var(--mobile-radius-md, 12px)",
-          overflow: "hidden",
+          overflowX: "auto",
           marginTop: 6,
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            padding: "7px 12px",
-            background: "var(--mobile-surface-elevated)",
-            borderBottom: "1px solid var(--mobile-border)",
-            fontSize: 10,
-            fontWeight: 700,
-            color: "var(--mobile-text-muted)",
-            textTransform: "uppercase",
-            letterSpacing: "0.03em",
-          }}
-        >
-          <span style={{ flex: 1 }}>Company</span>
-          <span style={{ width: 80, textAlign: "right" }}>{model.outputLabel}</span>
-          <span style={{ width: 64, textAlign: "right" }}>Upside</span>
-        </div>
-        {model.rows.length === 0 ? (
-          <div style={{ padding: "18px 12px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
-            No companies to re-price.
+        <div style={{ minWidth: 220 }}>
+          <div
+            style={{
+              display: "flex",
+              padding: "7px 12px",
+              background: "var(--mobile-surface-elevated)",
+              borderBottom: "1px solid var(--mobile-border)",
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--mobile-text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.03em",
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 96 }}>Company</span>
+            {model.outputs.map((o) => {
+              const cols = [
+                <span key={o.key} style={{ width: 78, textAlign: "right" }}>
+                  {o.label}
+                </span>,
+              ];
+              if (o.mode === "upside") {
+                cols.push(
+                  <span key={`${o.key}-up`} style={{ width: 60, textAlign: "right" }}>
+                    Upside
+                  </span>,
+                );
+              }
+              return cols;
+            })}
           </div>
-        ) : (
-          model.rows.map((r, i) => {
-            const upsideColor =
-              r.upside == null
-                ? "var(--mobile-text)"
-                : r.upside > 0
-                  ? "#15803d"
-                  : r.upside < 0
-                    ? "#b91c1c"
-                    : "var(--mobile-text-muted)";
-            return (
+          {model.rows.length === 0 ? (
+            <div style={{ padding: "18px 12px", textAlign: "center", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
+              No companies to re-price.
+            </div>
+          ) : (
+            model.rows.map((r, i) => (
               <div
                 key={r.ticker}
                 style={{
@@ -939,19 +944,44 @@ function MobileGridPanel({
                   fontSize: 12.5,
                 }}
               >
-                <span style={{ flex: 1, fontWeight: 700, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ flex: 1, minWidth: 96, fontWeight: 700, color: "var(--mobile-text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {r.companyName}
                 </span>
-                <span style={{ width: 80, textAlign: "right", fontWeight: 700, color: "var(--mobile-text)", fontVariantNumeric: "tabular-nums" }}>
-                  {r.targetPrice == null ? "—" : mobileFmtSlider(r.targetPrice)}
-                </span>
-                <span style={{ width: 64, textAlign: "right", fontWeight: 700, color: upsideColor, fontVariantNumeric: "tabular-nums" }}>
-                  {quotesLoading && r.upside == null ? "—" : fmtSignedPct(r.upside)}
-                </span>
+                {model.outputs.map((o) => {
+                  const cell = r.values[o.key];
+                  if (o.mode === "upside") {
+                    const upside =
+                      cell?.raw != null && r.livePrice != null && r.livePrice > 0
+                        ? cell.raw / r.livePrice - 1
+                        : null;
+                    const upsideColor =
+                      upside == null
+                        ? "var(--mobile-text)"
+                        : upside > 0
+                          ? "#15803d"
+                          : upside < 0
+                            ? "#b91c1c"
+                            : "var(--mobile-text-muted)";
+                    return [
+                      <span key={o.key} style={{ width: 78, textAlign: "right", fontWeight: 700, color: "var(--mobile-text)", fontVariantNumeric: "tabular-nums" }}>
+                        {cell?.raw == null ? "—" : mobileFmtSlider(cell.raw)}
+                      </span>,
+                      <span key={`${o.key}-up`} style={{ width: 60, textAlign: "right", fontWeight: 700, color: upsideColor, fontVariantNumeric: "tabular-nums" }}>
+                        {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
+                      </span>,
+                    ];
+                  }
+                  const showDash = quotesLoading && cell?.value == null;
+                  return (
+                    <span key={o.key} style={{ width: 78, textAlign: "right", fontWeight: 700, color: "var(--mobile-text)", fontVariantNumeric: "tabular-nums" }}>
+                      {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
+                    </span>
+                  );
+                })}
               </div>
-            );
-          })
-        )}
+            ))
+          )}
+        </div>
       </div>
     </div>
   );

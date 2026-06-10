@@ -27,6 +27,7 @@ import {
   type SgSubTab,
   type SgValueMode,
   type SgTableDraft,
+  type SgGridOutputDraft,
 } from "../useAdminPanelData";
 import type {
   SensitivityAxis,
@@ -276,12 +277,16 @@ export default function DesktopView(): React.ReactElement | null {
     handleChangeSgTableCell,
     handleChangeSgTableCellSecondary,
     sgGridDriverCatalog,
+    sgGridDrivers,
+    sgGridOutputCatalog,
     handleToggleSgGrid,
-    handleChangeSgGridOutput,
+    handleToggleSgGridOutput,
     handleAddSgGridAxis,
     handleRemoveSgGridAxis,
     handleChangeSgGridAxisField,
     handleToggleSgGridCompany,
+    handleDownloadGridTemplate,
+    sgGridTemplateWarning,
     sgGridPointCount,
     sgGridPointCountLoading,
     handleSaveSgTable,
@@ -2546,12 +2551,16 @@ export default function DesktopView(): React.ReactElement | null {
                   onChangeCell={handleChangeSgTableCell}
                   onChangeCellSecondary={handleChangeSgTableCellSecondary}
                   gridDriverCatalog={sgGridDriverCatalog}
+                  gridDrivers={sgGridDrivers}
+                  gridOutputCatalog={sgGridOutputCatalog}
                   onToggleGrid={handleToggleSgGrid}
-                  onChangeGridOutput={handleChangeSgGridOutput}
+                  onToggleGridOutput={handleToggleSgGridOutput}
                   onAddGridAxis={handleAddSgGridAxis}
                   onRemoveGridAxis={handleRemoveSgGridAxis}
                   onChangeGridAxisField={handleChangeSgGridAxisField}
                   onToggleGridCompany={handleToggleSgGridCompany}
+                  onDownloadGridTemplate={handleDownloadGridTemplate}
+                  gridTemplateWarning={sgGridTemplateWarning}
                   gridPointCount={sgGridPointCount}
                   gridPointCountLoading={sgGridPointCountLoading}
                   onSave={handleSaveSgTable}
@@ -2627,16 +2636,24 @@ interface SensitivityBuilderProps {
   onChangeCellSecondary: (r: number, c: number, value: string) => void;
   // ── Scenario-grid builder ───────────────────────────────────────────────────
   gridDriverCatalog: DriverCatalogEntry[];
+  /** The full drivers registry — any driver can drive an axis. */
+  gridDrivers: StockGuideDriver[];
+  /** The 4 selectable output metrics. */
+  gridOutputCatalog: SgGridOutputDraft[];
   onToggleGrid: (on: boolean) => void;
-  onChangeGridOutput: (value: string) => void;
+  onToggleGridOutput: (key: string) => void;
   onAddGridAxis: () => void;
   onRemoveGridAxis: (axisIdx: number) => void;
   onChangeGridAxisField: (
     axisIdx: number,
-    field: "driverKey" | "label" | "unit",
+    field: "driverId" | "label" | "unit" | "tmin" | "tmax" | "tstep",
     value: string,
   ) => void;
   onToggleGridCompany: (ticker: string) => void;
+  /** Generate + download the scenario-grid template Excel. */
+  onDownloadGridTemplate: () => void;
+  /** Warning copy when the template would be very large, else null. */
+  gridTemplateWarning: string | null;
   /** Read-only count of uploaded grid points for the saved draft (null = N/A). */
   gridPointCount: number | null;
   gridPointCountLoading: boolean;
@@ -2655,8 +2672,10 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
     onChangeCellSecondary,
-    gridDriverCatalog, onToggleGrid, onChangeGridOutput, onAddGridAxis,
+    gridDrivers, gridOutputCatalog, onToggleGrid,
+    onToggleGridOutput, onAddGridAxis,
     onRemoveGridAxis, onChangeGridAxisField, onToggleGridCompany,
+    onDownloadGridTemplate, gridTemplateWarning,
     gridPointCount, gridPointCountLoading,
     onSave, onDelete, onConfirmDelete, onCancelDelete,
   } = props;
@@ -2947,12 +2966,12 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
             )}
           </div>
           {g.axes.map((axis, i) => {
-            // Drivers already used by SIBLING axes are excluded from this select.
+            // Drivers already bound by SIBLING axes are excluded from this select.
             const usedBySiblings = new Set(
-              g.axes.filter((_, j) => j !== i).map((a) => a.driverKey),
+              g.axes.filter((_, j) => j !== i).map((a) => a.driverId),
             );
-            const options = gridDriverCatalog.filter(
-              (e) => e.key === axis.driverKey || !usedBySiblings.has(e.key),
+            const driverOptions = gridDrivers.filter(
+              (d) => String(d.id) === axis.driverId || !usedBySiblings.has(String(d.id)),
             );
             return (
               <div
@@ -2988,12 +3007,15 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                   <label style={{ display: "block" }}>
                     <span style={labelSpan}>Driver</span>
                     <select
-                      value={axis.driverKey}
-                      onChange={(e) => onChangeGridAxisField(i, "driverKey", e.target.value)}
+                      value={axis.driverId}
+                      onChange={(e) => onChangeGridAxisField(i, "driverId", e.target.value)}
                       style={{ ...inputStyle, cursor: "pointer" }}
                     >
-                      {options.map((e) => (
-                        <option key={e.key} value={e.key}>{e.label}</option>
+                      <option value="">— select a driver —</option>
+                      {driverOptions.map((d) => (
+                        <option key={d.id} value={String(d.id)}>
+                          {d.name}{d.unit ? ` (${d.unit})` : ""}
+                        </option>
                       ))}
                     </select>
                   </label>
@@ -3018,23 +3040,69 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                     />
                   </label>
                 </div>
+                {/* Template range (drives the downloadable Excel grid). */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Template min</span>
+                    <input
+                      type="number"
+                      value={axis.tmin}
+                      onChange={(e) => onChangeGridAxisField(i, "tmin", e.target.value)}
+                      placeholder="40"
+                      style={{ ...inputStyle }}
+                    />
+                  </label>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Template max</span>
+                    <input
+                      type="number"
+                      value={axis.tmax}
+                      onChange={(e) => onChangeGridAxisField(i, "tmax", e.target.value)}
+                      placeholder="150"
+                      style={{ ...inputStyle }}
+                    />
+                  </label>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Template step</span>
+                    <input
+                      type="number"
+                      value={axis.tstep}
+                      onChange={(e) => onChangeGridAxisField(i, "tstep", e.target.value)}
+                      placeholder="10"
+                      style={{ ...inputStyle }}
+                    />
+                  </label>
+                </div>
               </div>
             );
           })}
         </div>
 
-        {/* Output */}
+        {/* Outputs (one column + one mesh metric each) */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", maxWidth: 320 }}>
-            <span style={labelSpan}>Output (what the uploaded value is)</span>
-            <select
-              value={g.output}
-              onChange={(e) => onChangeGridOutput(e.target.value)}
-              style={{ ...inputStyle, cursor: "pointer" }}
-            >
-              <option value="target_price">Target price (BRL/share)</option>
-            </select>
-          </label>
+          <span style={labelSpan}>Outputs (each becomes a column + a metric sheet in the template)</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {gridOutputCatalog.map((o) => {
+              const on = g.outputs.some((x) => x.key === o.key);
+              return (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => onToggleGridOutput(o.key)}
+                  aria-pressed={on}
+                  style={{
+                    padding: "4px 11px", borderRadius: 14, cursor: "pointer",
+                    border: on ? `1px solid ${ORANGE}` : "1px solid #e0e0e0",
+                    background: on ? "rgba(255,80,0,0.10)" : "#fff",
+                    color: on ? ORANGE : "#666", fontSize: 12, fontWeight: 700,
+                    fontFamily: "Arial, sans-serif",
+                  }}
+                >
+                  {o.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Companies */}
@@ -3091,6 +3159,42 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
               <strong style={{ color: "#1a1a1a" }}>{gridPointCount.toLocaleString("en-US")}</strong>{" "}
               scenario-grid point{gridPointCount === 1 ? "" : "s"} uploaded for this table.
             </span>
+          )}
+        </div>
+
+        {/* Download template (.xlsx) — generated in the browser via ExcelJS. */}
+        <div style={{ marginTop: 14 }}>
+          <button
+            type="button"
+            onClick={onDownloadGridTemplate}
+            disabled={draft.id == null}
+            title={draft.id == null ? "Save the table shell first" : undefined}
+            style={{
+              padding: "8px 16px", borderRadius: 8,
+              border: `1px solid ${draft.id == null ? "#e0e0e0" : ORANGE}`,
+              background: draft.id == null ? "#f3f3f3" : ORANGE,
+              color: draft.id == null ? "#aaa" : "#fff",
+              fontSize: 12.5, fontWeight: 700,
+              cursor: draft.id == null ? "not-allowed" : "pointer",
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            ⬇ Download template (.xlsx)
+          </button>
+          <div style={{ marginTop: 6, fontSize: 11.5, color: "#888", lineHeight: 1.45 }}>
+            One sheet per output (sheet name = metric key). Each sheet&rsquo;s first
+            columns are the axis coordinates (in axis order), followed by one empty
+            column per company — fill them with the model output, then upload via
+            Local Data.
+          </div>
+          {gridTemplateWarning && (
+            <div style={{
+              marginTop: 8, padding: "8px 12px", borderRadius: 8,
+              background: "#fff7ed", border: "1px solid rgba(255,80,0,0.35)",
+              color: "#9a3412", fontSize: 11.5, fontWeight: 600,
+            }}>
+              {gridTemplateWarning}
+            </div>
           )}
         </div>
       </div>

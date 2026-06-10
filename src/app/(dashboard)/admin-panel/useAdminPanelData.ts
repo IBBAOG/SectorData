@@ -267,25 +267,60 @@ export interface SgAxisDraft {
  * label and the unit from the catalog (still editable).
  */
 export interface SgGridAxisDraft {
-  /** Catalog driver key whose LIVE value drives this axis (e.g. 'avg_brent_2026'). */
+  /**
+   * Registry driver id (`stock_guide_drivers.id`) this axis binds to, as a string
+   * ("" = unset). Preferred over `driverKey`; picking a driver auto-fills the
+   * label + unit from the registry row.
+   */
+  driverId: string;
+  /**
+   * LEGACY direct catalog key (e.g. 'avg_brent_2026'). Preserved only for reading
+   * back legacy grids that were authored before the registry-driven axis; new
+   * grids set `driverId`. "" when the axis uses a registry driver.
+   */
   driverKey: string;
   /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
   label: string;
   /** Axis unit (e.g. "USD/bbl"). */
   unit: string;
+  /** Template range — minimum axis level for the downloadable Excel (string input). */
+  tmin: string;
+  /** Template range — maximum axis level for the downloadable Excel (string input). */
+  tmax: string;
+  /** Template range — step between axis levels for the downloadable Excel (string input). */
+  tstep: string;
 }
+
+/** One configured output (metric) of the scenario grid — a checkbox in the editor. */
+export interface SgGridOutputDraft {
+  /** The `metric` key in `stock_guide_scenario_grid` (e.g. 'target_price', 'fcfe'). */
+  key: string;
+  /** How the interpolated value is displayed (value-mode math). */
+  mode: SgValueMode;
+  /** Column label (e.g. "Target price", "FCFE yield"). */
+  label: string;
+}
+
+/** The 4 supported scenario-grid outputs (checkbox catalog in the admin editor). */
+export const SG_GRID_OUTPUT_CATALOG: SgGridOutputDraft[] = [
+  { key: "target_price", mode: "upside", label: "Target price" },
+  { key: "fcfe", mode: "yield", label: "FCFE yield" },
+  { key: "dividends", mode: "yield", label: "Div yield" },
+  { key: "net_income", mode: "pe", label: "P/E" },
+];
 
 /**
  * Editable mirror of the SCENARIO-GRID `definition.grid` block — the CASE only
- * (1..3 driver axes + output). The per-company points are NOT typed here: they
- * arrive via the Brent-grid Excel upload (Local Data). Serialized verbatim into
- * `definition.grid` as `{ axes: [{driver_key,label,unit}], output }`.
+ * (1..3 driver axes + outputs). The per-company points are NOT typed here: they
+ * arrive via the downloadable template Excel upload (Local Data). Serialized into
+ * `definition.grid` as `{ axes: [{driver_id?,driver_key?,label,unit,tmin,tmax,
+ * tstep}], outputs: [{key,mode,label}] }`.
  */
 export interface SgGridDraft {
   /** 1..3 ordered driver axes (storage order maps to x/y/z coordinates). */
   axes: SgGridAxisDraft[];
-  /** What the uploaded primary_value is — currently 'target_price' (BRL/share). */
-  output: string;
+  /** Configured outputs (≥1) — one mesh metric + display column each. */
+  outputs: SgGridOutputDraft[];
 }
 
 /**
@@ -338,11 +373,24 @@ function blankAxisDraft(): SgAxisDraft {
   return { kind: "company", driverId: "", scenarios: [], companies: [], years: [] };
 }
 
-/** A pristine SCENARIO-GRID draft (target-price output, one Brent 2026 axis). */
+/** A pristine grid axis draft (unbound; default template range 40..150 step 10). */
+function blankGridAxis(): SgGridAxisDraft {
+  return {
+    driverId: "",
+    driverKey: "",
+    label: "",
+    unit: "",
+    tmin: "40",
+    tmax: "150",
+    tstep: "10",
+  };
+}
+
+/** A pristine SCENARIO-GRID draft (one unbound axis + Target price output on). */
 function blankGridDraft(): SgGridDraft {
   return {
-    axes: [{ driverKey: "avg_brent_2026", label: "Brent (avg 2026)", unit: "USD/bbl" }],
-    output: "target_price",
+    axes: [blankGridAxis()],
+    outputs: [{ ...SG_GRID_OUTPUT_CATALOG[0] }],
   };
 }
 
@@ -370,17 +418,24 @@ function blankTableDraft(): SgTableDraft {
 function gridToDraft(
   g: NonNullable<SensitivityTableAdmin["definition"]["grid"]>,
 ): SgGridDraft {
-  const axes = (g.axes ?? [])
-    .filter((a) => (a.driver_key ?? "").trim())
+  const axes: SgGridAxisDraft[] = (g.axes ?? [])
+    .filter((a) => a.driver_id != null || (a.driver_key ?? "").trim())
     .slice(0, 3)
     .map((a) => ({
-      driverKey: a.driver_key,
+      driverId: a.driver_id != null ? String(a.driver_id) : "",
+      driverKey: a.driver_key ?? "",
       label: a.label || "",
       unit: a.unit || "",
+      tmin: a.tmin != null ? String(a.tmin) : "40",
+      tmax: a.tmax != null ? String(a.tmax) : "150",
+      tstep: a.tstep != null ? String(a.tstep) : "10",
     }));
+  const outputs: SgGridOutputDraft[] = (g.outputs ?? [])
+    .map((o) => ({ key: o.key, mode: o.mode as SgValueMode, label: o.label || o.key }))
+    .filter((o) => o.key);
   return {
     axes: axes.length > 0 ? axes : blankGridDraft().axes,
-    output: g.output || "target_price",
+    outputs: outputs.length > 0 ? outputs : [{ ...SG_GRID_OUTPUT_CATALOG[0] }],
   };
 }
 
@@ -852,24 +907,32 @@ export interface UseAdminPanelData {
   handleChangeSgTableValueMode: (mode: SgValueMode) => void;
 
   // ── Scenario-grid table builder ─────────────────────────────────────────────
-  /** The market-driver catalog (Brent/FX 2026-2028) for the axis-driver pickers. */
+  /** The market-driver catalog (Brent/FX 2026-2028) — kept for legacy axis pickers. */
   sgGridDriverCatalog: DriverCatalogEntry[];
+  /** The full drivers registry (any driver can be an axis). */
+  sgGridDrivers: StockGuideDriver[];
+  /** The 4 selectable output metrics (checkbox catalog). */
+  sgGridOutputCatalog: SgGridOutputDraft[];
   /** Toggle SCENARIO-GRID mode for the current draft. */
   handleToggleSgGrid: (on: boolean) => void;
-  /** Set the grid output (target_price for now). */
-  handleChangeSgGridOutput: (value: string) => void;
+  /** Toggle one output metric on/off (≥1 must stay on). */
+  handleToggleSgGridOutput: (key: string) => void;
   /** Add a new axis to the grid (capped at 3). */
   handleAddSgGridAxis: () => void;
   /** Remove an axis from the grid (floor 1). */
   handleRemoveSgGridAxis: (axisIdx: number) => void;
-  /** Set one field of one axis (driver auto-fills label + unit). */
+  /** Set one field of one axis (driver auto-fills label + unit; template range fields). */
   handleChangeSgGridAxisField: (
     axisIdx: number,
-    field: "driverKey" | "label" | "unit",
+    field: "driverId" | "label" | "unit" | "tmin" | "tmax" | "tstep",
     value: string,
   ) => void;
   /** Add/remove a ticker from the grid table's membership (points uploaded per company). */
   handleToggleSgGridCompany: (ticker: string) => void;
+  /** Generate + download the scenario-grid template Excel in the browser (ExcelJS). */
+  handleDownloadGridTemplate: () => Promise<void>;
+  /** Warning copy when the template would be very large (>60k cells), else null. */
+  sgGridTemplateWarning: string | null;
   /**
    * Read-only count of scenario-grid points already uploaded for the current
    * draft table (null while loading / for a non-grid or unsaved table). Gives the
@@ -2227,25 +2290,35 @@ export function useAdminPanelData(): UseAdminPanelData {
     });
   }, []);
 
-  /** Change the grid output (target_price for now). */
-  const handleChangeSgGridOutput = useCallback((value: string) => {
-    setSgTableDraft((d) => (d ? { ...d, gridDef: { ...d.gridDef, output: value } } : d));
+  /** Toggle one output metric on/off (≥1 must stay on). */
+  const handleToggleSgGridOutput = useCallback((key: string) => {
+    setSgTableDraft((d) => {
+      if (!d) return d;
+      const has = d.gridDef.outputs.some((o) => o.key === key);
+      let outputs: SgGridOutputDraft[];
+      if (has) {
+        if (d.gridDef.outputs.length <= 1) return d; // keep at least one output
+        outputs = d.gridDef.outputs.filter((o) => o.key !== key);
+      } else {
+        const cat = SG_GRID_OUTPUT_CATALOG.find((o) => o.key === key);
+        if (!cat) return d;
+        // Preserve catalog order when adding.
+        outputs = SG_GRID_OUTPUT_CATALOG.filter(
+          (o) => o.key === key || d.gridDef.outputs.some((x) => x.key === o.key),
+        ).map((o) => ({ ...o }));
+      }
+      return { ...d, gridDef: { ...d.gridDef, outputs } };
+    });
   }, []);
 
-  /** Add a new axis (capped at 3). The default driver = first catalog key not
-   *  already used by a sibling axis (else the first catalog key). */
+  /** Add a new axis (capped at 3) — a fresh UNBOUND axis (admin picks a driver). */
   const handleAddSgGridAxis = useCallback(() => {
     setSgTableDraft((d) => {
       if (!d || d.gridDef.axes.length >= 3) return d;
-      const used = new Set(d.gridDef.axes.map((a) => a.driverKey));
-      const pick =
-        MARKET_DRIVER_CATALOG.find((e) => !used.has(e.key)) ?? MARKET_DRIVER_CATALOG[0];
-      const axis: SgGridAxisDraft = {
-        driverKey: pick.key,
-        label: pick.label,
-        unit: pick.unit,
+      return {
+        ...d,
+        gridDef: { ...d.gridDef, axes: [...d.gridDef.axes, blankGridAxis()] },
       };
-      return { ...d, gridDef: { ...d.gridDef, axes: [...d.gridDef.axes, axis] } };
     });
   }, []);
 
@@ -2258,20 +2331,30 @@ export function useAdminPanelData(): UseAdminPanelData {
     });
   }, []);
 
-  /** Change one field of one axis. Picking a driver auto-fills BOTH label + unit
-   *  from the catalog (still editable afterward). */
+  /** Change one field of one axis. Picking a registry driver auto-fills label +
+   *  unit from the driver row (still editable afterward) and clears the legacy
+   *  catalog key. */
   const handleChangeSgGridAxisField = useCallback(
-    (axisIdx: number, field: "driverKey" | "label" | "unit", value: string) => {
+    (
+      axisIdx: number,
+      field: "driverId" | "label" | "unit" | "tmin" | "tmax" | "tstep",
+      value: string,
+    ) => {
       setSgTableDraft((d) => {
         if (!d) return d;
         const axes = d.gridDef.axes.map((a, i) => {
           if (i !== axisIdx) return a;
           const next = { ...a, [field]: value };
-          if (field === "driverKey") {
-            const cat = MARKET_DRIVER_CATALOG_BY_KEY[value];
-            if (cat) {
-              next.label = cat.label;
-              next.unit = cat.unit;
+          if (field === "driverId") {
+            next.driverKey = ""; // registry-driven axis no longer uses a raw key
+            const drv = sgDrivers.find((x) => String(x.id) === value);
+            if (drv) {
+              next.label = drv.name || next.label;
+              // Auto-fill unit from a dynamic driver's catalog, else the driver row.
+              const catUnit = drv.source
+                ? MARKET_DRIVER_CATALOG_BY_KEY[drv.source]?.unit
+                : undefined;
+              next.unit = catUnit || drv.unit || next.unit;
             }
           }
           return next;
@@ -2279,7 +2362,7 @@ export function useAdminPanelData(): UseAdminPanelData {
         return { ...d, gridDef: { ...d.gridDef, axes } };
       });
     },
-    [],
+    [sgDrivers],
   );
 
   const handleToggleSgGridCompany = useCallback((ticker: string) => {
@@ -2292,6 +2375,111 @@ export function useAdminPanelData(): UseAdminPanelData {
       return { ...d, gridCompanies };
     });
   }, []);
+
+  // Estimated cell count of the template Excel (combos × tickers × outputs) — a
+  // warning surfaces in the UI above ~60k so the analyst doesn't generate a
+  // pathological workbook. Null when there's no valid grid draft.
+  const sgGridTemplateWarning = useMemo<string | null>(() => {
+    const d = sgTableDraft;
+    if (!d || !d.grid) return null;
+    let combos = 1;
+    for (const a of d.gridDef.axes) {
+      const lo = strToNum(a.tmin);
+      const hi = strToNum(a.tmax);
+      const st = strToNum(a.tstep);
+      if (lo == null || hi == null || st == null || st <= 0 || lo >= hi) return null;
+      combos *= Math.floor((hi - lo) / st + 1e-9) + 1;
+    }
+    const total = combos * Math.max(d.gridCompanies.length, 1) * Math.max(d.gridDef.outputs.length, 1);
+    if (total > 60000) {
+      return `Large template: ~${total.toLocaleString("en-US")} cells (combos × companies × outputs). Consider coarser steps.`;
+    }
+    return null;
+  }, [sgTableDraft]);
+
+  // Generate + download the scenario-grid template Excel in the browser (ExcelJS).
+  // ONE sheet per output (sheet name = output key). Each sheet's first d columns
+  // are the axis coordinates (header = axis label, axis order = column order),
+  // followed by one empty column per membership company. Rows enumerate the full
+  // Cartesian product of tmin..tmax step tstep per axis (first axis varies
+  // SLOWEST). Header row is bold + frozen. The analyst fills the per-company
+  // columns and re-uploads via the Local Data Brent-grid pipeline.
+  const handleDownloadGridTemplate = useCallback(async () => {
+    const d = sgTableDraft;
+    if (!d || !d.grid) return;
+    const axes = d.gridDef.axes;
+    const outputs = d.gridDef.outputs;
+    const tickers = [...d.gridCompanies];
+    if (axes.length === 0 || outputs.length === 0 || tickers.length === 0) return;
+
+    // Per-axis level vectors from the template range.
+    const levelsPerAxis: number[][] = [];
+    for (const a of axes) {
+      const lo = strToNum(a.tmin);
+      const hi = strToNum(a.tmax);
+      const st = strToNum(a.tstep);
+      if (lo == null || hi == null || st == null || st <= 0 || lo >= hi) return;
+      const vals: number[] = [];
+      // Round to 6 decimals to match the upload script's coordinate identity.
+      for (let v = lo; v <= hi + 1e-9; v += st) {
+        vals.push(Math.round(v * 1e6) / 1e6);
+      }
+      levelsPerAxis.push(vals);
+    }
+
+    // Cartesian product (first axis varies SLOWEST → it's the outer loop).
+    const combos: number[][] = [[]];
+    for (const levels of levelsPerAxis) {
+      const next: number[][] = [];
+      for (const prefix of combos) {
+        for (const v of levels) next.push([...prefix, v]);
+      }
+      combos.length = 0;
+      combos.push(...next);
+    }
+
+    const ExcelJS = (await import("exceljs")).default;
+    const wb = new ExcelJS.Workbook();
+    wb.creator = "SectorData — Stock Guide";
+    wb.created = new Date();
+
+    for (const o of outputs) {
+      // Sheet name = output key (Excel caps at 31 chars / forbids some symbols).
+      const safe = o.key.replace(/[\\/?*[\]:]/g, "_").slice(0, 31) || "output";
+      const ws = wb.addWorksheet(safe);
+      const headers = [
+        ...axes.map((a, i) => a.label.trim() || a.driverKey.trim() || `axis_${i + 1}`),
+        ...tickers,
+      ];
+      ws.addRow(headers);
+      for (const combo of combos) {
+        // Coordinate columns first, then one empty cell per ticker.
+        ws.addRow([...combo, ...tickers.map(() => null)]);
+      }
+      // Header style: bold + frozen first row.
+      const headerRow = ws.getRow(1);
+      headerRow.font = { bold: true };
+      ws.views = [{ state: "frozen", ySplit: 1 }];
+      // Reasonable column widths.
+      ws.columns.forEach((col, i) => {
+        col.width = i < axes.length ? 16 : 14;
+      });
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const base = (d.title.trim() || "scenario_grid").replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+    a.download = `${base}_template.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, [sgTableDraft]);
 
   // Read-only count of uploaded scenario-grid points for the current saved grid
   // table (confidence the Brent-grid Excel upload landed). Re-fetched whenever the
@@ -2450,12 +2638,24 @@ export function useAdminPanelData(): UseAdminPanelData {
     if (d.grid) {
       const g = d.gridDef;
       if (g.axes.length < 1) return "The scenario grid needs at least one axis.";
-      if (g.axes.some((a) => !a.driverKey.trim()))
-        return "Every axis must select a driver (e.g. Brent 2026).";
-      const keys = g.axes.map((a) => a.driverKey.trim());
-      if (new Set(keys).size !== keys.length)
+      if (g.axes.some((a) => !a.driverId.trim() && !a.driverKey.trim()))
+        return "Every axis must select a driver.";
+      // Distinct driver bindings (by id, falling back to legacy key).
+      const bindings = g.axes.map((a) => a.driverId.trim() || a.driverKey.trim());
+      if (new Set(bindings).size !== bindings.length)
         return "Each axis must use a different driver.";
-      if (!g.output.trim()) return "Set the grid output (e.g. target_price).";
+      // Template range sanity (used by the downloadable Excel).
+      for (const a of g.axes) {
+        const lo = strToNum(a.tmin);
+        const hi = strToNum(a.tmax);
+        const st = strToNum(a.tstep);
+        if (lo == null || hi == null || st == null)
+          return "Every axis needs numeric template min / max / step.";
+        if (lo >= hi) return "Each axis template min must be below its max.";
+        if (st <= 0) return "Each axis template step must be greater than zero.";
+      }
+      if (g.outputs.length === 0)
+        return "Select at least one output (e.g. Target price).";
       if (d.gridCompanies.length === 0)
         return "Select at least one company for the scenario grid.";
       return null;
@@ -2646,12 +2846,24 @@ export function useAdminPanelData(): UseAdminPanelData {
         // the row is structurally a valid sensitivity def.
         const g = d.gridDef;
         const grid: Record<string, unknown> = {
-          axes: g.axes.map((a) => ({
-            driver_key: a.driverKey.trim(),
-            label: a.label.trim(),
-            unit: a.unit.trim(),
+          axes: g.axes.map((a) => {
+            const axis: Record<string, unknown> = {
+              label: a.label.trim(),
+              unit: a.unit.trim(),
+              tmin: strToNum(a.tmin),
+              tmax: strToNum(a.tmax),
+              tstep: strToNum(a.tstep),
+            };
+            const did = strToNum(a.driverId);
+            if (did != null) axis.driver_id = did;
+            if (a.driverKey.trim()) axis.driver_key = a.driverKey.trim();
+            return axis;
+          }),
+          outputs: g.outputs.map((o) => ({
+            key: o.key.trim(),
+            mode: o.mode,
+            label: o.label.trim() || o.key.trim(),
           })),
-          output: (g.output || "target_price").trim(),
         };
         definition = {
           row_axis: { kind: "company", companies: [...d.gridCompanies] },
@@ -2911,12 +3123,16 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleChangeSgTableCellSecondary,
     // scenario grid
     sgGridDriverCatalog: MARKET_DRIVER_CATALOG,
+    sgGridDrivers: sgDrivers,
+    sgGridOutputCatalog: SG_GRID_OUTPUT_CATALOG,
     handleToggleSgGrid,
-    handleChangeSgGridOutput,
+    handleToggleSgGridOutput,
     handleAddSgGridAxis,
     handleRemoveSgGridAxis,
     handleChangeSgGridAxisField,
     handleToggleSgGridCompany,
+    handleDownloadGridTemplate,
+    sgGridTemplateWarning,
     sgGridPointCount,
     sgGridPointCountLoading,
     handleSaveSgTable,

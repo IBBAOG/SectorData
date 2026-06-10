@@ -1030,7 +1030,7 @@ function GridPanel({
             fontFamily: "Arial, Helvetica, sans-serif",
           }}
         >
-          Scenario grid · {model.outputLabel}
+          Scenario grid · {model.outputs.map((o) => o.label).join(" · ")}
         </span>
       </div>
       <div
@@ -1095,13 +1095,13 @@ function GridPanel({
           )}
         </div>
 
-        {/* ── Output table (Target price / Upside) ──────────────────────────── */}
+        {/* ── Output table (one column per configured output) ───────────────── */}
         <div
           style={{
             border: "1px solid #e0e0e0",
             borderRadius: 12,
             background: "#fff",
-            overflow: "hidden",
+            overflowX: "auto",
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
           }}
         >
@@ -1109,39 +1109,78 @@ function GridPanel({
             <thead>
               <tr>
                 <th style={{ ...TH_BASE, textAlign: "left" }}>Company</th>
-                <th style={{ ...TH_BASE, textAlign: "right" }}>{model.outputLabel}</th>
-                <th style={{ ...TH_BASE, textAlign: "right" }}>Upside</th>
+                {model.outputs.map((o) => {
+                  const cols = [
+                    <th key={o.key} style={{ ...TH_BASE, textAlign: "right" }}>
+                      {o.label}
+                    </th>,
+                  ];
+                  // An 'upside' output shows the interpolated price column then a
+                  // derived Upside column (vs the live share price).
+                  if (o.mode === "upside") {
+                    cols.push(
+                      <th key={`${o.key}-up`} style={{ ...TH_BASE, textAlign: "right" }}>
+                        Upside
+                      </th>,
+                    );
+                  }
+                  return cols;
+                })}
               </tr>
             </thead>
             <tbody>
               {model.rows.length === 0 ? (
                 <tr>
-                  <td colSpan={3} style={{ ...TD_BASE, textAlign: "center", color: "#9ca3af", padding: "24px 10px" }}>
+                  <td
+                    colSpan={
+                      1 + model.outputs.length + model.outputs.filter((o) => o.mode === "upside").length
+                    }
+                    style={{ ...TD_BASE, textAlign: "center", color: "#9ca3af", padding: "24px 10px" }}
+                  >
                     No companies to re-price.
                   </td>
                 </tr>
               ) : (
                 model.rows.map((r, i) => {
                   const bg = i % 2 === 0 ? "#fff" : "#fbfbfb";
-                  const upsideColor =
-                    r.upside == null
-                      ? "#1a1a1a"
-                      : r.upside > 0
-                        ? "#15803d"
-                        : r.upside < 0
-                          ? "#b91c1c"
-                          : "#6b7280";
                   return (
                     <tr key={r.ticker} style={{ background: bg }}>
                       <td style={{ ...TD_BASE, textAlign: "left", fontWeight: 700, color: "#111827" }}>
                         {r.companyName}
                       </td>
-                      <td style={{ ...TD_BASE }}>
-                        {r.targetPrice == null ? "—" : fmtSlider(r.targetPrice)}
-                      </td>
-                      <td style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
-                        {quotesLoading && r.upside == null ? "—" : fmtSignedPct(r.upside)}
-                      </td>
+                      {model.outputs.map((o) => {
+                        const cell = r.values[o.key];
+                        if (o.mode === "upside") {
+                          // Primary cell = the interpolated target PRICE (raw BRL);
+                          // the derived Upside ratio comes from the live price.
+                          const upside =
+                            cell?.raw != null && r.livePrice != null && r.livePrice > 0
+                              ? cell.raw / r.livePrice - 1
+                              : null;
+                          const upsideColor =
+                            upside == null
+                              ? "#1a1a1a"
+                              : upside > 0
+                                ? "#15803d"
+                                : upside < 0
+                                  ? "#b91c1c"
+                                  : "#6b7280";
+                          return [
+                            <td key={o.key} style={{ ...TD_BASE }}>
+                              {cell?.raw == null ? "—" : fmtSlider(cell.raw)}
+                            </td>,
+                            <td key={`${o.key}-up`} style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
+                              {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
+                            </td>,
+                          ];
+                        }
+                        const showDash = quotesLoading && cell?.value == null;
+                        return (
+                          <td key={o.key} style={{ ...TD_BASE }}>
+                            {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
+                          </td>
+                        );
+                      })}
                     </tr>
                   );
                 })

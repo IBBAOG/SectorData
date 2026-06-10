@@ -4257,6 +4257,7 @@ import type {
   SensitivityTableAdmin,
   SensitivityGridBlock,
   SensitivityGridAxis,
+  SensitivityGridOutput,
   ScenarioGridPoint,
 } from "../types/stockGuide";
 
@@ -4587,45 +4588,97 @@ function mapSensitivityAxis(raw: unknown): SensitivityAxis {
   return axis;
 }
 
+const GRID_OUTPUT_MODES = [
+  "absolute",
+  "yield",
+  "pe",
+  "ev_ebitda",
+  "upside",
+] as const;
+
 /**
  * Coerce the SCENARIO-GRID `definition.grid` jsonb into a typed
  * `SensitivityGridBlock`. Returns null when absent / malformed. The block is
- * axis METADATA only (no numerics, no company keys) — stored verbatim by the
- * upsert RPC — so we just normalize the per-axis string fields.
+ * axis + output METADATA only (no numerics, no company keys) — stored verbatim
+ * by the upsert RPC.
  *
- * `axes` must be a 1..3-entry array of `{driver_key, label, unit}`:
- *   • each axis needs a non-empty `driver_key`; `label`/`unit` are coerced to
- *     strings;
- *   • a duplicate `driver_key` keeps only its FIRST occurrence;
+ * `axes` must be a 1..3-entry array of `{driver_id?, driver_key?, label, unit,
+ * tmin?, tmax?, tstep?}`:
+ *   • an axis is meaningful when it has a positive `driver_id` OR a non-empty
+ *     `driver_key`; `label`/`unit` are coerced to strings; `tmin`/`tmax`/`tstep`
+ *     coerced to numbers (dropped when absent);
+ *   • a duplicate binding (same driver_id, or same driver_key) keeps only its
+ *     FIRST occurrence;
  *   • more than 3 valid axes → the excess is dropped (keep the first 3);
  *   • zero valid axes → null (the table then falls back to the static matrix).
  *
- * The legacy 1-D shape (`x_driver_key`) no longer exists in the DB; if one ever
- * surfaces, the migration's data-fix has already converted it to `axes`, so this
- * mapper only honors `axes`.
+ * `outputs` is a 1..6-entry array of `{key, mode, label}` (mode ∈ the
+ * value-mode enum). A LEGACY single-output block (`output:"target_price"` and no
+ * `outputs`) maps to `[{key:'target_price', mode:'upside', label:'Target price'}]`.
  */
 function mapGridBlock(raw: unknown): SensitivityGridBlock | null {
   if (!raw || typeof raw !== "object") return null;
   const g = raw as Record<string, unknown>;
   if (!Array.isArray(g.axes)) return null;
   const axes: SensitivityGridAxis[] = [];
-  const seen = new Set<string>();
+  const seenIds = new Set<number>();
+  const seenKeys = new Set<string>();
   for (const item of g.axes as unknown[]) {
     if (!item || typeof item !== "object") continue;
     const a = item as Record<string, unknown>;
+    const driverId = toNumOrNull(a.driver_id);
     const driverKey = a.driver_key != null ? String(a.driver_key).trim() : "";
-    if (!driverKey) continue; // an axis is only meaningful if it names a driver
-    if (seen.has(driverKey)) continue; // duplicate → keep the first
-    seen.add(driverKey);
-    axes.push({
-      driver_key: driverKey,
+    // An axis is only meaningful if it binds a driver (by id or by catalog key).
+    if ((driverId == null || driverId <= 0) && !driverKey) continue;
+    if (driverId != null && driverId > 0) {
+      if (seenIds.has(driverId)) continue; // duplicate id → keep the first
+      seenIds.add(driverId);
+    }
+    if (driverKey) {
+      if (seenKeys.has(driverKey)) continue; // duplicate key → keep the first
+      seenKeys.add(driverKey);
+    }
+    const axis: SensitivityGridAxis = {
       label: String(a.label ?? ""),
       unit: String(a.unit ?? ""),
-    });
+    };
+    if (driverId != null && driverId > 0) axis.driver_id = driverId;
+    if (driverKey) axis.driver_key = driverKey;
+    const tmin = toNumOrNull(a.tmin);
+    const tmax = toNumOrNull(a.tmax);
+    const tstep = toNumOrNull(a.tstep);
+    if (tmin != null) axis.tmin = tmin;
+    if (tmax != null) axis.tmax = tmax;
+    if (tstep != null) axis.tstep = tstep;
+    axes.push(axis);
     if (axes.length === 3) break; // cap at 3 axes (x, y, z)
   }
   if (axes.length === 0) return null;
-  return { axes, output: String(g.output ?? "target_price") };
+
+  // Outputs: prefer the multi-output array; fall back to the legacy single `output`.
+  const outputs: SensitivityGridOutput[] = [];
+  const seenOut = new Set<string>();
+  if (Array.isArray(g.outputs)) {
+    for (const item of g.outputs as unknown[]) {
+      if (!item || typeof item !== "object") continue;
+      const o = item as Record<string, unknown>;
+      const key = o.key != null ? String(o.key).trim() : "";
+      if (!key || seenOut.has(key)) continue;
+      const mode = GRID_OUTPUT_MODES.includes(
+        o.mode as (typeof GRID_OUTPUT_MODES)[number],
+      )
+        ? (o.mode as SensitivityGridOutput["mode"])
+        : "upside";
+      seenOut.add(key);
+      outputs.push({ key, mode, label: String(o.label ?? key) });
+      if (outputs.length === 6) break;
+    }
+  }
+  if (outputs.length === 0) {
+    const legacyKey = String(g.output ?? "target_price").trim() || "target_price";
+    outputs.push({ key: legacyKey, mode: "upside", label: "Target price" });
+  }
+  return { axes, outputs };
 }
 
 const SENSITIVITY_VALUE_MODES = [
@@ -4665,8 +4718,8 @@ function mapSensitivityTable(r: Record<string, unknown>): SensitivityTable {
   if (Array.isArray(def.cells_secondary)) {
     out.definition.cells_secondary = coerceMatrix(def.cells_secondary);
   }
-  // SCENARIO-GRID block (presence marks the table a 1-D interpolation mesh).
-  // Axis metadata only — stored verbatim by the upsert RPC.
+  // SCENARIO-GRID block (presence marks the table a multilinear interpolation
+  // mesh). Axis + output metadata only — stored verbatim by the upsert RPC.
   const grid = mapGridBlock(def.grid);
   if (grid) out.definition.grid = grid;
   return out;
@@ -4718,11 +4771,12 @@ export async function rpcGetStockGuideSensitivityTables(
 }
 
 /**
- * The multi-axis scenario-grid mesh for ONE scenario-grid sensitivity table:
- * every `(ticker, x_value, y_value, z_value, primary_value)` point, ordered by
- * ticker then by the coordinate axes. `x/y/z_value` are the driver levels (one
- * per `definition.grid.axes` entry; an unused axis is always 0); `primary_value`
- * is the target price (BRL/share) at that mesh node. HIDE-AWARE — a non-admin
+ * The multi-axis, multi-metric scenario-grid mesh for ONE scenario-grid
+ * sensitivity table: every `(ticker, metric, x_value, y_value, z_value,
+ * primary_value)` point, ordered by ticker then metric then the coordinate axes.
+ * `metric` selects which `definition.grid.outputs[]` the point feeds; `x/y/z_value`
+ * are the driver levels (one per `definition.grid.axes` entry; an unused axis is
+ * always 0); `primary_value` is the metric's value at that mesh node. HIDE-AWARE — a non-admin
  * only receives points for VISIBLE tickers (a restricted company's per-scenario
  * target prices never reach the browser). All four numerics are coerced; any row
  * with a non-finite coordinate or value is dropped so the interpolator never
@@ -4750,8 +4804,14 @@ export async function rpcGetStockGuideScenarioGrid(
     const z = toNumOrNull(r.z_value);
     const v = toNumOrNull(r.primary_value);
     if (x == null || y == null || z == null || v == null) continue;
+    // Postgres column DEFAULT 'target_price'; coerce a blank/missing metric to it.
+    const metric =
+      r.metric != null && String(r.metric).trim()
+        ? String(r.metric).trim()
+        : "target_price";
     out.push({
       ticker: String(r.ticker),
+      metric,
       x_value: x,
       y_value: y,
       z_value: z,

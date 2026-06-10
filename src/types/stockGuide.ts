@@ -214,12 +214,52 @@ export interface SensitivityAxis {
  * names no company, so it carries no hide-strip.
  */
 export interface SensitivityGridAxis {
-  /** Catalog driver key whose LIVE value is this axis position (e.g. `avg_brent_2026`). */
-  driver_key: string;
+  /**
+   * Registry driver this axis binds to (`stock_guide_drivers.id`). Preferred over
+   * `driver_key`: the live value resolves through `resolveDriverValue(driver,
+   * marketValues)` — static (`current_value`) or dynamic (live market metric).
+   * At least one of `driver_id` / `driver_key` must be set.
+   */
+  driver_id?: number;
+  /**
+   * Catalog driver key whose LIVE value is this axis position (e.g.
+   * `avg_brent_2026`). LEGACY direct-catalog binding — still honored; resolves
+   * from `marketValues[driver_key]`. At least one of `driver_id`/`driver_key` set.
+   */
+  driver_key?: string;
   /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
   label: string;
   /** Axis unit (e.g. "USD/bbl"). */
   unit: string;
+  /** Template range — minimum axis level for the downloadable Excel grid. */
+  tmin?: number;
+  /** Template range — maximum axis level for the downloadable Excel grid. */
+  tmax?: number;
+  /** Template range — step between axis levels for the downloadable Excel grid. */
+  tstep?: number;
+}
+
+/**
+ * One configured OUTPUT (metric) of a SCENARIO-GRID table. Each output maps to a
+ * distinct `metric` in `stock_guide_scenario_grid` and renders as one column in
+ * the panel. `mode` reuses the static-sensitivity value-mode math
+ * (`computeSensitivityCellValue`):
+ *   • `upside`   — `primary_value` is a target price (BRL/share); the panel shows
+ *     the interpolated TP **and** the live upside vs the share price.
+ *   • `yield`    — `primary_value` is a BRL-mn flow (FCFE / dividends); shown as
+ *     value ÷ live market cap × 100 (%).
+ *   • `pe`       — `primary_value` is net income (BRL mn); shown as market cap ÷
+ *     value (×).
+ *   • `ev_ebitda`— (market cap + net debt) ÷ value (×) — rarely used in a grid.
+ *   • `absolute` — raw interpolated value in the output's own units.
+ */
+export interface SensitivityGridOutput {
+  /** The `metric` key in `stock_guide_scenario_grid` (e.g. `target_price`, `fcfe`). */
+  key: string;
+  /** How the interpolated value is turned into the displayed number. */
+  mode: SensitivityTable["value_mode"];
+  /** Column label (e.g. "Target price", "FCFE yield"). */
+  label: string;
 }
 
 /**
@@ -252,8 +292,13 @@ export interface SensitivityGridAxis {
 export interface SensitivityGridBlock {
   /** 1..3 driver axes, ordered (x, y, z). One live slider per axis. */
   axes: SensitivityGridAxis[];
-  /** What `primary_value` represents — currently `'target_price'` (BRL/share). */
-  output: string;
+  /**
+   * Configured outputs (metrics) for this table — one column per output. Each
+   * maps to a `metric` in `stock_guide_scenario_grid` and is interpolated against
+   * the SAME axis coordinates. LEGACY single-output tables (only `output:"…"`)
+   * map to a single `upside` Target-price output (see `mapGridBlock`).
+   */
+  outputs: SensitivityGridOutput[];
 }
 
 /**
@@ -311,6 +356,8 @@ export interface SensitivityTable {
  */
 export interface ScenarioGridPoint {
   ticker: string;
+  /** Which output this point belongs to — matches a `definition.grid.outputs[].key`. */
+  metric: string;
   x_value: number;
   y_value: number;
   z_value: number;
