@@ -138,6 +138,7 @@ export interface DimensionAggregate {
 export interface CompanyFieldAggregate {
   campo: string;
   bacia: string | null;
+  /** Effective blended stake of the field's latest loaded month (display only). */
   stakePct: number;
   avgOilNet: number;   // avg net bbl/day across reporting days
   avgGasNet: number;   // avg net Mm³/day
@@ -155,8 +156,9 @@ export interface CompanyFieldNoData {
 /** One stake-labeled field column header in the daily net-oil matrix. */
 export interface CompanyDailyOilField {
   campo: string;
+  /** Effective blended stake of the field's latest loaded month (display only). */
   stakePct: number;
-  /** "PEREGRINO (80%)" — what the column header renders. */
+  /** "PEREGRINO (80%)" — what the column header renders (latest month's stake). */
   label: string;
   /**
    * True for the synthetic "Others" column (collapsed remainder past the top N).
@@ -256,6 +258,38 @@ export function fieldLabelWithStake(campo: string, stakePct: number | null | und
   return `${campo} (${formatStakePct(stakePct)})`;
 }
 
+/**
+ * ONE display stake per field across the loaded range: the `stake_pct` of the
+ * field's LATEST reported day (ties broken by the higher stake — only relevant
+ * for the theoretical no-blend fallback where a field still emits one row per
+ * stake group).
+ *
+ * Why this exists: since migration 20260618000000 the company serie returns a
+ * per-month BLENDED effective stake (contract-tranche blend with carry-forward),
+ * so `stake_pct` VARIES BY MONTH for blended fields (e.g. TUPI 67.348 in Mar-26
+ * → 67.311 in Apr-26). Labels and series keys must therefore NEVER embed the
+ * per-row stake — a field would fragment into one legend entry / trace / column
+ * per month the moment two months round differently. Every label-building
+ * surface (projectCompany dimensions, monthly stacked-bar labels, daily-matrix
+ * column headers, per-field aggregates) pins the field's label to THIS single
+ * latest-month stake, while the underlying net values keep their true
+ * per-month weighting (computed server-side).
+ */
+export function latestStakeByCampo(
+  rows: AnpCdpDiariaEmpresaSeriePonto[],
+): Record<string, number> {
+  const latestDate: Record<string, string> = {};
+  const stake: Record<string, number> = {};
+  for (const r of rows) {
+    const prev = latestDate[r.campo];
+    if (prev == null || r.data > prev || (r.data === prev && r.stake_pct > stake[r.campo])) {
+      latestDate[r.campo] = r.data;
+      stake[r.campo] = r.stake_pct;
+    }
+  }
+  return stake;
+}
+
 /** Display value for a metric (bbl/day → kbpd for oil; gas already in Mm³/d). */
 export function metricDisplay(value: number | null | undefined, metric: Metric): number | null {
   if (value == null || !Number.isFinite(value)) return null;
@@ -334,18 +368,24 @@ export function buildSerieChart(
  * metric — the canonical legend order used by BOTH the company line chart and
  * the monthly stacked bar. Sharing this guarantees a field keeps the SAME
  * PALETTE slot (hence the SAME color) across both charts.
+ *
+ * The average divides by DISTINCT reporting days, not raw row count. Since
+ * 20260618000000 the serie emits exactly 1 row per (data, campo) for blended
+ * fields (TUPI's old 2-rows/day stake groups are gone), so day count == row
+ * count in practice — the day-set keeps the average correct even for the
+ * theoretical no-blend fallback that may still emit per-stake-group rows.
  */
 export function orderCompanyFieldDims(rows: UnifiedRow[], metric: Metric): string[] {
-  const agg: Record<string, { sum: number; cnt: number }> = {};
+  const agg: Record<string, { sum: number; days: Set<string> }> = {};
   for (const r of rows) {
     const v = r[metric];
     if (v == null) continue;
-    if (!agg[r.dimension]) agg[r.dimension] = { sum: 0, cnt: 0 };
+    if (!agg[r.dimension]) agg[r.dimension] = { sum: 0, days: new Set() };
     agg[r.dimension].sum += v;
-    agg[r.dimension].cnt += 1;
+    agg[r.dimension].days.add(r.data);
   }
   return Object.entries(agg)
-    .map(([dim, v]) => [dim, v.cnt > 0 ? v.sum / v.cnt : 0] as [string, number])
+    .map(([dim, v]) => [dim, v.days.size > 0 ? v.sum / v.days.size : 0] as [string, number])
     .sort((a, b) => b[1] - a[1])
     .map(([dim]) => dim);
 }
@@ -484,7 +524,9 @@ export function buildCompanyBuckets(
   const orderedDims = orderCompanyFieldDims(unified, "petroleo_bbl_dia");
   const colorMap    = companyFieldColorMap(orderedDims);
 
-  // label ↔ campo maps (the serie carries a single stake per field).
+  // label ↔ campo maps. The label is 1:1 with the campo by construction —
+  // projectCompany pins each field's label to a single (latest-month) stake
+  // via latestStakeByCampo, so a campo can never surface two labels here.
   const labelToCampo: Record<string, string> = {};
   const campoToLabel: Record<string, string> = {};
   for (const r of unified) {
@@ -645,13 +687,20 @@ function projectWell(rows: AnpCdpDiariaPocoPonto[]): UnifiedRow[] {
  * existing chart/table builders work unchanged. `dimension` = field label
  * with the company's stake (e.g. "PEREGRINO (80%)"), so legend/ranking labels
  * read naturally. Production is line-agnostic from here on.
+ *
+ * The label stake is PINNED per field via `latestStakeByCampo` (the latest
+ * month's effective blend) — NOT the per-row `stake_pct`, which varies by
+ * month since 20260618000000 and would fragment one field into several legend
+ * entries/traces across a multi-month range. Net values stay per-row (true
+ * per-month weighting).
  */
 function projectCompany(rows: AnpCdpDiariaEmpresaSeriePonto[]): UnifiedRow[] {
+  const stakeOf = latestStakeByCampo(rows);
   return rows.map(r => ({
     data: r.data,
     campo: r.campo,
     bacia: r.bacia,
-    dimension: fieldLabelWithStake(r.campo, r.stake_pct),
+    dimension: fieldLabelWithStake(r.campo, stakeOf[r.campo]),
     petroleo_bbl_dia: r.petroleo_bbl_dia_net,
     gas_mm3_dia: r.gas_mm3_dia_net,
   }));
@@ -677,16 +726,27 @@ export function buildCompanyTotalSeries(
 /**
  * Per-field net ranking/table for the Company level: avg + latest net,
  * carrying the stake %. Sorted by avg of the active product descending.
+ *
+ * `stakePct` is the field's latest-month effective blend (latestStakeByCampo),
+ * matching the chart/matrix labels — NOT the first row's stake, which since
+ * 20260618000000 may be an older month's blend.
+ *
+ * Averages divide by DISTINCT reporting days. The serie now emits exactly
+ * 1 row per (data, campo) for blended fields (the old TUPI 2-rows/day stake
+ * groups made the previous row-count denominator double-count: 60 rows over a
+ * 30-day month halved the per-field average); the day-set keeps the average
+ * correct even for the theoretical no-blend fallback that may still emit
+ * per-stake-group rows, whose same-day nets also sum into the latest-day cell.
  */
 export function buildCompanyFieldAggregates(
   rows: AnpCdpDiariaEmpresaSeriePonto[],
   product: Product,
 ): CompanyFieldAggregate[] {
+  const stakeOf = latestStakeByCampo(rows);
   const byCampo: Record<string, {
     bacia: string | null;
-    stakePct: number;
-    oilSum: number; oilCnt: number;
-    gasSum: number; gasCnt: number;
+    oilSum: number; oilDays: Set<string>;
+    gasSum: number; gasDays: Set<string>;
     latestDate: string | null;
     latestOilNet: number | null;
     latestGasNet: number | null;
@@ -695,18 +755,23 @@ export function buildCompanyFieldAggregates(
   for (const r of rows) {
     if (!byCampo[r.campo]) {
       byCampo[r.campo] = {
-        bacia: r.bacia, stakePct: r.stake_pct,
-        oilSum: 0, oilCnt: 0, gasSum: 0, gasCnt: 0,
+        bacia: r.bacia,
+        oilSum: 0, oilDays: new Set(), gasSum: 0, gasDays: new Set(),
         latestDate: null, latestOilNet: null, latestGasNet: null,
       };
     }
     const slot = byCampo[r.campo];
-    if (r.petroleo_bbl_dia_net != null) { slot.oilSum += r.petroleo_bbl_dia_net; slot.oilCnt += 1; }
-    if (r.gas_mm3_dia_net != null)      { slot.gasSum += r.gas_mm3_dia_net;      slot.gasCnt += 1; }
+    if (r.petroleo_bbl_dia_net != null) { slot.oilSum += r.petroleo_bbl_dia_net; slot.oilDays.add(r.data); }
+    if (r.gas_mm3_dia_net != null)      { slot.gasSum += r.gas_mm3_dia_net;      slot.gasDays.add(r.data); }
     if (slot.latestDate == null || r.data > slot.latestDate) {
       slot.latestDate   = r.data;
       slot.latestOilNet = r.petroleo_bbl_dia_net;
       slot.latestGasNet = r.gas_mm3_dia_net;
+    } else if (r.data === slot.latestDate) {
+      // Theoretical fallback only: a second same-day row (per-stake group)
+      // sums into the latest-day net instead of being dropped.
+      if (r.petroleo_bbl_dia_net != null) slot.latestOilNet = (slot.latestOilNet ?? 0) + r.petroleo_bbl_dia_net;
+      if (r.gas_mm3_dia_net != null)      slot.latestGasNet = (slot.latestGasNet ?? 0) + r.gas_mm3_dia_net;
     }
   }
 
@@ -714,9 +779,9 @@ export function buildCompanyFieldAggregates(
     .map(([campo, v]) => ({
       campo,
       bacia:        v.bacia,
-      stakePct:     v.stakePct,
-      avgOilNet:    v.oilCnt > 0 ? v.oilSum / v.oilCnt : 0,
-      avgGasNet:    v.gasCnt > 0 ? v.gasSum / v.gasCnt : 0,
+      stakePct:     stakeOf[campo],
+      avgOilNet:    v.oilDays.size > 0 ? v.oilSum / v.oilDays.size : 0,
+      avgGasNet:    v.gasDays.size > 0 ? v.gasSum / v.gasDays.size : 0,
       latestOilNet: v.latestOilNet,
       latestGasNet: v.latestGasNet,
       latestDate:   v.latestDate,
@@ -798,8 +863,11 @@ export function buildCompanyDailyOilMatrix(
   rows: AnpCdpDiariaEmpresaSeriePonto[],
   buckets: CompanyBuckets,
 ): CompanyDailyOilMatrix {
-  // Map each field (campo) to its stake + decorated label. The serie carries a
-  // single stake per field, so first sighting wins.
+  // Map each field (campo) to its stake + decorated label. Stake/label are
+  // pinned to the latest month's effective blend (latestStakeByCampo) so the
+  // column header matches the chart legends and never fragments when the
+  // monthly blend drifts across the loaded range.
+  const stakeOf = latestStakeByCampo(rows);
   const fieldMeta: Record<string, CompanyDailyOilField> = {};
   // Net oil (kbpd) keyed by [date][campo].
   const cells: Record<string, Record<string, number>> = {};
@@ -808,8 +876,8 @@ export function buildCompanyDailyOilMatrix(
     if (!fieldMeta[r.campo]) {
       fieldMeta[r.campo] = {
         campo:    r.campo,
-        stakePct: r.stake_pct,
-        label:    fieldLabelWithStake(r.campo, r.stake_pct),
+        stakePct: stakeOf[r.campo],
+        label:    fieldLabelWithStake(r.campo, stakeOf[r.campo]),
       };
     }
     if (r.petroleo_bbl_dia_net == null) continue;
@@ -890,18 +958,22 @@ export function buildCompanyMonthlyOilByField(
   rows: AnpCdpDiariaEmpresaSeriePonto[],
   buckets: CompanyBuckets,
 ): CompanyMonthlyOilByField {
-  // Accumulate per (month, field): running sum + day count.
-  const acc: Record<string, Record<string, { sum: number; cnt: number }>> = {};
+  // Accumulate per (month, field): running sum + distinct reporting days.
+  // The label is pinned per field (latestStakeByCampo) — keying on the per-row
+  // stake would split one field into a stack segment + legend entry per month
+  // now that the blend varies monthly (20260618000000).
+  const stakeOf = latestStakeByCampo(rows);
+  const acc: Record<string, Record<string, { sum: number; days: Set<string> }>> = {};
   let maxDate: string | null = null;
 
   for (const r of rows) {
     if (r.petroleo_bbl_dia_net == null) continue;
     const monthKey = r.data.slice(0, 7); // "YYYY-MM"
-    const label    = fieldLabelWithStake(r.campo, r.stake_pct);
+    const label    = fieldLabelWithStake(r.campo, stakeOf[r.campo]);
     if (!acc[monthKey]) acc[monthKey] = {};
-    if (!acc[monthKey][label]) acc[monthKey][label] = { sum: 0, cnt: 0 };
+    if (!acc[monthKey][label]) acc[monthKey][label] = { sum: 0, days: new Set() };
     acc[monthKey][label].sum += r.petroleo_bbl_dia_net;
-    acc[monthKey][label].cnt += 1;
+    acc[monthKey][label].days.add(r.data);
     if (maxDate == null || r.data > maxDate) maxDate = r.data;
   }
 
@@ -923,7 +995,7 @@ export function buildCompanyMonthlyOilByField(
   for (const m of months) {
     valueByMonth[m] = {};
     for (const [label, v] of Object.entries(acc[m])) {
-      const avg = v.cnt > 0 ? v.sum / v.cnt : 0;
+      const avg = v.days.size > 0 ? v.sum / v.days.size : 0;
       const bucket = othersBucketLabel ? bucketOf(label, topSet, othersBucketLabel) : label;
       valueByMonth[m][bucket] = (valueByMonth[m][bucket] ?? 0) + avg;
     }
@@ -1631,7 +1703,7 @@ export function useAnpCdpDiariaData(): UseAnpCdpDiariaData {
     granularity === "field"        ? "Petroleum and natural gas by field, refreshed 3×/day (source: ANP Power BI)" :
     granularity === "installation" ? "Petroleum and natural gas by installation, refreshed 3×/day (source: ANP Power BI)" :
     granularity === "well"         ? "Petroleum and natural gas by well, refreshed 3×/day (source: ANP Power BI)" :
-                                     "Stake-weighted daily production by field (source: ANP Power BI × Field Stakes)";
+                                     "Daily production by field, weighted by the company's effective stake (source: ANP Power BI × Field Stakes)";
 
   // ── Period badge ──────────────────────────────────────────────────────────
   const hasDates = allDates.length > 0;

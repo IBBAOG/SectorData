@@ -115,7 +115,9 @@ export default function DesktopView(): React.ReactElement | null {
               </div>
 
               <div style={{ fontSize: 11, color: "#888", marginTop: 10, paddingLeft: 2, lineHeight: 1.5 }}>
-                Net = field daily production × the company&apos;s stake.
+                Net = field daily production × the company&apos;s effective stake
+                (contract-tranche blend, monthly). Field labels show the latest
+                month&apos;s stake.
               </div>
             </div>
           </div>
@@ -627,7 +629,7 @@ function CompanyContent({
               <span>
                 Net Oil — Monthly Average by Field (kbpd)
                 <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
-                  Stake-weighted · current month is month-to-date
+                  Weighted by effective stake · current month is month-to-date
                 </span>
               </span>
             }
@@ -666,7 +668,7 @@ function CompanyContent({
               <span>
                 Daily net oil by field — {selectedEmpresa}
                 <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 400, color: "#888" }}>
-                  Net oil (kbpd), stake-weighted · one row per day
+                  Net oil (kbpd), weighted by effective stake · one row per day
                   {companyDailyOilMatrix.fields.some(f => f.isOthers) &&
                     " · top 6 fields; rest grouped as Others (full breakdown in Explore raw data)"}
                 </span>
@@ -743,7 +745,11 @@ function CompanyDailyOilMatrixTable({
             {fields.map(f => (
               <th
                 key={f.campo}
-                title={f.isOthers && f.othersFieldNames ? f.othersFieldNames.join(", ") : undefined}
+                title={
+                  f.isOthers && f.othersFieldNames
+                    ? f.othersFieldNames.join(", ")
+                    : "Stake shown = the field's effective blended stake in the latest loaded month"
+                }
                 style={{
                   position: "sticky", top: 0, zIndex: 2,
                   background: "#fff", borderBottom: "2px solid #1a1a1a",
