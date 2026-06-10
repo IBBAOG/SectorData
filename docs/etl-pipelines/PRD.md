@@ -20,7 +20,7 @@ scripts/pipelines/                  # rodam via GitHub Actions (todos os ETL)
       01_extract.py                 [LEGACY] Selenium + ddddocr CAPTCHA — replaced by 01_extract_powerbi.py
                                     (kept for reference; not called by workflow)
       _replay.py                    Módulo standalone (zero Selenium): replay_download() → usado por alertas/
-      02_upload.py                  CSVs → Supabase. Post-upload: calls `refresh_mv_production()` RPC to keep `/well-by-well` dashboard MVs fresh (Round 5).
+      02_upload.py                  CSVs → Supabase. Post-upload: calls `refresh_mv_production()` RPC to keep the `/well-by-well` MVs fresh (Round 5). Since `20260618000000`, `mv_production_monthly` also feeds the blended stakes of the `/anp-cdp-diaria` company RPCs — this refresh updates BOTH dashboards.
     fase3/                          chain (workflow etl_anp_fase3.yml)
       01_daie_sync.py               Dados Abertos IE
       02_desembaracos_sync.py       Desembaraços (preserves importador/cnpj/uf_cnpj since 2026-05-25)

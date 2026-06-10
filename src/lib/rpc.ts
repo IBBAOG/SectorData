@@ -1869,13 +1869,22 @@ export async function rpcGetAnpCdpDiariaPocoSerie(
 // ─── MODULE: ANP CDP Diária — Company level (stake-weighted net) ─────────────
 //
 // Daily NET production for an operator (company), computed as
-// field daily production × the company's working interest (stake_pct/100) in
+// field daily production × the company's EFFECTIVE stake (stake_pct/100) in
 // that field. Joins the Power BI daily feed (`anp_cdp_diaria`) with the
 // admin-curated `field_stakes` table. Backed by migration 20260609000000:
 //   • get_anp_cdp_diaria_empresas()              → selector population
 //   • get_anp_cdp_diaria_empresa_serie(p_empresa, p_data_inicio, p_data_fim)
 //   • get_anp_cdp_diaria_empresa_campos(p_empresa) → stake coverage
 // All three are SECURITY DEFINER + anon-safe.
+//
+// Since migration 20260618000000 `stake_pct` is a per-month BLENDED effective
+// stake (production-weighted blend of the field's contract tranches, sourced
+// from mv_production_monthly with carry-forward for months the monthly CDP
+// hasn't published yet) — e.g. BÚZIOS ≈ 88.9 instead of the raw 100% ToR row.
+// It VARIES BY MONTH for blended fields, so frontend labels/series keys must
+// never embed the per-row stake (see latestStakeByCampo in
+// useAnpCdpDiariaData.ts). Blended fields emit exactly 1 row per (data,
+// campo); only the no-blend fallback may still emit per-stake-group rows.
 //
 // ⚠️ numeric columns (`stake_pct`, `*_net`) arrive as STRINGS from supabase-js;
 // the wrappers coerce them via Number() so callers always get clean numbers.
@@ -1907,7 +1916,9 @@ export async function rpcGetAnpCdpDiariaEmpresas(
 /**
  * One row per (data, campo) for the chosen company. `petroleo_bbl_dia` /
  * `gas_mm3_dia` are the field's GROSS daily production; `*_net` are already
- * multiplied by the company's stake. `stake_pct` is the working interest %.
+ * multiplied by the company's stake. `stake_pct` is the EFFECTIVE blended
+ * stake for the row's month (contract-tranche blend, 20260618000000) — it may
+ * differ across months for the same field.
  */
 export type AnpCdpDiariaEmpresaSeriePonto = {
   data: string;
@@ -1973,6 +1984,8 @@ export async function rpcGetAnpCdpDiariaEmpresaSerie(
  * Stake coverage for the chosen company. `has_daily_data=false` fields are
  * the ones in the company's portfolio that are NOT yet in the daily feed
  * (e.g. Wahoo for PRIO, onshore Petrobras fields, FPSOs without daily reporting).
+ * `stake_pct` is the field's LATEST available monthly blend (raw stake when no
+ * blend exists) — consistent with the serie labels (20260618000000).
  */
 export type AnpCdpDiariaEmpresaCampo = {
   campo: string;

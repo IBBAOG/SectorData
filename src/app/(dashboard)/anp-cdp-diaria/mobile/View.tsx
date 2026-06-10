@@ -349,7 +349,7 @@ export default function MobileView(): React.ReactElement | null {
             lineHeight: 1.4,
           }}
         >
-          Stake-weighted net production by field
+          Net production by field, weighted by the company&apos;s effective stake
         </div>
 
         {/* Hero PRIO | Petrobras toggle (company landing) */}
@@ -1173,6 +1173,22 @@ function CompanyMobileContent({
           </div>
         </section>
       )}
+
+      {/* Stake methodology note — mobile counterpart of the desktop sidebar note. */}
+      <section style={{ margin: "12px 16px 0" }}>
+        <div
+          style={{
+            fontSize:   11,
+            color:      "var(--mobile-text-muted, #6b6b73)",
+            lineHeight: 1.5,
+            paddingLeft: 2,
+          }}
+        >
+          Net = field daily production × the company&apos;s effective stake
+          (contract-tranche blend, monthly). Field labels show the latest
+          month&apos;s stake.
+        </div>
+      </section>
     </>
   );
 }
