@@ -35,7 +35,7 @@ jobs:
           cache: pip
 
       - name: Install deps
-        run: pip install requests supabase python-dotenv
+        run: pip install requests supabase python-dotenv jinja2
 
       - name: Extract + upload (3 levels)
         run: python scripts/extractors/anp_cdp_powerbi.py --level all --upload
