@@ -898,6 +898,24 @@ function clampAxis(v: number, min: number, max: number, fallback: number): numbe
   return v < min ? min : v > max ? max : v;
 }
 
+/**
+ * Snap `v` to the next multiple of `step` in the given direction (the stepper
+ * buttons anchor to a round grid instead of just adding `step`):
+ *   dir > 0 → smallest multiple of `step` strictly greater than `v`
+ *   dir < 0 → largest  multiple of `step` strictly less    than `v`
+ * If `v` is already on the grid it behaves like `v ± step`. Float-tolerant.
+ */
+function snapToStep(v: number, step: number, dir: number): number {
+  if (!Number.isFinite(v) || step <= 0) return v;
+  const EPS = 1e-9;
+  if (dir > 0) {
+    const up = (Math.floor(v / step + EPS) + 1) * step;
+    return up;
+  }
+  const down = (Math.ceil(v / step - EPS) - 1) * step;
+  return down;
+}
+
 /** One axis numeric stepper row inside the GridPanel (±5 buttons + number input). */
 function AxisStepper({
   tableId,
@@ -924,8 +942,10 @@ function AxisStepper({
     onSetAxis(tableId, axisIdx, next);
     setDraft(fmtSlider(next));
   };
-  const bump = (delta: number) => {
-    const next = clampAxis(axis.value + delta, axis.min, axis.max, axis.value);
+  // Buttons snap to the next multiple of the step (round grid), not value+step.
+  const bump = (dir: number) => {
+    const snapped = snapToStep(axis.value, GRID_AXIS_STEP, dir);
+    const next = clampAxis(snapped, axis.min, axis.max, axis.value);
     onSetAxis(tableId, axisIdx, next);
   };
 
@@ -993,9 +1013,9 @@ function AxisStepper({
         <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
           <button
             type="button"
-            onClick={() => bump(-GRID_AXIS_STEP)}
+            onClick={() => bump(-1)}
             disabled={axis.value <= axis.min}
-            aria-label={`Decrease ${axis.label} by ${GRID_AXIS_STEP}`}
+            aria-label={`Decrease ${axis.label} to previous multiple of ${GRID_AXIS_STEP}`}
             style={{
               ...stepBtnStyle,
               borderRadius: "8px 0 0 8px",
@@ -1037,9 +1057,9 @@ function AxisStepper({
           />
           <button
             type="button"
-            onClick={() => bump(GRID_AXIS_STEP)}
+            onClick={() => bump(1)}
             disabled={axis.value >= axis.max}
-            aria-label={`Increase ${axis.label} by ${GRID_AXIS_STEP}`}
+            aria-label={`Increase ${axis.label} to next multiple of ${GRID_AXIS_STEP}`}
             style={{
               ...stepBtnStyle,
               borderRadius: "0 8px 8px 0",
