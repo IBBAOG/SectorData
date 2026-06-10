@@ -1,45 +1,65 @@
 """
-Upload a Stock Guide multi-axis scenario-grid (1..3 axes) to Supabase.
+Upload a Stock Guide multi-metric, multi-axis scenario-grid (1..3 axes) to Supabase.
 
 The analyst builds, in their own model, a dense Cartesian mesh of
-(driver levels -> target price) points PER COMPANY across 1, 2 or 3 driver axes
-(e.g. Avg Brent 2026 / 2027 / 2028+). Every Excel row is one model run = one
-mesh point. The frontend (/stock-guide) interpolates this mesh MULTILINEARLY
-(2^d corners) live against the current driver levels.
+(driver levels -> metric value) points PER COMPANY across 1, 2 or 3 driver axes
+(e.g. Avg Brent 2026 / 2027 / 2028+), for one OR MORE output metrics
+(target_price, fcfe, dividends, net_income, ...). Every Excel row in a sheet is
+one model run = one mesh point for that sheet's metric. The frontend
+(/stock-guide) interpolates each metric's mesh MULTILINEARLY (2^d corners) live
+against the current driver levels.
 
 The mesh is stored in `stock_guide_scenario_grid`, keyed to the "shell"
 sensitivity row the analyst created in the Admin Panel (a row in
-`stock_guide_sensitivities` whose `definition.grid` carries the axis metadata:
-`{axes: [{driver_key, label, unit}](1..3), output}`).
+`stock_guide_sensitivities` whose `definition.grid` carries the axis + output
+metadata: `{axes: [{driver_key, label, unit}](1..3), outputs: [<metric keys>]}`).
+The legacy single-output shape (`{axes, output: "target_price"}`) is still
+accepted and maps to a single `target_price` metric.
 
-This is a REPLACE-TOTAL snapshot loader, NOT a time-series: every run wipes all
-rows of the target `sensitivity_id` and re-inserts the full Excel content. It is
-idempotent (running twice yields the same state). The "never delete a partial
-month" rule does NOT apply here — replace-total is the correct semantics.
+This is a REPLACE-TOTAL snapshot loader, NOT a time-series: every run wipes ALL
+rows of the target `sensitivity_id` (every metric) and re-inserts the full
+workbook content. It is idempotent (running twice yields the same state). The
+"never delete a partial month" rule does NOT apply here — replace-total is the
+correct semantics.
 
 Writes go through the service role (bypasses RLS, no policy needed).
 
 ────────────────────────────────────────────────────────────────────────────
-Excel structure (LONG format — canonical, single sheet, the first sheet is read):
+TEMPLATE PROVENANCE (v2): the workbook is now DOWNLOADED FROM THE ADMIN PANEL
+("Download template" button on the scenario-grid shell, generated in-browser).
+This Python script is the UPLOAD path. `scripts/manual/make_brent_grid_template.py`
+is DEPRECATED (single-metric / offline fallback only).
 
-    - One row per scenario (one model run = one Cartesian combination).
-    - Coordinate columns: header = the EXACT driver_key of each axis, taken from
-      the shell's `definition.grid.axes` (e.g. `avg_brent_2026`, `avg_brent_2027`,
-      `avg_brent_2028`). Match is case-insensitive + trimmed.
-    - Every remaining non-empty, non-"Unnamed" column = a ticker; cell = target
-      price (R$/share) for that ticker at those coordinates.
+────────────────────────────────────────────────────────────────────────────
+Workbook structure (v2 — multi-sheet, one sheet per output metric):
 
-    Example (2 axes — avg_brent_2026 × avg_brent_2027):
-        avg_brent_2026 | avg_brent_2027 | PETR4 | PRIO3
+    - ONE SHEET PER OUTPUT METRIC. The sheet NAME is the metric key
+      (e.g. `target_price`, `fcfe`, `dividends`, `net_income`) -> stored verbatim
+      as `metric`. A sheet whose name matches no configured output is skipped
+      with a WARNING; a configured output with no matching sheet is reported with
+      a WARNING ("metric X not in workbook — will be absent").
+
+    - Per sheet: LONG format, one row per scenario (one Cartesian combination).
+      The FIRST `d` columns are the coordinates, read POSITIONALLY in the order
+      of `definition.grid.axes` (NOT by header name — v2 axes may key by an opaque
+      driver_id with no clean key). The header of a coordinate column is the
+      human label of the axis; a mismatch only produces a sanity WARNING, never
+      an error. d<3 -> y/z stored as 0.
+
+    - Every remaining non-empty, non-"Unnamed" column = a ticker; cell = that
+      metric's value for that ticker at those coordinates.
+
+    Example sheet `target_price` (2 axes — Brent 2026 × Brent 2027):
+        Brent avg 2026 | Brent avg 2027 | PETR4 | PRIO3
         40             | 40             | 22.10 | 28.40
         40             | 50             | 24.05 | 30.10
         50             | 40             | 25.30 | 31.20
         50             | 50             | 27.80 | 33.90
         ...
 
-    The file must be a COMPLETE Cartesian mesh: one row for every combination of
-    distinct levels across the axes, and every ticker column fully filled (no
-    holes). The validations below enforce this hard.
+    Each sheet must be a COMPLETE Cartesian mesh: one row for every combination
+    of distinct levels across the axes, every ticker column fully filled (no
+    holes). The validations below enforce this hard, per sheet.
 
 ────────────────────────────────────────────────────────────────────────────
 Usage:
@@ -88,9 +108,12 @@ _COORD_ROUND = 6        # decimals — neutralizes float drift between template 
 _BATCH = 500
 _WARN_ROWS = 60_000     # payload guidance threshold (see end-of-run print)
 
+# Legacy default metric when the shell carries the old single-`output` shape.
+_DEFAULT_METRIC = "target_price"
+
 # Known dynamic-driver catalog keys (kept in sync with src/hooks/useMarketDrivers.ts).
-# Used only to WARN when a leftover header looks like a driver key that is NOT one
-# of this shell's axes — a strong hint the wrong file/shell was paired.
+# Used only to WARN when a leftover (ticker) header looks like a driver key — a
+# strong hint a coordinate column was mis-placed or the wrong file was paired.
 _DRIVER_CATALOG_KEYS = {
     "avg_brent_2026", "avg_brent_2027", "avg_brent_2028",
     "avg_fx_2026", "avg_fx_2027", "avg_fx_2028",
@@ -139,9 +162,10 @@ def _resolve_excel_path(cli_excel: str | None) -> str:
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=(
-            "Upload a Stock Guide multi-axis scenario-grid (1..3 axes, LONG "
-            "format) to stock_guide_scenario_grid. REPLACE-TOTAL snapshot for "
-            "one sensitivity table; idempotent."
+            "Upload a Stock Guide multi-metric multi-axis scenario-grid (1..3 "
+            "axes, one sheet per output metric, LONG format) to "
+            "stock_guide_scenario_grid. REPLACE-TOTAL snapshot for one "
+            "sensitivity table (all metrics at once); idempotent."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -149,10 +173,11 @@ def _parse_args() -> argparse.Namespace:
             "  --sensitivity-id N        id of the stock_guide_sensitivities row (preferred).\n"
             "  --table-title \"...\"      title of that row; looked up in\n"
             "                            stock_guide_sensitivities. Errors if 0 or >1 match.\n\n"
-            "Excel (LONG): one row per scenario. Coordinate columns are named\n"
-            "EXACTLY by each axis driver_key from the shell's definition.grid.axes\n"
-            "(e.g. avg_brent_2026); every other non-empty column is a ticker whose\n"
-            "cell is the target price (R$/share). The first sheet is read.\n"
+            "Workbook (v2, downloaded from the Admin Panel): ONE SHEET PER METRIC,\n"
+            "sheet name = metric key (target_price, fcfe, ...). Per sheet, the first\n"
+            "d columns are coordinates read POSITIONALLY in definition.grid.axes\n"
+            "order; every other non-empty column is a ticker whose cell is the\n"
+            "metric value.\n"
         ),
     )
     target = p.add_mutually_exclusive_group(required=True)
@@ -190,13 +215,14 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-# ── Sensitivity shell resolution (id + grid axes) ───────────────────────────────
+# ── Sensitivity shell resolution (id + grid axes + output metrics) ──────────────
 
-def _fetch_shell(supabase, args: argparse.Namespace) -> tuple[int, list[dict]]:
-    """Resolve the target sensitivity_id and return (id, grid_axes).
+def _fetch_shell(supabase, args: argparse.Namespace) -> tuple[int, list[dict], list[str]]:
+    """Resolve the target sensitivity_id and return (id, grid_axes, outputs).
 
-    grid_axes is the parsed list from definition.grid.axes; raises a clear error
-    if the shell carries no valid grid block (legacy/unsaved shape).
+    grid_axes is the parsed list from definition.grid.axes; outputs is the list
+    of configured output-metric keys (legacy single `output` -> [that]; absent ->
+    ['target_price']). Raises a clear error if the shell carries no valid grid.
     """
     if args.sensitivity_id is not None:
         resp = (
@@ -241,12 +267,18 @@ def _fetch_shell(supabase, args: argparse.Namespace) -> tuple[int, list[dict]]:
         sid = int(row["id"])
         print(f"Target: sensitivity_id={sid} (resolved from title {title!r})")
 
-    axes = _parse_grid_axes(row.get("definition"))
-    return sid, axes
+    axes, outputs = _parse_grid(row.get("definition"))
+    return sid, axes, outputs
 
 
-def _parse_grid_axes(definition) -> list[dict]:
-    """Extract and validate definition.grid.axes (1..3) from the shell."""
+def _parse_grid(definition) -> tuple[list[dict], list[str]]:
+    """Extract & validate definition.grid: axes (1..3) and output metric keys.
+
+    Returns (axes, outputs). outputs is derived from:
+      - grid.outputs (list of strings)  -> used verbatim (v2);
+      - grid.output (single string)     -> [that]  (legacy single-output);
+      - neither                         -> ['target_price'].
+    """
     if not isinstance(definition, dict):
         print(
             "ERROR: shell has no JSON definition — this is not a scenario-grid "
@@ -261,115 +293,121 @@ def _parse_grid_axes(definition) -> list[dict]:
             "shell in the Admin Panel."
         )
         sys.exit(1)
-    axes = grid.get("axes")
-    if isinstance(axes, list) and axes:
-        parsed: list[dict] = []
-        for ax in axes:
+
+    # --- axes ---
+    raw_axes = grid.get("axes")
+    axes: list[dict] = []
+    if isinstance(raw_axes, list) and raw_axes:
+        for ax in raw_axes:
             if not isinstance(ax, dict):
                 continue
-            key = str(ax.get("driver_key") or "").strip()
-            if not key:
-                continue
-            parsed.append({
+            # v2 axes may key by driver_id (opaque) when no clean driver_key exists.
+            key = str(ax.get("driver_key") or ax.get("driver_id") or "").strip()
+            axes.append({
                 "driver_key": key,
                 "label": str(ax.get("label") or "").strip(),
                 "unit": str(ax.get("unit") or "").strip(),
             })
-        if not parsed:
+        if not axes:
             print(
                 "ERROR: shell definition.grid.axes is present but contains no "
-                "valid axis (each axis needs a driver_key). Re-save the shell in "
-                "the Admin Panel."
+                "valid axis. Re-save the shell in the Admin Panel."
             )
             sys.exit(1)
-        if len(parsed) > 3:
+        if len(axes) > 3:
             print(
-                f"ERROR: shell defines {len(parsed)} axes — the mesh supports at "
+                f"ERROR: shell defines {len(axes)} axes — the mesh supports at "
                 "most 3 (x/y/z). Re-save the shell with 1..3 axes."
             )
             sys.exit(1)
-        return parsed
-
-    # Legacy 1-D shape ({x_driver_key,...}) — the migration converts these, but a
-    # stale/unsaved shell may still carry it.
-    if "x_driver_key" in grid:
+    elif "x_driver_key" in grid:
+        # Legacy 1-D shape ({x_driver_key,...}) — the migration converts these,
+        # but a stale/unsaved shell may still carry it.
         print(
             "ERROR: shell carries the legacy 1-D grid shape ({x_driver_key,...}) "
             "instead of {axes:[...]}. Re-save the shell in the Admin Panel."
         )
         sys.exit(1)
-
-    print(
-        "ERROR: shell definition.grid has no `axes` list. Re-save the shell in "
-        "the Admin Panel."
-    )
-    sys.exit(1)
-
-
-# ── Header matching: driver_keys -> coord columns; remainder = tickers ──────────
-
-def _match_headers(df: pd.DataFrame, axes: list[dict]) -> tuple[list, list]:
-    """Map each axis driver_key to exactly one Excel header (case-insensitive,
-    trimmed). Returns (coord_columns_in_axis_order, ticker_columns)."""
-    cols = list(df.columns)
-    norm = {c: str(c).strip().lower() for c in cols}
-
-    coord_cols: list = []
-    matched_set: set = set()
-    errors: list[str] = []
-    for ax in axes:
-        key = ax["driver_key"]
-        key_norm = key.strip().lower()
-        hits = [c for c in cols if norm[c] == key_norm and c not in matched_set]
-        if len(hits) == 0:
-            errors.append(f"  axis driver_key {key!r}: NO matching header")
-        elif len(hits) > 1:
-            errors.append(
-                f"  axis driver_key {key!r}: {len(hits)} matching headers "
-                f"{[str(h) for h in hits]} (expected exactly 1)"
-            )
-        else:
-            coord_cols.append(hits[0])
-            matched_set.add(hits[0])
-
-    if errors:
+    else:
         print(
-            "ERROR: could not match coordinate columns to the shell's axes.\n"
-            f"  Expected (driver_keys): {[a['driver_key'] for a in axes]}\n"
-            f"  Found headers:          {[str(c) for c in cols]}\n"
-            + "\n".join(errors)
+            "ERROR: shell definition.grid has no `axes` list. Re-save the shell "
+            "in the Admin Panel."
         )
         sys.exit(1)
 
-    # Remaining headers = tickers (drop blanks / pandas "Unnamed: N" placeholders).
-    remaining = [c for c in cols if c not in matched_set]
+    # --- outputs ---
+    outputs: list[str] = []
+    raw_outputs = grid.get("outputs")
+    if isinstance(raw_outputs, list) and raw_outputs:
+        for o in raw_outputs:
+            k = str(o).strip()
+            if k and k not in outputs:
+                outputs.append(k)
+    if not outputs:
+        legacy = grid.get("output")
+        if isinstance(legacy, str) and legacy.strip():
+            outputs = [legacy.strip()]
+        else:
+            outputs = [_DEFAULT_METRIC]
+
+    print(f"  Axes ({len(axes)}): {[a['driver_key'] or a['label'] for a in axes]}")
+    print(f"  Output metrics ({len(outputs)}): {outputs}")
+    return axes, outputs
+
+
+# ── Coordinate columns (positional) + ticker split per sheet ────────────────────
+
+def _split_columns(df: pd.DataFrame, axes: list[dict]) -> tuple[list, list]:
+    """First `d` columns are coordinates (POSITIONAL, in axis order). The rest
+    are tickers. Returns (coord_columns, ticker_columns). A coordinate header
+    that does not match its axis label/driver_key is only a sanity WARNING."""
+    cols = list(df.columns)
+    dim = len(axes)
+    if len(cols) < dim:
+        print(
+            f"ERROR: sheet has {len(cols)} column(s) but the shell defines {dim} "
+            f"axis/axes — the first {dim} columns must be the coordinates."
+        )
+        sys.exit(1)
+
+    coord_cols = cols[:dim]
+    rest = cols[dim:]
+
+    # Sanity WARN: coordinate header should resemble the axis label/driver_key.
+    for ax, c in zip(axes, coord_cols):
+        hdr = str(c).strip().lower()
+        expected = {ax["driver_key"].lower(), ax["label"].lower()} - {""}
+        if expected and hdr not in expected:
+            print(
+                f"  WARNING: coordinate column header {str(c)!r} does not match "
+                f"axis (driver_key={ax['driver_key']!r}, label={ax['label']!r}) "
+                "— read positionally anyway."
+            )
+
     ticker_cols = [
-        c for c in remaining
+        c for c in rest
         if str(c).strip() and not str(c).startswith("Unnamed")
     ]
 
-    # WARN if a leftover header is a known driver-catalog key not in this shell's
-    # axes — strong hint the wrong file/shell was paired.
-    axis_keys = {a["driver_key"].lower() for a in axes}
+    # WARN if a ticker header is a known driver-catalog key — likely a coordinate
+    # column landed in the ticker region (positional mis-alignment / wrong file).
     for c in ticker_cols:
-        cn = str(c).strip().lower()
-        if cn in _DRIVER_CATALOG_KEYS and cn not in axis_keys:
+        if str(c).strip().lower() in _DRIVER_CATALOG_KEYS:
             print(
-                f"  WARNING: header {str(c)!r} is a known driver key but is NOT "
-                "an axis of this shell — being treated as a ticker. Wrong file / "
-                "wrong shell?"
+                f"  WARNING: header {str(c)!r} is a known driver key but sits in "
+                "the ticker region — being treated as a ticker. Coordinate column "
+                "mis-placed / wrong file?"
             )
 
     if not ticker_cols:
         print(
-            "ERROR: matched all coordinate columns but found no ticker columns. "
-            "Add at least one ticker column with target prices."
+            "ERROR: after the coordinate columns there are no ticker columns. "
+            "Add at least one ticker column with metric values."
         )
         sys.exit(1)
 
-    print(f"  Axes ({len(axes)}): {[a['driver_key'] for a in axes]}")
-    print(f"  Coordinate columns: {[str(c) for c in coord_cols]}")
-    print(f"  Ticker columns ({len(ticker_cols)}): {[str(c) for c in ticker_cols]}")
+    print(f"    Coordinate columns: {[str(c) for c in coord_cols]}")
+    print(f"    Ticker columns ({len(ticker_cols)}): {[str(c) for c in ticker_cols]}")
     return coord_cols, ticker_cols
 
 
@@ -401,14 +439,15 @@ def _coerce_num(val) -> float | None:
     return f
 
 
-# ── Melt + hard validations (LONG) ──────────────────────────────────────────────
+# ── Melt + hard validations (LONG, per sheet) ───────────────────────────────────
 
 def _melt_and_validate(
     df: pd.DataFrame, axes: list[dict], coord_cols: list, ticker_cols: list,
-    sensitivity_id: int,
+    sensitivity_id: int, metric: str,
 ) -> list[dict]:
-    """Turn a LONG mesh into {sensitivity_id, ticker, x_value, y_value, z_value,
-    primary_value} records, enforcing the hard validations in plan order.
+    """Turn one sheet's LONG mesh into {sensitivity_id, ticker, metric, x_value,
+    y_value, z_value, primary_value} records, enforcing the hard validations in
+    plan order.
 
     Excel row numbers reported to the analyst are 1-based and account for the
     header row (data row 0 -> Excel row 2).
@@ -424,13 +463,15 @@ def _melt_and_validate(
         keep_idx.append(i)
     n_dropped = len(df) - len(keep_idx)
     if n_dropped:
-        print(f"  Dropped {n_dropped} fully-empty row(s) silently.")
+        print(f"    Dropped {n_dropped} fully-empty row(s) silently.")
     if not keep_idx:
-        print("ERROR: every Excel row was empty — nothing to upload.")
-        sys.exit(1)
+        print(f"  WARNING: sheet {metric!r}: every row was empty — skipped.")
+        return []
 
     def _excel_row(i: int) -> int:
         return i + 2  # +1 for 0-based -> 1-based, +1 for the header row
+
+    axis_names = [a["driver_key"] or a["label"] or f"axis{n}" for n, a in enumerate(axes)]
 
     # --- Coordinates: every coord cell must be numeric (ERROR, not warn-skip) ---
     coord_tuples: list[tuple[float, ...]] = []
@@ -453,9 +494,9 @@ def _melt_and_validate(
         shown = ", ".join(str(r) for r in bad_coord_rows[:10])
         more = f" (+{len(bad_coord_rows) - 10} more)" if len(bad_coord_rows) > 10 else ""
         print(
-            f"ERROR: {len(bad_coord_rows)} row(s) have a non-numeric / blank "
-            f"coordinate cell — every coordinate must be numeric. "
-            f"Excel rows: {shown}{more}"
+            f"ERROR: sheet {metric!r}: {len(bad_coord_rows)} row(s) have a "
+            f"non-numeric / blank coordinate cell — every coordinate must be "
+            f"numeric. Excel rows: {shown}{more}"
         )
         sys.exit(1)
 
@@ -467,10 +508,10 @@ def _melt_and_validate(
     if dups:
         examples = []
         for t, rows in list(dups.items())[:5]:
-            examples.append(f"    {dict(zip([a['driver_key'] for a in axes], t))} @ Excel rows {rows}")
+            examples.append(f"    {dict(zip(axis_names, t))} @ Excel rows {rows}")
         print(
-            f"ERROR: {len(dups)} duplicate coordinate tuple(s) — each scenario "
-            "must appear exactly once.\n" + "\n".join(examples)
+            f"ERROR: sheet {metric!r}: {len(dups)} duplicate coordinate tuple(s) "
+            "— each scenario must appear exactly once.\n" + "\n".join(examples)
         )
         sys.exit(1)
 
@@ -489,12 +530,12 @@ def _melt_and_validate(
         missing = sorted(full - present)
         examples = []
         for t in missing[:5]:
-            examples.append(f"    {dict(zip([a['driver_key'] for a in axes], t))}")
+            examples.append(f"    {dict(zip(axis_names, t))}")
         dims_txt = " × ".join(f"{len(lv)}" for lv in per_axis_levels)
         print(
-            f"ERROR: the mesh is not a complete Cartesian product. "
-            f"Distinct levels per axis: {dims_txt} = {expected} combinations "
-            f"expected, but {actual} rows present "
+            f"ERROR: sheet {metric!r}: the mesh is not a complete Cartesian "
+            f"product. Distinct levels per axis: {dims_txt} = {expected} "
+            f"combinations expected, but {actual} rows present "
             f"({len(missing)} combination(s) missing).\n"
             "  Missing examples:\n" + "\n".join(examples)
         )
@@ -526,18 +567,18 @@ def _melt_and_validate(
             shown = ", ".join(str(r) for r in bad_cell_rows[:10])
             more = f" (+{len(bad_cell_rows) - 10} more)" if len(bad_cell_rows) > 10 else ""
             print(
-                f"ERROR: ticker {ticker!r} has {len(bad_cell_rows)} non-numeric "
-                f"cell(s). Excel rows: {shown}{more}"
+                f"ERROR: sheet {metric!r}, ticker {ticker!r} has "
+                f"{len(bad_cell_rows)} non-numeric cell(s). Excel rows: {shown}{more}"
             )
             sys.exit(1)
 
         if n_blank == M:
-            print(f"  WARNING: ticker {ticker!r}: column 100% empty — skipped.")
+            print(f"    WARNING: ticker {ticker!r}: column 100% empty — skipped.")
             continue
         if n_blank > 0:
             print(
-                f"ERROR: ticker {ticker!r}: {n_blank} of {M} combos empty — the "
-                "mesh must be complete per ticker."
+                f"ERROR: sheet {metric!r}, ticker {ticker!r}: {n_blank} of {M} "
+                "combos empty — the mesh must be complete per ticker."
             )
             sys.exit(1)
 
@@ -546,6 +587,7 @@ def _melt_and_validate(
             records.append({
                 "sensitivity_id": sensitivity_id,
                 "ticker": ticker,
+                "metric": metric,
                 "x_value": coords[0],
                 "y_value": coords[1] if dim >= 2 else 0,
                 "z_value": coords[2] if dim >= 3 else 0,
@@ -553,21 +595,67 @@ def _melt_and_validate(
             })
         per_ticker_count[ticker] = M
 
-    # --- total=0 = ERROR (silent-empty is a bug, pegadinha #12) ---
-    if not records:
-        print(
-            "ERROR: 0 mesh points produced (every ticker column was empty). "
-            "Refusing to wipe the snapshot with nothing."
-        )
+    dims_txt = " × ".join(f"{len(lv)}" for lv in per_axis_levels)
+    print(f"    Mesh: {dims_txt} = {expected} scenarios × {len(per_ticker_count)} tickers")
+    return records
+
+
+# ── Workbook iteration: one sheet per metric ────────────────────────────────────
+
+def _build_records(
+    excel_path: str, axes: list[dict], outputs: list[str], sensitivity_id: int,
+) -> list[dict]:
+    """Iterate workbook sheets, matching each to a configured output metric, and
+    accumulate validated records across all matched sheets."""
+    try:
+        xls = pd.ExcelFile(excel_path, engine="openpyxl")
+    except Exception as e:
+        print(f"ERROR: Could not open workbook: {e}")
         sys.exit(1)
 
-    print("\n  Mesh summary:")
-    dims_txt = " × ".join(f"{len(lv)}" for lv in per_axis_levels)
-    print(f"    Scenarios (Cartesian): {dims_txt} = {expected}")
-    print(f"    Tickers loaded: {len(per_ticker_count)}")
-    print("  Rows per ticker:")
-    for t in sorted(per_ticker_count):
-        print(f"    {t:<10} {per_ticker_count[t]}")
+    sheet_names = list(xls.sheet_names)
+    print(f"\nWorkbook sheets ({len(sheet_names)}): {sheet_names}")
+
+    # Case-insensitive map of configured output -> canonical metric key.
+    output_lc = {o.lower(): o for o in outputs}
+
+    records: list[dict] = []
+    matched_metrics: set[str] = set()
+
+    try:
+        for sheet in sheet_names:
+            metric = output_lc.get(str(sheet).strip().lower())
+            if metric is None:
+                print(
+                    f"  WARNING: sheet {str(sheet)!r} matches no configured output "
+                    f"metric {outputs} — skipped."
+                )
+                continue
+            print(f"\n  Sheet {str(sheet)!r} -> metric {metric!r}:")
+            df = xls.parse(sheet_name=sheet)
+            print(f"    Rows: {len(df)}; columns: {list(df.columns)}")
+            coord_cols, ticker_cols = _split_columns(df, axes)
+            sheet_records = _melt_and_validate(
+                df, axes, coord_cols, ticker_cols, sensitivity_id, metric
+            )
+            if sheet_records:
+                matched_metrics.add(metric)
+                records.extend(sheet_records)
+    finally:
+        # Release the workbook file handle (Windows keeps it locked otherwise).
+        try:
+            xls.close()
+        except Exception:
+            pass
+
+    # Configured outputs with no matching sheet -> WARN (will be absent).
+    for o in outputs:
+        if o not in matched_metrics:
+            print(
+                f"  WARNING: metric {o!r} is configured on the shell but has no "
+                "(non-empty) sheet in the workbook — it will be ABSENT from the "
+                "upload."
+            )
 
     return records
 
@@ -610,41 +698,43 @@ def main() -> None:
         print(f"ERROR: File not found: {excel_path}")
         sys.exit(1)
 
-    try:
-        df = pd.read_excel(excel_path, sheet_name=0, engine="openpyxl")
-    except Exception as e:
-        print(f"ERROR: Could not read Excel: {e}")
-        sys.exit(1)
-
-    print(f"  Excel rows: {len(df)}; columns: {list(df.columns)}")
-
     # Resolve credentials (service role). In --dry-run, allow proceeding without
     # them: we still parse + validate; only the unknown-ticker check is skipped.
     supabase = None
     sensitivity_id: int
     axes: list[dict]
+    outputs: list[str]
     if args.dry_run:
         url = os.environ.get("SUPABASE_URL") or _load_env_file().get("SUPABASE_URL", "")
         key = os.environ.get("SUPABASE_SERVICE_KEY") or _load_env_file().get("SUPABASE_SERVICE_KEY", "")
         if url and key:
             supabase = create_client(url, key)
-            sensitivity_id, axes = _fetch_shell(supabase, args)
+            sensitivity_id, axes, outputs = _fetch_shell(supabase, args)
         else:
             print(
                 "ERROR: --dry-run still needs SUPABASE_URL + SUPABASE_SERVICE_KEY "
-                "(read-only is enough) to fetch the shell's grid axes from the DB. "
-                "It only skips the delete/upsert, not the shell lookup."
+                "(read-only is enough) to fetch the shell's grid axes/outputs from "
+                "the DB. It only skips the delete/upsert, not the shell lookup."
             )
             sys.exit(1)
     else:
         url, key = _get_credentials()
         supabase = create_client(url, key)
-        sensitivity_id, axes = _fetch_shell(supabase, args)
+        sensitivity_id, axes, outputs = _fetch_shell(supabase, args)
 
-    coord_cols, ticker_cols = _match_headers(df, axes)
-    records = _melt_and_validate(df, axes, coord_cols, ticker_cols, sensitivity_id)
+    records = _build_records(excel_path, axes, outputs, sensitivity_id)
     total = len(records)
-    print(f"\nTotal mesh points to upload: {total}")
+    metrics_loaded = sorted({r["metric"] for r in records})
+    print(f"\nTotal mesh points to upload: {total} across metrics {metrics_loaded}")
+
+    # --- total=0 = ERROR (silent-empty is a bug, pegadinha #12) ---
+    if total == 0:
+        print(
+            "ERROR: 0 mesh points produced (no sheet matched a configured output, "
+            "or every matched sheet was empty). Refusing to wipe the snapshot with "
+            "nothing. Check the sheet names match the shell's output metrics."
+        )
+        sys.exit(1)
 
     _warn_unknown_tickers(supabase, records)
 
@@ -653,8 +743,9 @@ def main() -> None:
         _print_payload_guidance(total)
         return
 
-    # REPLACE-TOTAL: delete the whole snapshot for this sensitivity_id, then insert.
-    print(f"\nDeleting existing rows for sensitivity_id={sensitivity_id}...")
+    # REPLACE-TOTAL: delete the whole snapshot for this sensitivity_id (ALL
+    # metrics), then insert everything that came in the workbook.
+    print(f"\nDeleting ALL existing rows for sensitivity_id={sensitivity_id} (all metrics)...")
     supabase.table("stock_guide_scenario_grid").delete().eq(
         "sensitivity_id", sensitivity_id
     ).execute()
@@ -665,8 +756,11 @@ def main() -> None:
         result = (
             supabase.table("stock_guide_scenario_grid")
             # upsert (not insert) so a re-run mid-failure stays idempotent even
-            # if the delete already ran; PK is 5-col.
-            .upsert(batch, on_conflict="sensitivity_id,ticker,x_value,y_value,z_value")
+            # if the delete already ran; PK is 6-col (incl. metric).
+            .upsert(
+                batch,
+                on_conflict="sensitivity_id,ticker,metric,x_value,y_value,z_value",
+            )
             .execute()
         )
         if hasattr(result, "error") and result.error:
@@ -678,7 +772,8 @@ def main() -> None:
     n_tickers = len({r["ticker"] for r in records})
     print(
         f"\nDone! {inserted} mesh points upserted into stock_guide_scenario_grid "
-        f"for sensitivity_id={sensitivity_id} ({n_tickers} tickers, {len(axes)} axes)."
+        f"for sensitivity_id={sensitivity_id} "
+        f"({n_tickers} tickers, {len(axes)} axes, metrics {metrics_loaded})."
     )
     _print_payload_guidance(total)
 
@@ -687,8 +782,8 @@ def _print_payload_guidance(total: int) -> None:
     if total > _WARN_ROWS:
         print(
             f"\nWARNING: {total:,} mesh points is large (> {_WARN_ROWS:,}). "
-            "Keep ≤15 levels/axis for 3-D meshes (≤40×40 for 2-D) to bound the "
-            "payload the browser downloads."
+            "Keep ≤15 levels/axis for 3-D meshes (≤40×40 for 2-D), and remember "
+            "each output metric multiplies the payload the browser downloads."
         )
 
 

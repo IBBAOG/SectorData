@@ -1,5 +1,20 @@
 """
-Generate the Stock Guide multi-axis scenario-grid Excel TEMPLATE (LONG format).
+[DEPRECATED] Generate a single-metric Stock Guide scenario-grid Excel TEMPLATE.
+
+⚠️  DEPRECATED (2026-06-10). The canonical template is now DOWNLOADED FROM THE
+    ADMIN PANEL ("Download template" button on the scenario-grid shell, generated
+    in-browser). The admin template is the multi-metric, multi-sheet v2 contract
+    (one sheet per output metric, coordinates read positionally) that the uploader
+    `stock_guide_brent_grid_upload.py` expects.
+
+    This script remains ONLY as a single-metric / offline fallback that emits ONE
+    sheet (named `target_price`, the legacy default output). It REFUSES to run
+    against a shell configured with multiple output metrics — use the Admin Panel
+    "Download template" button for those. Prefer the Admin button in all cases.
+
+────────────────────────────────────────────────────────────────────────────
+Generate the (single-metric) Stock Guide multi-axis scenario-grid Excel TEMPLATE
+(LONG format).
 
 The analyst fills, per company, a dense Cartesian mesh of (driver levels ->
 target price) points across 1, 2 or 3 driver axes (e.g. Avg Brent 2026 / 2027 /
@@ -198,7 +213,8 @@ def _axes_from_shell(sb, args: argparse.Namespace) -> list[str] | None:
             sys.exit(1)
         print("ERROR: shell definition.grid has no `axes` list. Re-save the shell.")
         sys.exit(1)
-    keys = [str(a.get("driver_key") or "").strip() for a in axes if isinstance(a, dict)]
+    keys = [str(a.get("driver_key") or a.get("driver_id") or "").strip()
+            for a in axes if isinstance(a, dict)]
     keys = [k for k in keys if k]
     if not keys:
         print("ERROR: shell grid.axes has no valid driver_key. Re-save the shell.")
@@ -206,6 +222,23 @@ def _axes_from_shell(sb, args: argparse.Namespace) -> list[str] | None:
     if len(keys) > 3:
         print(f"ERROR: shell defines {len(keys)} axes — max 3. Re-save the shell.")
         sys.exit(1)
+
+    # DEPRECATION GUARD: this fallback only emits ONE (target_price) sheet. If the
+    # shell configures multiple output metrics, the analyst MUST use the Admin
+    # Panel "Download template" button (multi-sheet v2). Exit informatively.
+    raw_outputs = grid.get("outputs")
+    if isinstance(raw_outputs, list):
+        outs = [str(o).strip() for o in raw_outputs if str(o).strip()]
+        if len(outs) > 1:
+            print(
+                f"\nThis shell is MULTI-METRIC (outputs={outs}). This deprecated "
+                "generator only emits a single `target_price` sheet.\n"
+                "→ Use the Admin Panel \"Download template\" button on the "
+                "scenario-grid shell to get the multi-sheet v2 template, then "
+                "upload it with stock_guide_brent_grid_upload.py.\n"
+            )
+            sys.exit(2)
+
     print(f"Axes (from shell): {keys}")
     return keys
 
@@ -356,6 +389,13 @@ def _parse_args() -> argparse.Namespace:
 def main() -> None:
     args = _parse_args()
 
+    print(
+        "⚠️  DEPRECATED: prefer the Admin Panel \"Download template\" button "
+        "(multi-metric v2).\n"
+        "    This generator emits only a single `target_price` sheet "
+        "(single-metric / offline fallback).\n"
+    )
+
     out_path = Path(args.out)
     if out_path.exists() and not args.force:
         print(
@@ -403,7 +443,9 @@ def main() -> None:
     # Build workbook
     wb = Workbook()
     ws = wb.active
-    ws.title = "scenario_grid"
+    # Sheet name = metric key, so the v2 uploader maps this sheet to the
+    # `target_price` output. (Single-metric fallback only.)
+    ws.title = "target_price"
 
     headers = list(axis_keys) + tickers
     ws.append(headers)
