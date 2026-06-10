@@ -871,6 +871,18 @@ The legacy local-only Gmail monitor (`alertas/`, driven by `.github/workflows/al
 
 **Recipient migration.** The 3 internal recipients (`monique.greco`, `eric.mello`, `eduardo.mendes` @itaubba.com) were migrated to the new Client Alerts product — each subscribed to the 7 ANP bases they previously got from the legacy monitor. The legacy delivery path is now gone entirely: the `alert_recipients` table was DROPPED in prod on 2026-06-09 (migration `20260616000000_drop_alert_recipients_legacy.sql`), along with the `/admin-panel` "Alert Emails" section. Ops digests (freshness/failure) still go to `ALERTAS_DEST_EMAIL` (default `eduardo.mendes@itaubba.com`).
 
+### GitHub Actions "Node.js 20 deprecated" annotation — verdict: noise, no action (2026-06-10)
+
+Every run of all 30 workflows now shows a "Node.js 20 actions are deprecated" annotation. **Verdict: NO action required for our fleet.** From **2026-06-16** GitHub-hosted runners execute node20-declared actions with the node24 binary (same `dist/index.js` — no rejection, no failure); from **2026-09-16** Node 20 is removed from the runner but node20-declared actions STILL just run on node24 (runner Phase-3 logic never rejects). `checkout@v5` is the v4 codebase with only the runtime flipped (actions/checkout PR #2226) — proof the same JS runs on Node 24; zero breakage reports for first-party actions on GitHub-hosted runners.
+
+**Why we're not exposed:** 30 workflows, all `ubuntu-latest` GitHub-hosted, tag-pinned to majors (no SHA pins), no containers, no self-hosted runners, no git push from workflows. The real break scenarios (Linux ARM32, macOS ≤13.4, musl containers, runner <v2.328.0) don't apply to us.
+
+**The annotation will KEEP appearing** — it even fires when actions already run on node24 (actions/runner issue #4295). Treat it as noise; do not re-investigate.
+
+**Optional hygiene sweep (specced, parked — execute only on explicit request):** tag bumps purely to silence the noise — checkout v4→v6, setup-python v5→v6, setup-node v4→v6, upload-artifact v4→v5+, github-script v7→v9 (retest inline scripts); leave `browser-actions/setup-chrome@v1` / `supabase/setup-cli@v1` tags as-is. Also in that same optional pass: `security_audit.yml` / `supabase_advisors_check.yml` pin toolchain `node-version: '20'` (EOL Apr-2026) — bump then.
+
+Sources: GitHub changelog 2025-09-19 "Deprecation of Node 20 on GitHub Actions runners" (https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/); actions/runner `NodeUtil.cs` phase logic; actions/checkout PR #2226.
+
 ### Scripts de backfill histórico (one-shot, rodar localmente)
 
 Scripts criados em 2026-05-06 para preencher gaps históricos entre `DADOS/` e Supabase.
