@@ -163,7 +163,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 4 | `etl_ais_positions.yml` | Every 6h+15min | `vessel_registry`, `vessel_positions`, `port_arrivals` |
 | 5 | `etl_ais_candidates.yml` | Every 4h | `import_candidates` |
 | 6 | `etl_anp_cdp.yml` | Monthly cron + external dispatch every ~2h | `anp_cdp_producao` (Selenium + ddddocr CAPTCHA) |
-| 7 | `etl_anp_vendas.yml` | External cron-job.org dispatch | `vendas` |
+| 7 | `etl_anp_vendas.yml` | Internal cron every 2h (fallback) + external cron-job.org dispatch every 30 min when armed (serialized by the `anp-vendas` concurrency group) | `vendas` |
 | 8 | `etl_anp_fase3.yml` | Monthly 1st 13:00 UTC | `anp_daie`, `anp_desembaracos` (importador/cnpj/uf_cnpj preserved) |
 | 9 | `etl_anp_lpc.yml` | Daily 14:30 UTC | `anp_lpc` (ANP publishes the weekly LPC survey on an unstable weekday — daily scrape is idempotent + incremental, ingests the new week within ~24h) |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
@@ -182,7 +182,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | Workflow | Schedule | Role |
 |----------|----------|------|
 | `freshness_monitor.yml` | Daily 12:00 UTC | **Freshness guardian** — emails ops if any base's data is overdue vs a per-source cadence threshold (catches a *silent* stall: green workflow, stale data) |
-| `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck` |
+| `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck`. Also a **dispatcher-silence detector**: pages when a critical externally-dispatched workflow (`etl_anp_vendas`, `etl_anp_cdp`) hasn't started a run in >26h — catches a dead external trigger (zero runs), a failure mode invisible to both the failure streak and the freshness guardian |
 | `etl_mdic_comex_drift.yml` | Monthly day 5 07:00 UTC | **MDIC ComexStat drift detector** — fetches cheap live monthly aggregates, diffs them against `mdic_comex`, and self-heals only the months that drifted (re-pulls them); catches retroactive ComexStat revisions outside the daily 3-month / weekly 12-month `etl_mdic_comex.yml` window (e.g. the annual *fechamento*). Green = no drift or clean heal; red = a heal failed |
 | `cdp_roster_canary.yml` | Daily 12:15 UTC | **CDP roster canary** — runs `scripts/cdp_roster_canary.py`: read-only SQL comparing the well/installation roster of the latest complete month in `anp_cdp_producao` (wells >1 kbpd) against the wells seen in `anp_cdp_diaria_poco` over the last 10 data-days (+ digit-aware fuzzy installation match vs `anp_cdp_diaria_instalacao`); emails ops when the missing wells aggregate >10 kbpd — catches an ANP-side dimension/roster lag in the daily Power BI panel that neither the freshness guardian nor the failure pager can see (e.g. FPSO P-78: 2 Búzios wells ~87 kbpd absent for 5 months). Red only when the check itself breaks; a found gap emails and exits green |
 | `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for the hook-less Data Input base (`price_bands`) and backstops every ETL hook |

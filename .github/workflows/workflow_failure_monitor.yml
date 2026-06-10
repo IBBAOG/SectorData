@@ -10,6 +10,16 @@ name: Workflow Failure Pager
 # flags any with >= 3 consecutive non-cancelled failures, debounces via the
 # Supabase alertas_estado table (pages once ok->stuck, sends a recovery note
 # stuck->ok), and emails the ops team over Gmail SMTP.
+#
+# ALSO (since 2026-06-10) a dispatcher-silence detector: for workflows opted
+# into SILENCE_THRESHOLD_HOURS (etl_anp_vendas.yml, etl_anp_cdp.yml — the two
+# with external cron-job.org dispatchers), it pages when NO run has started
+# within the per-workflow threshold (~26h). Silence != failure: a dead external
+# dispatcher produces zero runs, so the failure streak never trips (2026-06-01
+# incident: the vendas cron-job.org job died and the pipeline had no runs for
+# 9+ days, invisible to every monitor). Same debounce, same email channel; a
+# detected silence emails and exits 0 — this job goes red only when the check
+# itself breaks.
 
 on:
   workflow_dispatch:
