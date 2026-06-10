@@ -1,8 +1,8 @@
 name: ANP Watcher - Vendas Combustíveis
 
-# Serialize runs. The external cron-job.org dispatcher fires every 30 min; the
-# internal schedule below adds one run every 2h. Without a group, a revived
-# external cadence could overlap the internal cron and race the watcher's
+# Serialize runs. GHA cron jitter at a 30-min cadence can stack runs (a delayed
+# fire landing next to the on-time one), and any manual/external workflow_dispatch
+# can land mid-run. Without a group, overlapping runs would race the watcher's
 # DELETE-month + INSERT-month upload (duplicated rows). cancel-in-progress=false:
 # never kill an upload mid-flight — let it finish and queue the next run.
 concurrency:
@@ -10,15 +10,17 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  # DUAL TRIGGER (same design as etl_anp_cdp.yml):
-  #   1. External: cron-job.org → workflow_dispatch every 30 min (primary; GitHub's
-  #      native schedule does not guarantee punctuality at short intervals).
-  #   2. Internal: schedule every 2h as a FALLBACK so the pipeline survives the
-  #      death of the external dispatcher. Added 2026-06-10 after the cron-job.org
-  #      vendas job went permanently silent on 2026-06-01 (9+ days, zero runs,
-  #      invisible to the failure pager — there were no FAILED runs to count).
+  # PRIMARY trigger: internal GHA cron every 30 min (cadence internalized
+  # 2026-06-10 — the historical cron-job.org dispatcher died permanently on
+  # 2026-06-01 and cannot be re-armed; see docs/etl-pipelines/PRD.md § "ANP
+  # Vendas — dispatcher death & frozen partial month").
+  # Sanity note: GHA cron is best-effort — minutes of jitter and occasional
+  # skipped fires are normal. Acceptable here: the watcher is an idempotent
+  # no-op ~95% of the time, the data is monthly, and the 26h dispatcher-silence
+  # detector in workflow_failure_monitor.py backstops a fully dead schedule.
+  # workflow_dispatch stays available for manual runs / any future external trigger.
   schedule:
-    - cron: '17 */2 * * *'   # every 2h at :17 (offset minute to dodge GHA peak load)
+    - cron: '7,37 * * * *'   # every 30 min at :07/:37 (offset from :00/:30 to dodge GHA top-of-hour congestion)
   workflow_dispatch:
     inputs:
       force:
@@ -73,7 +75,7 @@ jobs:
         #   * SAME period with MORE source rows than the DB -> in-place refresh of
         #     that month (delete+insert, partial -> complete; never shrinks);
         #   * same period, same/fewer rows -> no-op.
-        # The 30-min external dispatch + 2h internal cron are both safe cadences.
+        # The internal 30-min cron (and any manual dispatch) are safe cadences.
 
       # Client Alerts hook — emit + (immediate) deliver for the bases this ETL updates.
       - name: Client Alerts — notify subscribers (vendas)
