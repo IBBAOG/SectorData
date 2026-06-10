@@ -14,6 +14,15 @@ Entries newest first.
 - **Known residual (not a bug)**: `/anp-cdp-diaria` genuinely sits ~75–90 kbpd below `/well-by-well` — ANP's daily panel roster is missing 2 new Búzios wells + ~19 small onshore fields (source limitation; documented in `docs/app/anp-cdp-diaria.md`).
 - Migration `20260618000000_anp_cdp_diaria_blended_stakes.sql`. See `docs/app/anp-cdp-diaria.md` § "Blended effective stakes" and `docs/supabase/PRD.md`.
 
+## 2026-06-08 — `/diesel-gasoline-margins` federal + ICMS taxes auto-update from the ANP Síntese de Preços
+
+- `recompute_dg_margins` now sets `federal_tax` and `state_tax` from the **ANP-published per-litre tax lines** (Síntese de Preços "composição": Tributos Federais + ICMS) as the **primary, auto-updating source**, with the curated `fuel_tax_reference` as the historical/gap fallback.
+- **New table** `anp_sintese_taxes(data_fim, fuel_type ['Gasoline C'|'Diesel B'], federal_rs_litro, icms_rs_litro, fonte, sintese_edicao)` — PK `(data_fim, fuel_type)`, RLS authenticated-read / service-role-write. Captures the ANP Síntese composition tax lines week by week.
+- **New scraper** `scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py` — LEAN, fail-fast (pdfplumber; reads the composition stacked-bar panel of the **latest** edition as an ordinal mapping cross-checked by sum-to-total + legend label order + sanity range; hard timeouts, never hangs; `--last N`). Wired into `etl_dg_margins.yml` as a `continue-on-error` **step 2b** BEFORE the recompute — it never gates it (the recompute gates only on cepea/producao). The weekly run grabs the newest edition → the tax lines auto-update going forward.
+- **Recompute change**: `federal_tax = COALESCE(anp_sintese_taxes.federal_rs_litro for the ISO week, fuel_tax_reference SUM of active non-ICMS rows)`; `state_tax = COALESCE(anp_sintese_taxes.icms_rs_litro, fuel_tax_reference ICMS)`. **No value shift today** — the published Síntese rows EQUAL the seeded `fuel_tax_reference` values, so `total` and the residual `dist_margin` are byte-for-byte on covered weeks; the change is purely structural (wires the auto-update path). `fuel_tax_reference` stays the fallback (the Síntese composition is reliably parseable only ~mid-2025+).
+- Migrations `20260618100000_anp_sintese_taxes.sql` (table) + `20260621100000_recompute_dg_margins_prefer_sintese_taxes.sql` (recompute body). Commit `8ce0747f`.
+- See `docs/app/diesel-gasoline-margins.md`, `docs/supabase/PRD.md` (`anp_sintese_taxes` table + recompute tax COALESCE), `docs/etl-pipelines/PRD.md` (`anp_sintese_taxes_sync` scraper + `etl_dg_margins` step 2b).
+
 ## 2026-06-08 — `/diesel-gasoline-margins` pump = ANP published national (Brasil) resale price
 
 - The `/diesel-gasoline-margins` pump (`total`, and therefore the residual `distribution_and_resale_margin`) now uses the **ANP-published national average resale price** directly, instead of the station-count-weighted mean recomputed from per-UF `anp_lpc` rows.

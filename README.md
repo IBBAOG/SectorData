@@ -120,7 +120,8 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `d_g_margins` | id | Weekly diesel/gasoline margin decomposition — **computed** by `recompute_dg_margins()` (was manual Excel until 2026-06-05; manual archive in `d_g_margins_manual_bak`) |
 | `cepea_etanol_anidro` | week | CEPEA/ESALQ weekly anhydrous-ethanol price (R$/L, 2002→present); biofuel-component input for `recompute_dg_margins` (CC BY-NC, attribution required) |
 | `anp_producao_derivados` | (ano, mes, produto) | ANP monthly national refined-product production (m³ — Gasolina A / Óleo Diesel, 1990→present); feeds the import% / production% split in `recompute_dg_margins` |
-| `fuel_tax_reference` | (period, agent/fuel) | Federal + ICMS tax (R$/L) by period — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS); supplies `federal_tax` / `state_tax` |
+| `anp_sintese_taxes` | (data_fim, fuel_type) | ANP Síntese de Preços published per-litre tax lines — `federal_rs_litro` (Tributos Federais) + `icms_rs_litro` (ICMS) for `Gasoline C` / `Diesel B` per week-end. **Primary, auto-updating source** of `federal_tax` / `state_tax` in `recompute_dg_margins`; `fuel_tax_reference` is the historical/gap fallback. Ingested by `anp_sintese_taxes_sync.py` (`etl_dg_margins.yml`) |
+| `fuel_tax_reference` | (period, agent/fuel) | Federal + ICMS tax (R$/L) by period — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS); **historical/gap fallback** for `federal_tax` / `state_tax` (primary is now `anp_sintese_taxes`) |
 | `fuel_blend_ratio` | (period, fuel) | Ethanol / biodiesel blend-mandate % by period; supplies the `(1−blend)` and biofuel-blend factors |
 | `price_bands` | id | BBA parity + Petrobras price; `_w_subsidy` columns auto-populated by triggers (since 2026-05-27) |
 | `field_stakes` | (campo, empresa) | Admin-curated working-interest per oil field — feeds `/well-by-well` stake-weighted aggregates |
@@ -168,7 +169,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 9 | `etl_anp_lpc.yml` | Daily 14:30 UTC | `anp_lpc` (ANP publishes the weekly LPC survey on an unstable weekday — daily scrape is idempotent + incremental, ingests the new week within ~24h) |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
 | 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC + Weekly Sun 06:00 UTC (12-month revision sweep) | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
-| 12 | `etl_dg_margins.yml` | `workflow_run` after a successful `etl_anp_lpc.yml` (primary) + daily 15:00 UTC fallback + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` bounded to the last ~12 ISO weeks (full-timeline backfill is `workflow_dispatch full_backfill=true` only) |
+| 12 | `etl_dg_margins.yml` | `workflow_run` after a successful `etl_anp_lpc.yml` (primary) + daily 15:00 UTC fallback + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production + ANP Síntese tax scrapers (the Síntese step ingests `anp_sintese_taxes` — auto-updating federal + ICMS taxes — `continue-on-error`, never gates the recompute) → calls `recompute_dg_margins()` bounded to the last ~12 ISO weeks (full-timeline backfill is `workflow_dispatch full_backfill=true` only) |
 | 13 | `supabase_deploy.yml` | On push to main | migrations (`supabase db push`) |
 | 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th + Weekly Tue | `anp_precos_distribuicao` |
 | 15 | `etl_anp_cdp_diaria.yml` | 3×/day | `anp_cdp_diaria{_instalacao,_poco}` (Power BI public API) |

@@ -53,7 +53,8 @@ supabase/
 | `d_g_margins` | dash-margins | **ETL (computed)** via RPC `recompute_dg_margins(week_start, week_end)`, chamada pelo `etl_dg_margins.yml`. Era upload manual (`scripts/manual/dg_margins_upload.py`) até 2026-06-05; arquivo manual arquivado em `d_g_margins_manual_bak`. |
 | `cepea_etanol_anidro` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/cepea/cepea_etanol_anidro_sync.py`) — preço semanal R$/L do etanol anidro (CEPEA/ESALQ, 2002→presente; CC BY-NC) |
 | `anp_producao_derivados` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/anp/producao/anp_producao_derivados_sync.py`) — produção mensal nacional m³ (Gasolina A / Óleo Diesel, 1990→presente) |
-| `fuel_tax_reference` | input do `recompute_dg_margins` (D&G Margins) | Imposto federal + ICMS R$/L por período — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS) |
+| `anp_sintese_taxes` | input do `recompute_dg_margins` (D&G Margins — fonte primária de impostos) | ETL (`scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py`, mesmo run do `etl_dg_margins.yml`) — linhas de imposto publicadas pela ANP Síntese de Preços (composição): `federal_rs_litro` (Tributos Federais) + `icms_rs_litro` (ICMS), R$/L por `(data_fim, fuel_type)` (`'Gasoline C'` / `'Diesel B'`). PK `(data_fim, fuel_type)`. RLS: SELECT `authenticated`, write `service_role` only. Migration `20260618100000_anp_sintese_taxes.sql` |
+| `fuel_tax_reference` | input do `recompute_dg_margins` (D&G Margins — fallback histórico/lacuna de impostos) | Imposto federal + ICMS R$/L por período — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS). Desde 2026-06-08 é o **fallback** do `anp_sintese_taxes` (composição da Síntese só é parseável de forma confiável ~meados de 2025+) |
 | `fuel_blend_ratio` | input do `recompute_dg_margins` (D&G Margins) | % de mandato de etanol/biodiesel por período |
 | `anp_lpc_brasil` | input do `recompute_dg_margins` (D&G Margins — pump price) | ETL (`scripts/pipelines/anp/lpc_sync.py`, mesmo run do `etl_anp_lpc.yml`) — preço de **revenda nacional** publicado pela ANP (volume-weighted, aba BRASIL do resumo semanal); ~146 semanas 2023-05→presente com lacunas |
 | `field_stakes` | future `/production` dashboard (read) + dash-admin "Field Stakes" editor (write via SECURITY DEFINER + `is_admin()`) | Admin via `admin_upsert_field_stakes(p_campo, p_stakes jsonb)` — replace-all-in-1-tx with `SUM(stake_pct)=100` validation. Migration `20260527600000_field_stakes.sql`. |
@@ -1365,6 +1366,34 @@ pump(fuel, week) = COALESCE(
 
 - New table `anp_lpc_brasil(data_fim, produto, preco_revenda, n_postos, fonte)` (PK `(data_fim, produto)`) holds ANP's official **volume-weighted national** resale price (`GASOLINA COMUM` / `DIESEL S10`), ~146 weeks 2023-05→present **with gaps**. `pump` now matches the ANP national figure exactly on covered weeks (e.g. wk23/2026 Gasolina 6.61 / Diesel 7.12); the prior always-station-weighted pump ran ~R$0.04 high.
 - `total = pump` (unchanged definition). `distribution_and_resale_margin` is the residual off `pump`, so **only `total` and `dist_margin` shift** on covered weeks (~ −R$0.04); `base_fuel`, `biofuel_component`, `federal_tax`, `state_tax` are identical. The skip-if-NULL guard still fires only when **both** the Brasil row and the `anp_lpc` rows are absent for a week.
+
+### `recompute_dg_margins` — federal + ICMS prefer ANP Síntese (2026-06-08)
+
+Migrations `20260618100000_anp_sintese_taxes.sql` (new table) + `20260621100000_recompute_dg_margins_prefer_sintese_taxes.sql` (recompute body; commit `8ce0747f`). Signature, `SECURITY DEFINER`, `SET search_path`, `SET statement_timeout = '300s'`, and service-role-only grants are **unchanged**; `CREATE OR REPLACE` + explicit REVOKE/GRANT re-application (Pegadinha #18 defence).
+
+**Only behavioural change vs `20260617100000`** — the `federal_tax` and `state_tax` values now prefer the ANP-published Síntese line:
+
+```
+federal_tax(fuel, week) = COALESCE(
+  -- (1) ANP Síntese "Tributos Federais" for the same ISO (week, isoyear),
+  --     matched to anp_sintese_taxes.fuel_type ('Gasoline C' / 'Diesel B'):
+  anp_sintese_taxes.federal_rs_litro,   -- ORDER BY data_fim DESC LIMIT 1 (defensive)
+  -- (2) fallback ONLY on weeks with no Síntese row — byte-for-byte the prior
+  --     fuel_tax_reference SUM of active non-ICMS rows:
+  SUM(fuel_tax_reference.rate_rs_litro WHERE tax_type <> 'ICMS' AND active on monday)
+)
+state_tax(fuel, week) = COALESCE(
+  -- (1) ANP Síntese "ICMS" for the same ISO (week, isoyear):
+  anp_sintese_taxes.icms_rs_litro,      -- ORDER BY data_fim DESC LIMIT 1 (defensive)
+  -- (2) fallback ONLY on weeks with no Síntese row — byte-for-byte the prior
+  --     fuel_tax_reference ICMS lookup:
+  fuel_tax_reference.rate_rs_litro WHERE tax_type = 'ICMS' AND active on monday
+)
+```
+
+- New table `anp_sintese_taxes(data_fim, fuel_type, federal_rs_litro, icms_rs_litro, fonte, sintese_edicao)` (PK `(data_fim, fuel_type)`) holds the ANP Síntese de Preços published per-litre tax lines, populated by `scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py` (wired into `etl_dg_margins.yml`). The match key is the ISO `(week, isoyear)` derived from `anp_sintese_taxes.data_fim` — the same key the function uses for `d_g_margins` and `anp_lpc_brasil`.
+- **No value shift today**: the Síntese rows currently published EQUAL the seeded `fuel_tax_reference` values, so on covered weeks `total` and the residual `dist_margin` are byte-for-byte unchanged. The change is purely structural — it wires the **auto-update path** so that when ANP changes a published tax, the weekly scraper captures it and the next recompute picks it up with no manual `fuel_tax_reference` edit.
+- `fuel_tax_reference` stays the curated **historical / gap fallback** (the Síntese composition is reliably parseable only ~mid-2025+). The skip-if-`state_tax`-NULL guard is preserved: `state_tax` now COALESCEs Síntese then the reference, so it resolves wherever it did before and skips a week only when **both** sources are absent (unchanged — Síntese only ever ADDS coverage).
 
 ## Contratos com outros departamentos
 
