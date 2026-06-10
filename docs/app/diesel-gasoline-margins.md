@@ -90,7 +90,7 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 |---|---|
 | `get_dg_margins_data` | Linhas (filtráveis) — read-only, consumida pela UI |
 | `get_dg_margins_filters` | Opções de filtros |
-| `recompute_dg_margins(p_week_start text, p_week_end text)` | **Recompute job** — `SECURITY DEFINER`, `EXECUTE` only `service_role`. Recalcula `d_g_margins` para o range de semanas ISO informado a partir das tabelas-fonte (preços, produção, ethanol, impostos, blend). Chamada pelo workflow `etl_dg_margins.yml`. Não callable pelo anon/authenticated. |
+| `recompute_dg_margins(p_week_start text, p_week_end text)` | **Recompute job** — `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `SET statement_timeout = '300s'`, `EXECUTE` only `service_role`. Recalcula `d_g_margins` para o range de semanas ISO informado a partir das tabelas-fonte (preços, produção, ethanol, impostos, blend). Args são ISO `"W/YYYY"` unpadded (ex. `12/2026`), parseados via `to_date('IYYY-IW')`; ambos NULL = timeline completa. Chamada pelo workflow `etl_dg_margins.yml` (rotina: janela das últimas ~12 semanas; full timeline só via `full_backfill`). Não callable pelo anon/authenticated. Timeout guard + otimização set-based do `imp_pct` em `20260616100000` (incident 2026-06-09) — ver § "Como o dado chega". |
 
 ## Tabela
 
@@ -109,7 +109,8 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 | `fuel_tax_reference` | Imposto federal + ICMS (R$/L) por período | ANP Síntese de Preços (federal) + CONFAZ (ICMS ad-rem) |
 | `fuel_blend_ratio` | % de mandato de etanol / biodiesel por período | ANP / regulação |
 | `price_bands` | Paridade de importação + preço Petrobras | Dados Locais (`price_bands`) |
-| `anp_lpc` | Preço de bomba (station-weighted national avg) | ANP LPC |
+| `anp_lpc_brasil` | **Preço de bomba (pump)** — revenda **nacional publicada pela ANP** (volume-weighted, aba BRASIL do resumo semanal); fonte primária do pump desde 2026-06-08 | ANP LPC (aba BRASIL) |
+| `anp_lpc` | Preço de bomba — média **station-weighted** sobre linhas per-UF; usada **só como fallback** nas semanas sem resumo ANP nacional | ANP LPC (per-UF) |
 | `anp_desembaracos` / `mdic_comex` | Volume de importação (kg→m³ via densidade NCM) | ANP / MDIC |
 
 ## Como o dado chega
@@ -119,11 +120,54 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 ### Pipeline
 
 ```
-etl_dg_margins.yml (weekly Tue 15:00 UTC + workflow_dispatch)
-  ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py    → cepea_etanol_anidro
-  ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py → anp_producao_derivados
-  └─ recompute_dg_margins(week_start, week_end)             → d_g_margins (upsert por (fuel_type, week))
+etl_dg_margins.yml
+  triggers:
+    - PRIMARY: workflow_run after a successful etl_anp_lpc.yml (daily 14:30 UTC scrape)
+    - FALLBACK: daily 15:00 UTC cron (after the 14:30 LPC scrape)
+    - MANUAL: workflow_dispatch (inputs: full_backfill bool, week_start "W/YYYY")
+  steps:
+    ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py            → cepea_etanol_anidro
+    ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py  → anp_producao_derivados
+    └─ recompute_dg_margins(week_start, week_end)                     → d_g_margins (upsert por (fuel_type, week))
+         routine: bounded to the last ~12 ISO weeks (dynamic), p_week_end=NULL
+         full timeline: only via workflow_dispatch full_backfill=true
 ```
+
+### Ordering & schedule (incident 2026-06-09)
+
+The "Distribution & Resale Margin" is a residual driven by the ANP pump price in
+`anp_lpc`. ANP publishes the weekly LPC survey on an **unstable weekday** (assumed
+Wed; on 2026-06-09 it was a Tuesday). The old setup ran this recompute on Tue 15:00
+UTC but `anp_lpc` only scraped Wed 14:30 UTC — so the margins ran a full day *before*
+the freshest pump price even landed, freezing the dashboard and starving the Client
+Alert. Fixed by:
+
+1. `etl_anp_lpc.yml` now scrapes **daily** (incremental + idempotent), tracking ANP's
+   publish day within ~24h.
+2. `etl_dg_margins.yml` **primary trigger is `workflow_run`** downstream of a
+   *successful* `etl_anp_lpc.yml`, so the recompute (and its Client Alert hook) always
+   runs on the freshest pump price the same day ANP publishes.
+3. A **daily 15:00 UTC fallback cron** (after the 14:30 LPC scrape) backstops the
+   `workflow_run` path.
+4. The **routine recompute is bounded to the last ~12 ISO weeks** (computed
+   dynamically as `today − 12 weeks` in unpadded ISO `"W/YYYY"`, `p_week_end=NULL`), so
+   each run finishes in seconds. The **full-timeline recompute** is reachable only via
+   the manual `workflow_dispatch` input `full_backfill=true`.
+
+### Timeout guard & optimization (incident 2026-06-09)
+
+Migration `20260616100000_recompute_dg_margins_timeout_guard.sql` (live in prod) added
+a function-level `SET statement_timeout = '300s'` and a set-based optimization of the
+`imp_pct` block (computed once per `(fuel_type, month)` instead of per `(week, fuel)` —
+QA-verified result-identical). **Nuance:** the function-level `SET statement_timeout`
+does *not* rescue the PostgREST call path (PostgREST runs as `authenticator`, whose
+30s login-time timeout governs; `SET ROLE service_role` does not pick up its config, and
+a `SET` inside an already-running statement does not re-arm its timer). The prod path is
+fixed by the set-based optimization (full recompute now <30s) + the ETL's bounded-window
+call; the function-level guard only protects direct / pg_cron / psql callers. Full
+detail in [`docs/supabase/PRD.md`](../supabase/PRD.md) § "`recompute_dg_margins` — timeout
+guard & optimization" and [`docs/etl-pipelines/PRD.md`](../etl-pipelines/PRD.md) §
+"D&G Margins — ordering & bounded recompute".
 
 ### Fórmula de decomposição (R$/L, por semana ISO)
 
@@ -136,15 +180,30 @@ Cada componente é em R$/L; `total` reconstrói o preço de bomba.
 | `federal_tax` | de `fuel_tax_reference` (ANP Síntese de Preços). |
 | `state_tax` | ICMS de `fuel_tax_reference` (CONFAZ ad-rem). |
 | `distribution_and_resale_margin` | **residual** = `pump − (todos os componentes acima)`. |
-| `total` | = preço de bomba = `anp_lpc` station-weighted national avg (`'GASOLINA COMUM'` / `'DIESEL S10'`). |
+| `total` | = preço de bomba (pump) = **revenda nacional publicada pela ANP** (`anp_lpc_brasil`, volume-weighted, `'GASOLINA COMUM'` / `'DIESEL S10'`), com **fallback** para a média station-weighted de `anp_lpc` só nas semanas sem resumo ANP. Ver § "Pump price". |
 
 - **`import%`** = `imports / (imports + production)`, onde `imports` vem de `anp_desembaracos`/`mdic_comex` (kg→m³ via densidade NCM) e `production` de `anp_producao_derivados`. `production% = 1 − import%`.
+
+### Pump price — ANP national (Brasil) com fallback station-weighted (2026-06-08)
+
+Desde 2026-06-08 o pump (`total`, e portanto o residual `distribution_and_resale_margin`) usa o **valor de revenda nacional publicado pela ANP** diretamente, em vez de recalcular a média a partir das linhas per-UF.
+
+```
+pump(fuel, week) = COALESCE(
+  anp_lpc_brasil.preco_revenda,   -- (1) ANP Brasil para a mesma semana ISO (preferido)
+  SUM(anp_lpc.preco_medio_venda * n_postos) / NULLIF(SUM(n_postos), 0)  -- (2) fallback gap-week
+)
+```
+
+- **Por quê**: a média nacional da ANP é **volume-weighted por região**; a antiga média station-count-weighted rodava **~R$0,04 alto** (diferença de metodologia). Com o valor publicado, semanas recentes batem exato com a ANP (ex.: wk23/2026 Gasolina 6.61 / Diesel 7.12).
+- A fonte primária `anp_lpc_brasil` cobre ~146 semanas (2023-05→presente) **com lacunas** — a ANP não publica o resumo toda semana; nessas semanas o pump cai no fallback station-weighted (byte-for-byte o cálculo antigo).
+- Só `total` e `dist_margin` mudam nas semanas cobertas; `base_fuel`, `biofuel_component`, `federal_tax`, `state_tax` são idênticos. Migrations `20260617000000_anp_lpc_brasil.sql` + `20260617100000_recompute_dg_margins_brasil_pump.sql`.
 
 ### Fontes (exibidas no dashboard)
 
 "Sources: ANP · CEPEA/ESALQ · CONFAZ".
 
-- **ANP** — produção de derivados, preços LPC/produtor, Síntese de Preços (composição de impostos federais).
+- **ANP** — produção de derivados, preços LPC/produtor (incl. revenda **nacional Brasil** = pump, `anp_lpc_brasil`; per-UF `anp_lpc` como fallback), Síntese de Preços (composição de impostos federais).
 - **CEPEA/ESALQ** — preço do etanol anidro (licença **CC BY-NC, atribuição obrigatória**).
 - **CONFAZ** — ICMS ad-rem.
 - **`price_bands`** — paridade de importação / preço Petrobras.
@@ -175,7 +234,7 @@ Both views share `MARGIN_LINE_COLORS` via the hook — no per-view color overrid
 | Origem | Como depende |
 |---|---|
 | ETL / Pipelines | `etl_dg_margins.yml` + 2 scrapers (CEPEA, ANP produção) + chamada `recompute_dg_margins` |
-| Supabase / DB | Schema/migration de `d_g_margins` + 4 tabelas de referência + RPC `recompute_dg_margins` (grant `service_role`) |
+| Supabase / DB | Schema/migration de `d_g_margins` + tabelas de referência (incl. `anp_lpc_brasil`, migration `20260617000000`) + RPC `recompute_dg_margins` (grant `service_role`; pump = ANP Brasil desde `20260617100000`) |
 | Dados Locais | `price_bands` (paridade / Petrobras) é input do cálculo |
 | Designer | Stacked chart pattern, cores dos componentes |
 

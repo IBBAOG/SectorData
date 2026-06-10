@@ -1,0 +1,85 @@
+name: MDIC Comex — Drift Check
+
+# Monthly drift detector for retroactive ComexStat / SISCOMEX revisions in
+# mdic_comex. The daily 3-month + weekly 12-month sweeps in etl_mdic_comex.yml
+# already absorb recent revisions; this catches the residual annual "fechamento"
+# (a final revision to the prior year's late months around Q1) that can land just
+# outside the 12-month window. Kept SEPARATE from etl_mdic_comex.yml so the
+# revision signal is a distinct, self-contained monitoring job with its own
+# schedule and a clean green/red semantics (green = no drift or drift cleanly
+# self-healed; red = a heal was attempted and FAILED → a human is needed).
+#
+# The check is cheap (2 API calls/flow, no country detail), so a monthly cadence
+# on day 5 (after the month-1st heavy ETLs) off-peak is plenty. workflow_dispatch
+# allows running it on demand.
+
+on:
+  schedule:
+    - cron: '0 7 5 * *'   # monthly on the 5th at 07:00 UTC (04:00 BRT), off-peak
+  workflow_dispatch:
+    inputs:
+      meses:
+        description: 'Trailing months to check (default 24)'
+        required: false
+        default: ''
+      tolerancia:
+        description: 'Relative drift tolerance in percent (default 0.5)'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Detect only, do not self-heal (true/false)'
+        required: false
+        default: 'false'
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Resolve drift-check args
+        id: args
+        env:
+          INPUT_MESES:      ${{ github.event.inputs.meses }}
+          INPUT_TOLERANCIA: ${{ github.event.inputs.tolerancia }}
+          INPUT_DRY_RUN:    ${{ github.event.inputs.dry_run }}
+        run: |
+          ARGS=""
+          if [ -n "$INPUT_MESES" ]; then ARGS="$ARGS --meses $INPUT_MESES"; fi
+          if [ -n "$INPUT_TOLERANCIA" ]; then ARGS="$ARGS --tolerancia $INPUT_TOLERANCIA"; fi
+          if [ "$INPUT_DRY_RUN" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+          echo "args=$ARGS" >> "$GITHUB_OUTPUT"
+          echo "Drift-check args:${ARGS:- (defaults: --meses 24 --tolerancia 0.5)}"
+
+      # Exits non-zero ONLY if a heal was attempted and FAILED. No drift, or drift
+      # cleanly self-healed, or a dry run = green (the revision is surfaced via
+      # ::warning:: annotations + the job summary).
+      - name: MDIC Comex drift check + self-heal
+        run: python scripts/pipelines/mdic_comex_drift_check.py ${{ steps.args.outputs.args }}
+        env:
+          SUPABASE_URL:         ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      # If the drift check self-healed any month, those months now carry revised
+      # values — notify Client Alerts subscribers like the regular sync does.
+      # Non-critical side-effect; never fail the job on a send error.
+      - name: Client Alerts — notify subscribers (mdic_comex)
+        continue-on-error: true
+        if: success()
+        run: python -m scripts.client_alerts.run_base --source mdic_comex
+        env:
+          SUPABASE_URL:              ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY:      ${{ secrets.SUPABASE_SERVICE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GMAIL_ADDRESS:      ${{ vars.GMAIL_ADDRESS || 'ibbaogproject@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          ALERTS_SENDER_EMAIL:       ${{ vars.ALERTS_SENDER_EMAIL || 'SectorData Alerts <ibbaogproject@gmail.com>' }}
+          ALERTS_FRONTEND_URL:       ${{ vars.ALERTS_FRONTEND_URL || 'https://oilandgasdata.vercel.app' }}

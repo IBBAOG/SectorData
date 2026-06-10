@@ -26,10 +26,29 @@ Repos:
 - Scanner: workflow_dispatch acionado pelo cron-job.org a cada ~5 min.
   Cada run = `python news_hunter_service.py --once`. concurrency:
   cancel-in-progress: true (run novo cancela run em andamento).
-- Scanner LE keywords da tabela public.news_hunter_keywords no Supabase
-  (UNION dedupada de todos os users autenticados). Fallback para
-  DEFAULT_KEYWORDS local quando a tabela esta vazia ou Supabase indisponivel.
+- Scanner LE keywords do Supabase: UNION da lista DEFAULT (via
+  get_default_news_keywords_with_flags) com a per-user
+  public.news_hunter_keywords (dedupada). Fallback para DEFAULT_KEYWORDS
+  local apenas quando o Supabase esta indisponivel. (Ver secao 4.)
 - Vercel: somente leitura via anon key + RLS. Nunca chama o scanner.
+
+Matching scope (fast_mode + lede rescue):
+- The only scheduled entry point is `news_hunter_service.py --once`, which
+  runs in fast_mode. Fast_mode historically matched keywords against the
+  article TITLE + RSS-summary (snippet) only and short-circuited BEFORE
+  fetching the article body — so a keyword that appeared only in the body
+  (e.g. the macro-oil headline whose lede mentioned "barris/dia") was
+  silently dropped.
+- Scanner PR #4 (merged 2026-06-09, squash commit 74633eff,
+  "fix(scanner): match article lede for RSS near-misses") adds a bounded
+  LEDE-RESCUE pass. RSS near-misses (item has title + published, but no
+  keyword hit in title/summary) are diverted to a capped body fetch and
+  re-validated against title + lede (first paragraph). Keywords that
+  appear only in the article's opening paragraph can now match.
+- Caps keep the ~5-min cadence / GHA timeout safe: 40 rescue fetches per
+  scan (global), 8 per domain, 14s deadline, run on a separate thread pool
+  AFTER the normal enrich phase. Re-validation still requires a real
+  keyword hit — no relevance loosening, just a second look at the lede.
 
 
 ================================================================================
@@ -94,24 +113,31 @@ RPC public.get_default_news_keywords_with_flags():   -- added 2026-05-25
     match_type per-keyword da lista default. Granted anon +
     authenticated. LANGUAGE sql STABLE SECURITY DEFINER.
 
-  >>>  TODO no scanner repo (IBBAOG/news-hunter-scanner):
-       Hoje o scanner consome a UNION de public.news_hunter_keywords
-       (per-user, ja com match_type desde 2026-05-20) com fallback para
-       DEFAULT_KEYWORDS local quando a tabela esta vazia / Supabase
-       indisponivel. A lista default ANTES era hardcoded no SQL via
-       seed_my_news_hunter_keywords, agora vive em
-       news_hunter_default_keywords (single source of truth) e ja tem
-       match_type.
-
-       Acao requerida no scanner: substituir (ou complementar) a leitura
-       de public.get_default_news_keywords (text[]) por
+  >>>  Scanner active search set (IMPLEMENTED — was a TODO, done 2026-06-09):
+       The scanner now reads the DEFAULT keyword table directly. In the
+       scanner repo, store.py `_fetch_default_keywords` calls
        public.get_default_news_keywords_with_flags (keyword + match_type),
-       e aplicar:
-         match_type='exact'    -> regex \b<keyword>\b case-insensitive
-         match_type='substring'-> substring case-insensitive (legacy)
-       Mesma logica que ja eh aplicada em news_hunter_keywords per-user
-       (PR #2 do scanner). Default fallback in-memory pode permanecer
-       como contingencia quando o Supabase estiver indisponivel.
+       with a fallback to a direct SELECT on public.news_hunter_default_keywords.
+       The scanner then UNIONs that default set with the per-user
+       public.news_hunter_keywords (each row carrying its own match_type
+       since 2026-05-20).
+
+       Resulting active search set per scan:
+         get_default_news_keywords_with_flags  (default table, with match_type)
+           UNION
+         news_hunter_keywords                  (per-user, with match_type)
+       with the local in-memory DEFAULT_KEYWORDS used ONLY as a contingency
+       fallback when Supabase is unavailable.
+
+       match_type application (same logic across both sources):
+         match_type='exact'     -> regex \b<keyword>\b case-insensitive
+         match_type='substring' -> substring case-insensitive (legacy)
+
+       Consequence: adding a term to news_hunter_default_keywords DOES
+       propagate to the scanner on its next run (<= 5 min) — no per-user
+       re-seed needed. (Older migrations such as 20260615000000 still also
+       backfill news_hunter_keywords for belt-and-suspenders; that backfill
+       is now redundant for propagation but harmless.)
 
 RPCs admin (Admin Panel -> "Default News Keywords"):
     public.admin_list_default_news_keywords()
@@ -186,28 +212,45 @@ quando o scanner GHA pushou pela ultima vez, NAO quando o front fez fetch.
 
 
 ================================================================================
-4. KEYWORDS — UMA UNICA LISTA NO SUPABASE
+4. KEYWORDS — DEFAULT TABLE + PER-USER, UNIONED NO SCANNER
 ================================================================================
 
-A lista do usuario em news_hunter_keywords e a unica fonte. Adicionar/
-remover chip no painel:
-    - Insere/deleta linha em news_hunter_keywords (RLS por auth.uid()).
-    - O scanner GHA, no proximo run (<= 5 min), inclui/exclui essa keyword
-      do search set (UNION com as keywords dos outros users).
+Scanner active search set (per scan) = DEFAULT list UNION per-user list:
+    - DEFAULT: public.news_hunter_default_keywords, read by the scanner via
+      get_default_news_keywords_with_flags (keyword + match_type). Single
+      source of truth for the shipped watchlist; edited by admins in the
+      Admin Panel.
+    - PER-USER: public.news_hunter_keywords (RLS por auth.uid()). Adding/
+      removing a chip in the dashboard inserts/deletes a row here.
 
-Logo: adicionar uma keyword no Vercel REALMENTE muda o que o scanner busca,
-no proximo scan. Removed-elsewhere caveat: outros users tambem influenciam,
-porque o scanner faz UNION.
+Two ways a keyword reaches the scanner on its next run (<= 5 min):
+    - Add to the DEFAULT table (admin) -> scanner reads it directly via
+      get_default_news_keywords_with_flags. Propagates without any re-seed.
+    - Add a personal chip in the dashboard -> scanner picks it up in the
+      UNION. Removed-elsewhere caveat: other users also influence the set,
+      because the scanner UNIONs every per-user list.
 
-Lista default (27 termos) seedada via seed_my_news_hunter_keywords RPC no
-primeiro visit:
-    petroleo, petroleo, Petrobras, Vibra, Brava, Ultrapar, Ipiranga,
-    PetroReconcavo, PetroReconcavo, oil, gasolina, gas, gas, diesel,
-    combustivel, combustivel, combustiveis, combustiveis, OceanPact,
-    Cosan, Raizen, Raizen, Braskem, Compass, PRIO, ANP, refit.
+Logo: adicionar uma keyword (na lista default OU como chip pessoal)
+REALMENTE muda o que o scanner busca no proximo scan.
 
-Existe tambem FALLBACK_KEYWORDS in-memory em page.tsx — usada apenas se a
-query a news_hunter_keywords falhar (RLS / network). Read-only nesse caso.
+Default watchlist (news_hunter_default_keywords; also seeded into a new
+user's personal list on first visit via seed_my_news_hunter_keywords):
+    petroleo, Petrobras, Vibra, Brava, Ultrapar, Ipiranga, PetroReconcavo,
+    oil, gasolina, gas, diesel, combustivel, combustiveis, OceanPact,
+    Cosan, Raizen, Braskem, Compass, PRIO, ANP, refit.
+    + 2026-06-09 (migration 20260615000000_news_hunter_macro_oil_keywords):
+      5 macro-oil terms added to the default table AND backfilled into
+      existing users' news_hunter_keywords:
+        oleo (substring), barril (substring), barris (substring),
+        Brent (exact), WTI (exact).
+      Rationale: the macro-oil headline "Guerra destruiu demanda de 5
+      milhoes de barris/dia de oleo ..." (eixos.com.br) was being dropped
+      because none of its title/subtitle terms were tracked.
+
+Existe tambem FALLBACK_KEYWORDS in-memory em page.tsx (frontend) — usada
+apenas se a query a news_hunter_keywords falhar (RLS / network). Read-only
+nesse caso. O scanner tem o seu proprio DEFAULT_KEYWORDS in-memory, usado
+so quando o Supabase esta indisponivel.
 
 
 ================================================================================
@@ -304,7 +347,9 @@ Conferir conteudo da tabela:
     SELECT source_name, title, published_at FROM news_articles
         ORDER BY published_at DESC LIMIT 10;
 
-Verificar keywords ativas (UNION):
+Verificar keywords ativas (default + per-user UNION):
+    SELECT keyword, match_type FROM news_hunter_default_keywords
+        ORDER BY keyword;
     SELECT DISTINCT keyword FROM news_hunter_keywords ORDER BY keyword;
 
 Build local do dashboard:

@@ -17,11 +17,17 @@ websockets
 shapely
 pdfplumber
 # ── CEPEA anhydrous-ethanol scraper (scripts/pipelines/cepea/) ────────────────
-# Back the Cloudflare-Turnstile bypass: undetected-chromedriver drives a real
-# Chrome to mint a cf_clearance cookie; curl-cffi (TLS-impersonation) re-uses it
-# to pull the full-history Excel. Both fail open to the noticiasagricolas fallback.
-undetected-chromedriver
-curl-cffi
+# The SCHEDULED weekly path is 100% browser-free (requests + beautifulsoup4/lxml +
+# supabase): it reads the ungated CEPEA embed widget (id_indicador 104) and falls
+# back to noticiasagricolas HTML/JSON. NO Chrome is touched on that path.
+#
+# The two deps below are needed ONLY by the manual `--backfill` deep-history path
+# (undetected-chromedriver mints a cf_clearance cookie, curl-cffi re-uses it to
+# pull the full-history Excel from CEPEA "Consultas ao Banco de Dados"). They are
+# lazy-imported inside that path so the weekly CI run never imports them. Kept
+# (cheap) for rare manual deep re-pulls; history is already backfilled to 2002.
+undetected-chromedriver  # backfill-only (lazy import)
+curl-cffi                # backfill-only (lazy import)
 # pdf2image and pytesseract are NOT listed here — they are opt-in for the
 # --enable-ocr-fallback flag in subsidy_diesel_sync.py and require a system
 # Tesseract binary. Install them manually if needed: pip install pdf2image pytesseract

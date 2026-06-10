@@ -2,7 +2,17 @@ name: ANP LPC — Sync (preços semanais de combustíveis)
 
 on:
   schedule:
-    - cron: '30 14 * * 3'   # Wednesdays at 14:30 UTC (11:30 BRT) — ANP publishes weekly
+    # Daily 14:30 UTC (11:30 BRT). ANP publishes the weekly "Levantamento de
+    # Preços" survey on an UNSTABLE weekday (historically Wed, but e.g. Tue
+    # 2026-06-09). A Wed-only cron silently lagged anp_lpc by up to a week and
+    # missed publish-day refreshes. The scrape is cheap and the upsert is
+    # idempotent (ON CONFLICT data_fim,produto,estado) + incremental (downloads
+    # only weeks newer than MAX(data_fim)), so a daily run is a clean no-op when
+    # nothing new was published and ingests the new week within ~24h on whatever
+    # weekday ANP drops it. This is the upstream half of the dg-margins fix
+    # (incident 2026-06-09): etl_dg_margins now runs downstream of this via
+    # workflow_run, so the freshest pump price always feeds the margins recompute.
+    - cron: '30 14 * * *'   # daily 14:30 UTC (11:30 BRT)
   workflow_dispatch:
 
 jobs:

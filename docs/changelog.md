@@ -6,6 +6,16 @@ Entries newest first.
 
 ---
 
+## 2026-06-08 — `/diesel-gasoline-margins` pump = ANP published national (Brasil) resale price
+
+- The `/diesel-gasoline-margins` pump (`total`, and therefore the residual `distribution_and_resale_margin`) now uses the **ANP-published national average resale price** directly, instead of the station-count-weighted mean recomputed from per-UF `anp_lpc` rows.
+- **Rationale**: ANP's national figure is **volume-weighted by region**; our station-count-weighted figure ran **~R$0.04 high** — a methodology difference. Using ANP's published value makes recent weeks match the ANP national figure exactly (e.g. wk23/2026 Gasolina 6.61 / Diesel 7.12).
+- **New table** `anp_lpc_brasil(data_fim, produto ['GASOLINA COMUM'|'DIESEL S10'], preco_revenda, n_postos, fonte)` — PK `(data_fim, produto)`, national-only (~2 rows/week), RLS authenticated-read / service-role-write. Source: ANP "Levantamento de Preços" `resumo_semanal_lpc_*.xlsx` (aba **BRASIL**). Coverage ~146 weeks (2023-05→present) **with gaps** — ANP does not publish the resumo for every week. Deliberately **separate** from `anp_lpc` (per-UF, consumed by `/anp-prices`) — do not merge.
+- **Pipeline**: `scripts/pipelines/anp/lpc_sync.py` (workflow `etl_anp_lpc.yml`) now populates **both** `anp_lpc` (per-UF) **and** `anp_lpc_brasil` (national) in the same weekly run.
+- **Recompute change**: `recompute_dg_margins` sets `pump = COALESCE(anp_lpc_brasil.preco_revenda for the same ISO week, station-weighted anp_lpc average)` — the station-weighted figure is now a **gap-week fallback only**. Every other component (`base_fuel`, `biofuel_component`, `federal_tax`, `state_tax`) is byte-for-byte unchanged; only `total` and the residual `dist_margin` shift on covered weeks.
+- Migrations `20260617000000_anp_lpc_brasil.sql` (table) + `20260617100000_recompute_dg_margins_brasil_pump.sql` (recompute body). Commit `1f83077f`.
+- See `docs/app/diesel-gasoline-margins.md`, `docs/supabase/PRD.md` (`anp_lpc_brasil` table + recompute pump change), `docs/etl-pipelines/PRD.md` (`etl_anp_lpc` / `lpc_sync`).
+
 ## 2026-06-05 — Diesel & Gasoline Margins Automation (manual → computed)
 
 - The `/diesel-gasoline-margins` base table `d_g_margins` stopped being filled **manually** (Excel `dg_margins_upload.py` + `manual_dg_margins.yml` + admin Data Input form) and is now **computed automatically** by the SQL function `recompute_dg_margins(p_week_start text, p_week_end text)` (`SECURITY DEFINER`, `EXECUTE` only `service_role`).
@@ -27,10 +37,10 @@ Entries newest first.
 - **A month not yet published never renders as zero** — the chart omits absent months instead of drawing a false zero line.
 - Migration `20260608400000_imports_exports_paises_from_comexstat.sql`. See `docs/app/imports-exports.md` and `docs/supabase/PRD.md` § Imports & Exports RPCs.
 
-## 2026-06-01 — Fixed fuel subsidy regime (diesel 1.12 / gasoline 0.44)
+## 2026-06-01 — Fixed fuel subsidy regime (diesel 1.47 / gasoline 0.44)
 
 - Regulatory change effective **2026-06-01**: the fuel subsidy became a **flat value** for both agents (`importador` and `produtor`). History before 2026-06-01 is untouched.
-- **Diesel — DB side**: `compute_subsidy_reimbursement(date, tipo_agente)` now returns a fixed **1.12 BRL/L** for dates ≥ 2026-06-01 (both agents); earlier dates keep the historical AVG-over-5-regions of `MIN(MAX(ref − comm, 0), cap)` formula. Migration `20260608200000_subsidy_fixed_diesel_1_12.sql` (applied in production). The flat value flows automatically into `price_bands._w_subsidy` (via `_pb_refresh_w_subsidy_from_date`) and therefore into `/price-bands` and `/subsidy-tracker`. `anp_subsidy_caps` / `anp_subsidy_commercialization` now only drive the < 2026-06-01 leg.
+- **Diesel — DB side**: `compute_subsidy_reimbursement(date, tipo_agente)` now returns a fixed **1.47 BRL/L** for dates ≥ 2026-06-01 (both agents); earlier dates keep the historical AVG-over-5-regions of `MIN(MAX(ref − comm, 0), cap)` formula. The **effective** subsidy is 1.47 = **1.12** (MP nº 1.363 headline subvention) + **0.35** (compensation for Petrobras' refinery-price cut of BRL 0.35, 3.65 → 3.30 already reflected in `price_bands.petrobras_price`, plus the equivalent PIS/COFINS reactivation): 3.30 (price) + 1.47 (subsidy) = 4.77 = the pre-reform realization (3.65 + 1.12). The dashboard reflects the **effective** economics (1.47), not the MP's headline (1.12). Migration `20260613000000_subsidy_fixed_diesel_1_47.sql` (applied in production) supersedes the earlier `20260608200000_subsidy_fixed_diesel_1_12.sql`. The flat value flows automatically into `price_bands._w_subsidy` (via `_pb_refresh_w_subsidy_from_date`) and therefore into `/price-bands` and `/subsidy-tracker`. `anp_subsidy_caps` / `anp_subsidy_commercialization` now only drive the < 2026-06-01 leg.
 - **Gasoline — client side** in `/price-bands`: fixed **0.44 BRL/L** delta since 2026-06-01 (Petrobras +0.44, import parity −0.44, new import-parity series). The historical flat **3.05 BRL/L** line is preserved for the 2026-05-29 → 2026-05-31 window only.
 - Commits `a1b81c74` (diesel) + `b9b7356b` (gasoline). See `docs/supabase/PRD.md` § "Fixed subsidy regime since 2026-06-01" and `docs/app/price-bands.md`.
 

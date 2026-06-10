@@ -40,12 +40,15 @@ import io
 import json
 import math
 import os
+import socket
 import sys
+import time
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
 import requests
+import urllib3.util.connection as urllib3_conn
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -77,6 +80,16 @@ _HEADERS = {
 _TABLE = "anp_producao_derivados"
 _BATCH = 500
 _FONTE = "ANP — Produção de derivados de petróleo por refinaria (m³)"
+
+# Download resilience (transient gov.br hiccups / IPv6 route flaps observed in CI).
+# The CSV is tens of MB, so the timeout is generous; (connect, read) split keeps a
+# stalled connect from eating the whole window.
+_TIMEOUT = (30, 240)            # (connect, read) seconds
+_BACKOFF_SECONDS = (2, 5, 12)   # waits BETWEEN attempts -> up to 4 attempts/URL
+
+# Capture urllib3's stock address-family resolver ONCE so we can restore it after
+# an IPv4-forced attempt (see _force_ipv4 / IPv6 dead-route fallback below).
+_DEFAULT_GAI_FAMILY = urllib3_conn.allowed_gai_family
 
 # PT month abbreviation -> month number. Accent/case-normalised before lookup.
 _MESES = {
@@ -133,24 +146,95 @@ def _get_creds():
     return url, key
 
 
+def _force_ipv4(enabled: bool) -> None:
+    """Toggle urllib3's global address-family preference to IPv4-only.
+
+    On some CI runners DNS resolves an AAAA record but there is no working IPv6
+    route, so the connection fails with ``[Errno 101] Network is unreachable``.
+    Pinning ``allowed_gai_family`` to ``AF_INET`` makes urllib3 (and therefore
+    requests) skip the dead IPv6 candidates entirely. We flip it only for the
+    retry that follows an IPv6-smelling error, then restore the default.
+    """
+    if enabled:
+        urllib3_conn.allowed_gai_family = lambda: socket.AF_INET
+    else:
+        # Restore the library default (dual-stack, honours HAS_IPV6).
+        urllib3_conn.allowed_gai_family = _DEFAULT_GAI_FAMILY
+
+
+def _looks_like_ipv6_route_failure(err: Exception) -> bool:
+    """Heuristic: does this connection error smell like a dead IPv6 route?"""
+    msg = str(err).lower()
+    return (
+        "network is unreachable" in msg
+        or "errno 101" in msg
+        or "[errno -9]" in msg            # getaddrinfo AF mismatch (rare)
+        or "no route to host" in msg
+    )
+
+
+def _fetch_once(url: str, force_ipv4: bool) -> requests.Response:
+    """One HTTP GET, optionally forcing IPv4 for the duration of the call."""
+    if force_ipv4:
+        _force_ipv4(True)
+    try:
+        return requests.get(url, headers=_HEADERS, timeout=_TIMEOUT)
+    finally:
+        if force_ipv4:
+            _force_ipv4(False)
+
+
 def _download_csv() -> bytes:
+    """Download the ANP production CSV, resilient to transient gov.br failures.
+
+    For EACH candidate URL we retry with exponential backoff on
+    ``requests.RequestException`` (covers ConnectionError /
+    "Network is unreachable") and on HTTP 5xx. A 404 means the candidate does
+    not exist -> move straight to the next candidate (no retry). When a
+    connection error smells like a dead IPv6 route (Errno 101), the *next*
+    attempt forces IPv4 to dodge the runner-resolves-AAAA-but-no-route failure.
+    """
     last_err = None
+    max_attempts = len(_BACKOFF_SECONDS) + 1  # backoffs are the waits BETWEEN tries
+
     for url in _CSV_URL_CANDIDATES:
-        try:
-            print(f"Downloading {url.rsplit('/', 1)[-1]} ...", end=" ", flush=True)
-            r = requests.get(url, headers=_HEADERS, timeout=180)
-            if r.status_code == 404:
-                print("404 (trying next candidate)")
-                continue
-            r.raise_for_status()
-            # Guard against a silent Brotli/garbage body (Pegadinha #12): the
-            # decoded text MUST start with the known header token.
-            enc = r.headers.get("Content-Encoding", "")
-            print(f"{len(r.content) / 1024:.0f} KB (enc={enc or 'none'})")
-            return r.content
-        except requests.RequestException as e:
-            last_err = e
-            print(f"error: {e}")
+        name = url.rsplit("/", 1)[-1]
+        force_ipv4 = False  # sticky once an IPv6 failure is seen for this URL
+
+        for attempt in range(1, max_attempts + 1):
+            mode = "IPv4-forced" if force_ipv4 else "dual-stack"
+            print(
+                f"Downloading {name} (attempt {attempt}/{max_attempts}, {mode}) ...",
+                end=" ",
+                flush=True,
+            )
+            try:
+                r = _fetch_once(url, force_ipv4)
+                if r.status_code == 404:
+                    print("404 (trying next candidate)")
+                    break  # candidate absent -> next URL, do not retry/backoff
+                if r.status_code >= 500:
+                    # Transient server-side error -> retry with backoff.
+                    raise requests.HTTPError(f"HTTP {r.status_code}", response=r)
+                r.raise_for_status()
+                # Guard against a silent Brotli/garbage body (Pegadinha #12): we
+                # never advertise "br", and requests handles gzip/deflate.
+                enc = r.headers.get("Content-Encoding", "")
+                print(f"{len(r.content) / 1024:.0f} KB (enc={enc or 'none'})")
+                return r.content
+            except requests.RequestException as e:
+                last_err = e
+                print(f"error: {e}")
+                # If this looks like an IPv6 dead route, force IPv4 from now on.
+                if not force_ipv4 and _looks_like_ipv6_route_failure(e):
+                    force_ipv4 = True
+                    print("  -> IPv6 route looks dead; forcing IPv4 on next attempt")
+                if attempt < max_attempts:
+                    wait = _BACKOFF_SECONDS[attempt - 1]
+                    print(f"  -> retrying in {wait}s")
+                    time.sleep(wait)
+                # else: attempts for this URL exhausted -> fall through to next URL
+
     raise SystemExit(f"[anp-producao] ERROR: could not download CSV ({last_err})")
 
 

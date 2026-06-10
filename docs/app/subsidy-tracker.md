@@ -36,6 +36,8 @@ Per-trace consequences:
 
 Reference is daily × regional × agent. Commercialization is period-fixed × regional × agent (published per ANP cycle; spans ~2 months at a time). Caps switch on 2026-04-07 from 0.32 unified to 1.52 (importador) / 1.12 (produtor).
 
+**Fixed regime since 2026-06-01 (this formula applies to history only):** for dates ≥ 2026-06-01 `compute_subsidy_reimbursement(date, agent)` short-circuits to a flat **effective 1.47 BRL/L** for **both** agents — the AVG-over-5-regions cap/commercialization formula above drives only the < 2026-06-01 leg. So `ipp_adjusted = ipp − 1.47` and `petrobras_adjusted = petrobras + 1.47` for current-regime rows. The **1.47** is the effective subsidy = **1.12** (MP nº 1.363 headline subvention) + **0.35** (compensation for Petrobras' BRL 0.35 refinery-price cut, 3.65 → 3.30, plus equivalent PIS/COFINS reactivation): 3.30 + 1.47 = 4.77 = the pre-reform realization (3.65 + 1.12). The dashboard reflects the **effective** subsidy (1.47), not the MP headline (1.12) — **do not revert to 1.12**. Migration `20260613000000_subsidy_fixed_diesel_1_47.sql` (supersedes `20260608200000_subsidy_fixed_diesel_1_12.sql`); see `docs/supabase/PRD.md` § "Fixed subsidy regime since 2026-06-01".
+
 The frontend NEVER recomputes the reimbursement. It consumes the already-adjusted values from the RPC.
 
 ## Data sources

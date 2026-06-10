@@ -21,7 +21,6 @@
 //     directly — DO NOT divide. Label "mil t" (2026-06-03).
 //   Exports (metric=usd): server returns raw USD. Label "USD".
 
-import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useMemo } from "react";
 import MonthRangePicker from "../../../../components/dashboard/MonthRangePicker";
@@ -52,7 +51,7 @@ import ChartSection from "../../../../components/dashboard/ChartSection";
 import SegmentedToggle from "../../../../components/dashboard/SegmentedToggle";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
-import { useImportsExportsData, formatMonth, cmpMonth } from "../useImportsExportsData";
+import { useImportsExportsData, formatMonth, addMonths, cmpMonth } from "../useImportsExportsData";
 import type {
   UnifiedProduct,
   YoyTableRow,
@@ -62,9 +61,13 @@ import type {
   ImportsUnitPriceMetric,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE, COUNTRY_COLORS, emptyPlot } from "../../../../lib/plotlyDefaults";
+import PlotlyChart from "../../../../components/PlotlyChart";
+import { applyStackedLegendOrder } from "../../../../lib/charts/colors";
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+// PlotlyChart wraps react-plotly.js + the trace lock (validateTraces). The
+// `ctx` prop identifies each chart so the lock can name violations and decide
+// dev-throw vs warn. These ctx values are on the lock's MIGRATED_CTX allowlist.
 
 // ─── Colour helpers ────────────────────────────────────────────────────────────
 
@@ -106,12 +109,12 @@ const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
-  { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
-  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
-  { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
+  { dbName: "Rússia", label: "Russia", color: COUNTRY_COLORS.Russia },
+  { dbName: "Estados Unidos", label: "United States", color: COUNTRY_COLORS["United States"] },
+  { dbName: "Emirados Árabes Unidos", label: "UAE", color: COUNTRY_COLORS.UAE },
+  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: COUNTRY_COLORS.Netherlands },
+  { dbName: "Índia", label: "India", color: COUNTRY_COLORS.India },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: COUNTRY_COLORS["Saudi Arabia"] },
 ];
 
 // Lookup: DB Portuguese → English label
@@ -974,6 +977,31 @@ function PriceSummaryTable({
               const yoy = fmtDelta(row.yoyPct);
               const dotColor =
                 row.color ?? (fallbackColorFor ? fallbackColorFor(row.country) : "#bbb");
+              // When this row's data could not be read at the nominal anchor
+              // month (period.end), the hook walked backward to the most recent
+              // month with data. Surface the real month under each header so
+              // the value is not silently misattributed to period.end.
+              const anchorDiffers =
+                row.anchorAno !== anchorAno || row.anchorMes !== anchorMes;
+              const rowPrevMonthCursor = addMonths(
+                { ano: row.anchorAno, mes: row.anchorMes },
+                -1,
+              );
+              const rowPrevYearCursor = addMonths(
+                { ano: row.anchorAno, mes: row.anchorMes },
+                -12,
+              );
+              const latestSuffix = anchorDiffers
+                ? formatMonth(row.anchorAno, row.anchorMes)
+                : null;
+              const prevMonthSuffix =
+                anchorDiffers && row.prevMonth != null
+                  ? formatMonth(rowPrevMonthCursor.ano, rowPrevMonthCursor.mes)
+                  : null;
+              const prevYearSuffix =
+                anchorDiffers && row.prevYear != null
+                  ? formatMonth(rowPrevYearCursor.ano, rowPrevYearCursor.mes)
+                  : null;
               return (
                 <tr key={row.country}>
                   <td
@@ -1006,6 +1034,11 @@ function PriceSummaryTable({
                     }}
                   >
                     {row.latest.toLocaleString("en-US", { maximumFractionDigits: 1 })}
+                    {latestSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {latestSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1018,6 +1051,11 @@ function PriceSummaryTable({
                     {row.prevMonth != null
                       ? row.prevMonth.toLocaleString("en-US", { maximumFractionDigits: 1 })
                       : "—"}
+                    {prevMonthSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {prevMonthSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1041,6 +1079,11 @@ function PriceSummaryTable({
                     {row.prevYear != null
                       ? row.prevYear.toLocaleString("en-US", { maximumFractionDigits: 1 })
                       : "—"}
+                    {prevYearSuffix && (
+                      <div style={{ fontSize: 10, color: "#999", fontWeight: 400 }}>
+                        {prevYearSuffix}
+                      </div>
+                    )}
                   </td>
                   <td
                     style={{
@@ -1796,12 +1839,13 @@ export default function DesktopView(): React.ReactElement {
                     height={340}
                   >
                     {paisesTraces.length > 0 ? (
-                      <Plot
+                      <PlotlyChart
+                        ctx="imports-exports:by-origin-country"
                         data={paisesTraces}
                         layout={
                           isSingleMonth
                             ? horizontalBarLayout("thousand m³", singleMonthLabel, 340)
-                            : areaLayout("thousand m³", rangeMonths)
+                            : applyStackedLegendOrder(areaLayout("thousand m³", rangeMonths))
                         }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
@@ -1827,9 +1871,11 @@ export default function DesktopView(): React.ReactElement {
 
                   <div style={{ height: 24 }} />
 
-                  {/* Panel B — top-6 importers + Others. Rank-bound palette
-                       mirrors Panel A in order (black/orange/mint/amber/
-                       purple/lime + grey). Other importers collapse into the
+                  {/* Panel B — top-6 importers + Others. Entity-bound palette
+                       from COMPANY_COLORS via assignSeriesColors (Petrobras
+                       black, Vibra teal, Ipiranga navy, Raízen mint, Atem
+                       purple, Royal FIC amber + Others grey) — no two importers
+                       can share a color. Other importers collapse into the
                        Others bucket (sum, not weighted average, since the
                        Y-axis is volume). */}
                   <ChartSection
@@ -1861,12 +1907,13 @@ export default function DesktopView(): React.ReactElement {
                       </div>
                     )}
                     {importersData.length > 0 ? (
-                      <Plot
+                      <PlotlyChart
+                        ctx="imports-exports:by-importer"
                         data={importersTraces}
                         layout={
                           isSingleMonth
                             ? horizontalBarLayout("mil m³", singleMonthLabel, 340)
-                            : areaLayout("mil m³", rangeMonths)
+                            : applyStackedLegendOrder(areaLayout("mil m³", rangeMonths))
                         }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
@@ -1911,7 +1958,8 @@ export default function DesktopView(): React.ReactElement {
                       />
                     </div>
                     {importsUPTraces.length > 0 ? (
-                      <Plot
+                      <PlotlyChart
+                        ctx="imports-exports:imports-unit-price"
                         data={importsUPTraces}
                         layout={
                           isSingleMonth
@@ -1922,8 +1970,8 @@ export default function DesktopView(): React.ReactElement {
                         style={{ width: "100%" }}
                       />
                     ) : !importsUnitPriceLoading ? (
-                      <Plot
-                        data={emptyPlot().data}
+                      <PlotlyChart
+                        data={emptyPlot().data as PlotData[]}
                         layout={{ ...emptyPlot().layout, height: 320 }}
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
@@ -1975,12 +2023,13 @@ export default function DesktopView(): React.ReactElement {
                     height={420}
                   >
                     {exportsPaisesTraces.length > 0 ? (
-                      <Plot
+                      <PlotlyChart
+                        ctx="imports-exports:exports-by-destination"
                         data={exportsPaisesTraces}
                         layout={
                           isSingleMonth
                             ? horizontalBarLayout(exportsUnit, singleMonthLabel, 420)
-                            : exportsPaisesLayout
+                            : applyStackedLegendOrder(exportsPaisesLayout)
                         }
                         config={{ responsive: true, displayModeBar: false }}
                         style={{ width: "100%" }}
@@ -2025,7 +2074,8 @@ export default function DesktopView(): React.ReactElement {
                         height={320}
                       >
                         {exportsUPTraces.length > 0 ? (
-                          <Plot
+                          <PlotlyChart
+                            ctx="imports-exports:exports-unit-price"
                             data={exportsUPTraces}
                             layout={
                               isSingleMonth
@@ -2036,8 +2086,8 @@ export default function DesktopView(): React.ReactElement {
                             style={{ width: "100%" }}
                           />
                         ) : !exportsUnitPriceLoading ? (
-                          <Plot
-                            data={emptyPlot().data}
+                          <PlotlyChart
+                            data={emptyPlot().data as PlotData[]}
                             layout={{ ...emptyPlot().layout, height: 320 }}
                             config={{ responsive: true, displayModeBar: false }}
                             style={{ width: "100%" }}

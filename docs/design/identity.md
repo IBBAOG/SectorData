@@ -51,41 +51,46 @@ Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/
 
 Paleta canônica para gráficos com múltiplas séries (stacked area, multi-line, bar charts, dots em tabelas). Fonte da verdade: `PALETTE` em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
 
-Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos"): **14 cores em 2 tiers** — 3 *highlight* consumidos primeiro, 11 *fallback* quando o tier de destaque se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
+Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos") e em 2026-06-09 (**reorder da ordem-líder navy→orange→mint**): **14 cores em 2 tiers** — 3 da *ordem-líder* consumidas primeiro, 11 *fallback* quando a ordem-líder se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
 
-#### Highlight tier (posições 1-3)
+#### Ordem-líder (posições 1-3) — navy → orange → mint
 
-Cores de destaque — atribuídas primeiro às séries que devem chamar atenção. A **posição 1 é o laranja de marca**: é entregue à primeira série (leader) de cada gráfico que rotaciona pela paleta. Em práticas onde a "primeira série" não é semanticamente o destaque (ex: stacked area por país com ordem fixa), use os canonical maps abaixo em vez da rotação ordinal.
+Reorder de 2026-06-09 (diretiva do CTO): a ordem-líder global passou a ser a paleta do gráfico empilhado **"Brazil — Oil Production (kbpd)"** do `/well-by-well` — a convenção do relatório PDF Itaú BBA. A 1ª série (líder/dominante, base da pilha) é **navy/slate**, a 2ª é **brand orange**, a 3ª é **mint**. Consumidores posicionais (`PALETTE[i % len]`) passam a liderar com navy/orange/mint automaticamente. Os hexes `#1f2937` e `#9bd9a9` são **exatamente** os de `src/data/wellByWellColors.ts`, para casar com o PDF.
 
-| Pos | Hex | Papel típico |
+| Pos | Hex | Papel |
 |---|---|---|
-| 1 | `#FF5000` | Primary highlight — laranja de marca (`BRAND_ORANGE`) — leader/topo |
-| 2 | `#FFAE66` | Secondary highlight (peach) |
-| 3 | `#000512` | Tertiary highlight (near-black com nuance navy) |
+| 1 | `#1f2937` | Navy/slate — **líder** (Pre-Salt no PDF; série dominante / base da pilha) |
+| 2 | `#FF5000` | Brand orange — **série legítima**, 2ª da pilha (Post-Salt no PDF) |
+| 3 | `#9bd9a9` | Light mint — 3ª série (Onshore/Terra no PDF) |
 
 #### Fallback tier (posições 4-14)
 
-Usadas apenas quando o highlight tier se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28.
+Usadas apenas quando a ordem-líder se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28.
 
 | Pos | Hex | Cor |
 |---|---|---|
-| 4 | `#0EA5E9` | Sky blue *(substituiu `#FFFFFF` branco)* |
+| 4 | `#0EA5E9` | Sky blue *(substituiu `#FFFFFF` branco — 2026-05-28)* |
 | 5 | `#000000` | Preto |
-| 6 | `#1D4080` | Navy |
-| 7 | `#73C6A1` | Mint |
+| 6 | `#1D4080` | Royal navy *(distinto do slate `#1f2937` da pos 1)* |
+| 7 | `#73C6A1` | Medium mint *(distinto do light mint `#9bd9a9` da pos 3)* |
 | 8 | `#8258A0` | Purple |
 | 9 | `#0F766E` | Teal *(substituiu `#D2FF00` lime — quase-amarelo ilegível)* |
-| 10 | `#7030A0` | Deep purple |
+| 10 | `#FFAE66` | Peach *(realocado da antiga pos 2 — reorder 2026-06-09)* |
 | 11 | `#D97706` | Amber *(substituiu `#FFFF99` amarelo claro)* |
 | 12 | `#52525B` | Slate *(substituiu `#F2F2F2` near-white)* |
 | 13 | `#BE185D` | Magenta *(substituiu `#D8D8D8` light grey)* |
 | 14 | `#7F7F7F` | Mid grey |
 
+**Cores removidas no reorder de 2026-06-09** (para manter 14 distintas ao injetar navy+mint no topo):
+
+- `#000512` (antiga pos 3, near-black com nuance navy) — redundante contra `#000000` (pos 5) **e** o novo líder `#1f2937`; três near-blacks ficavam indistinguíveis num gráfico. `SEGMENT_COLORS.Total` mantém o literal `#000512` (pin fixo de entidade pode usar hex fora da PALETTE).
+- `#7030A0` (antiga pos 10, deep purple) — near-duplicate do purple `#8258A0` (pos 8); par mais fraco em distinção e não referenciado por nenhum canonical map.
+
 #### Regras
 
 1. **Sempre importe de `PALETTE`** — nunca hard-code hex de gráfico em componente.
-2. **Não reordene** — a ordem é semântica (pos 1-3 = highlight; pos 4-14 = fallback).
-3. **`BRAND_ORANGE` (`#FF5000`)** é a cor primária canônica da identidade (botões, links, accents UI). Como cor de **série de gráfico**, só aparece via `PALETTE[0]` (leader rotacional — primeira série do chart) ou via padrão `leader = BRAND_ORANGE` (BSW, anp-cdp-diaria). **Nunca é usado para "fixar" uma entidade recorrente** (Diesel, Estados Unidos, Big-3, etc) — use os canonical maps abaixo.
+2. **Não reordene sem decisão do CTO** — pos 1-3 = ordem-líder (navy/orange/mint); pos 4-14 = fallback.
+3. **`BRAND_ORANGE` (`#FF5000`) é cor de série legítima** (desde 2026-06-09). Como cor de **série de gráfico** aparece como **2ª da ordem-líder** (`PALETTE[1]`) e PODE preencher a 2ª série de um stacked. Adicionalmente, o padrão de **highlight explícito** `assignSeriesColors(..., { leader: true })` força a série *selecionada* para orange (BSW, anp-cdp-diaria) — é um uso opt-in, distinto do líder posicional default. **Distinção:** líder posicional default = navy `#1f2937`; highlight de série selecionada = orange. Os dois coexistem. Orange continua sendo a cor primária da identidade UI (botões, links, accents). **Não é usado para "fixar" uma entidade recorrente** (Diesel, Estados Unidos, Big-3) — use os canonical maps abaixo.
 4. **Não use branco** em traces, markers, fillcolor ou line.color. White paper/plot bg está OK (padrão Plotly); white text em barra escura também (legibilidade).
 5. **Não invente cor nova** para gráfico — se precisar de mais de 14 séries, agrupe em "Outros" ou passe pelo CTO.
 
@@ -105,7 +110,7 @@ Tabelas pinadas em `src/lib/plotlyDefaults.ts`. **Use estas constantes em vez de
 | LPG | `#8258A0` (purple) | GLP |
 | Otto-Cycle | `#A16207` (bronze) | — |
 
-Brand orange é reservada para "highlight" — não aparece como cor de produto.
+Brand orange não fixa nenhum produto: ele é a 2ª cor da ordem-líder (preenche a 2ª série posicional) e o highlight de série selecionada — manter um produto fixo em orange roubaria esse slot.
 
 #### `COUNTRY_COLORS` (origens + destinos em `/imports-exports`)
 
@@ -142,6 +147,83 @@ Brand orange é reservada para "highlight" — não aparece como cor de produto.
 | TRR | `#A16207` | bronze — Transporte Revendedor Retalhista |
 | Importer | `#8258A0` | purple |
 | Total | `#000512` | near-black — agregado |
+
+#### `COMPANY_COLORS` (fuel-distributor / oil companies)
+
+Pins each company to a fixed color across every dashboard that renders it (By
+Importer panel of `/imports-exports`, market-share, future company charts).
+Source of truth: `COMPANY_COLORS` in [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
+
+| Company | Hex | PALETTE pos | Aliases |
+|---|---|---|---|
+| Petrobras | `#000000` (black) | 5 | — |
+| Vibra | `#0F766E` (teal) | 9 | — |
+| Ipiranga | `#1D4080` (navy) | 6 | — |
+| Raízen | `#73C6A1` (mint) | 7 | Raizen |
+| Atem | `#8258A0` (purple) | 8 | Atem's |
+| Royal FIC | `#D97706` (amber) | 11 | Royal Fic |
+| Others | `#7F7F7F` (mid grey) | 14 | always last |
+
+Contract: every hex is a PALETTE member; `BRAND_ORANGE` is **not** used to pin a
+company — a fixed company in orange would steal it from the leader-order 2nd slot
+and from the `leader: true` highlight; all companies are distinct so two series
+in one chart can never collide; `Others` is grey and always rendered last. Royal
+FIC's amber replaces the old `#D2FF00` lime that collided with Atem's and was
+removed in the 2026-05-28 "no near-yellow" audit (root cause of the reported bug).
+
+### Central chart-color assigner + lock (2026-06-09)
+
+Two new modules turn the canonical maps above into a guarantee, not a
+convention:
+
+#### `assignSeriesColors` / `applyStackedLegendOrder` — [`src/lib/charts/colors.ts`](../../src/lib/charts/colors.ts)
+
+`assignSeriesColors(orderedEntities, { canonical, leader, othersLabel })` returns
+an ordered `{ entity, color }[]`. Rules:
+
+1. Each entity resolves to `canonical[entity]` first.
+2. `othersLabel` is always grey (`#7F7F7F`) and pushed last.
+3. Fallback is the next PALETTE color **not yet used in this chart** (collision
+   skip → duplicates are impossible by construction). If the palette is
+   exhausted (> 13 distinct non-Others series) it throws, telling the caller to
+   collapse the tail into "Others" rather than repeat a color.
+4. `leader: true` forces the first entity to `BRAND_ORANGE` (explicit highlight
+   pattern — distinct from the default positional leader, which is navy
+   `#1f2937` = `PALETTE[0]` when `leader` is not passed).
+5. The returned order **is** the stack order **and** the legend order.
+
+`applyStackedLegendOrder(layout)` non-destructively merges
+`legend.traceorder: 'normal'` so a stacked chart's legend reads in the same
+order the traces stack (Plotly's stacked default is `'reversed'`, which is what
+made the legend look inverted).
+
+`toColorMap(assignment)` adapts the ordered result to the `{ entity: color }`
+shape existing trace builders consume (pair it with the ordered entity list for
+stacking).
+
+#### `validateTraces` — the lock — [`src/lib/charts/validateTraces.ts`](../../src/lib/charts/validateTraces.ts)
+
+Wired into the single chart wrapper [`PlotlyChart`](../../src/components/PlotlyChart.tsx)
+(new optional `ctx?: string` prop). Before every render it checks:
+
+- **A. Duplicate color** — two VISIBLE traces (ignores `visible:'legendonly'`/`false`)
+  sharing `fillcolor`/`line.color`/`marker.color`.
+- **B. Inverted stacked legend** — any trace has `stackgroup` but
+  `layout.legend.traceorder` is not explicitly `'normal'` or `'reversed'`.
+
+Behavior by environment:
+
+- **dev / CI** (`NODE_ENV !== 'production'`): for charts on the `MIGRATED_CTX`
+  allowlist → **throws** (fails the build/test), naming the `ctx` and the
+  colliding series. Charts NOT yet on the allowlist → `console.warn` only, so
+  the gradual rollout never breaks unmigrated dashboards.
+- **production**: never throws — auto-corrects (re-assigns the colliding color
+  to the next free palette color; forces `traceorder:'normal'`) and
+  `console.error`s, so the end user's chart never breaks.
+
+Rollout: `MIGRATED_CTX` currently holds only the `/imports-exports` charts. Add
+a dashboard's `ctx` strings to that Set as it adopts `assignSeriesColors` +
+`applyStackedLegendOrder`. Tests: [`src/lib/charts/__tests__/validateTraces.test.ts`](../../src/lib/charts/__tests__/validateTraces.test.ts).
 
 > Dashboards que já tinham mapeamento próprio (ex: `/anp-prices` mantém Producer=navy / Distribution=bronze / Retail=teal para distinguir B2B de Retail num gráfico com os 3 simultaneamente; `/diesel-gasoline-margins` mantém o stack com 5 cores fixas) mantêm essas tabelas locais — mas devem se alinhar com a paleta canônica quando possível.
 

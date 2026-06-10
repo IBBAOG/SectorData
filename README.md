@@ -60,7 +60,7 @@ Internal analytics platform for the Brazilian Fuel Distribution and Oil & Gas se
 | `/anp-glp` (LPG Market Share) | Fuel Distribution | `get_anp_glp_ms_filtros`, `get_anp_glp_ms_serie_fast`, `get_anp_glp_ms_serie_others`, `get_anp_glp_ms_others_players`, `get_anp_glp_ms_export_count` (% Share ↔ thousand t toggle; clone of `/market-share` over `anp_glp`) |
 | `/anp-prices` | Fuel Distribution | `get_anp_prices_filtros`, `get_anp_prices_serie`, `get_anp_prices_export_count` (consolidates 3 retired ANP price dashboards) |
 | `/imports-exports` | Fuel Distribution | `get_imports_exports_filtros`, `get_imports_exports_paises_stacked`, `get_imports_exports_importers_stacked`, `get_imports_exports_yoy_table`, `get_imports_exports_exports_*`, `get_imports_exports_imports_unit_price`, `get_imports_exports_exports_unit_price` (source split: By Origin Country chart + YoY `paises` scope read from `mdic_comex`/ComexStat — published weeks ahead of ANP; By Importer (Brazil) stays on `anp_desembaracos`, the only source with CNPJ/importer) |
-| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat BRL 1.12/L from 2026-06-01, cap/commercialization formula applies only to history before that) |
+| `/subsidy-tracker` | Fuel Distribution (Proprietary) | `get_subsidy_tracker_diesel` (11 columns, dual-agent `_importador` / `_produtor`, regime-aware NULL fallback; reimbursement is a flat **effective** BRL 1.47/L from 2026-06-01 — 1.12 MP nº 1.363 subvention + 0.35 refinery-cut / PIS-COFINS compensation — the cap/commercialization formula applies only to history before that) |
 
 `template-module/` is a starter template, not a deployed module. RPC wrappers: [`src/lib/rpc.ts`](src/lib/rpc.ts) (by module) and [`src/lib/profileRpc.ts`](src/lib/profileRpc.ts).
 
@@ -81,7 +81,7 @@ Tech debt: `/market-share` still uses the legacy `ExportPanel` / `ExportModal` i
 ```
 dashboard_projeto/
 ├── .claude/                  local-only — agent definitions and worktrees
-├── .github/workflows/        18 workflows (ETL scrapers + client-alerts digest + supabase deploy)
+├── .github/workflows/        19 workflows (ETL scrapers + client-alerts digest + supabase deploy + monitoring)
 ├── docs/                     internal collaboration docs (start at master.md)
 ├── scripts/                  pipelines/ (auto), manual/ (human upload), utils/
 ├── src/                      Next.js app (see below)
@@ -137,6 +137,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `profiles` | id (FK auth.users) | role (`Admin` / `Client`), full_name, avatar_url |
 | `mdic_comex` | id | MDIC/ComexStat import/export trade data — feeds `/imports-exports` unit-price RPCs, the By Origin Country stacked chart, and the YoY table `paises` scope (ComexStat publishes month M weeks ahead of ANP Desembaraços) |
 | `anp_precos_produtores`, `anp_precos_distribuicao`, `anp_lpc` | — | 3 source tables joined by `get_anp_prices_serie` (UNION ALL) |
+| `anp_lpc_brasil` | (data_fim, produto) | ANP-published **national** ("BRASIL" sheet) volume-weighted weekly resale price (R$/L) for `GASOLINA COMUM` / `DIESEL S10`; used directly as the pump price in `recompute_dg_margins` (station-weighted `anp_lpc` fallback on gap weeks). ~146 weeks 2023-05→present, with gaps. Ingested by `lpc_sync.py` (`etl_anp_lpc.yml`) |
 | `anp_glp` | (ano, mes, distribuidora, categoria) | GLP sales by category (`P13` / `Outros - *`) |
 | `anp_daie` | (ano, mes, produto, operacao) | DAIE imports/exports (operacao: `EXPORTAÇÃO` / `IMPORTAÇÃO`) |
 | `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | Enriched with `importador`/`cnpj`/`uf_cnpj` since 2026-05-25. Feeds the `/imports-exports` By Importer (Brazil) chart + YoY `importers` scope (only source with CNPJ/importer); the By Origin Country chart migrated to `mdic_comex` on 2026-06-03 |
@@ -145,7 +146,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | `anp_voip` | (ano_publicacao, campo) | Volumes originally in-place / recovered fraction / situacao |
 | `anp_cdp_diaria`, `anp_cdp_diaria_instalacao`, `anp_cdp_diaria_poco` | varies | Daily production at field / installation / well level (since 2025-11-09) |
 | `anp_subsidy_diesel_reference` | (data_referencia, regiao, tipo_agente) | Per-region reference price; triggers maintain `price_bands._w_subsidy` columns |
-| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat BRL 1.12/L for both agents |
+| `anp_subsidy_caps` | (vigente_desde, tipo_agente) | Ceiling of per-region reimbursement (replaces `anp_subsidy_history` since Subsidy Reform). Drives `compute_subsidy_reimbursement` only for dates before 2026-06-01; from 2026-06-01 the diesel reimbursement is a flat **effective** BRL 1.47/L for both agents (1.12 MP nº 1.363 headline subvention + 0.35 compensation for the BRL 0.35 Petrobras refinery-price cut / PIS-COFINS reactivation) |
 | `anp_subsidy_commercialization` | (data_inicio, regiao, tipo_agente) | Period × region × agent commercialization prices (HTML scrape stage of `subsidy_diesel_sync.py`) |
 
 **Materialized views:** `mv_ms_serie`, `mv_ms_serie_fast` (Market Share), plus the `/well-by-well` production MV (auto-refreshed via `pg_cron`).
@@ -164,10 +165,10 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 | 6 | `etl_anp_cdp.yml` | Monthly cron + external dispatch every ~2h | `anp_cdp_producao` (Selenium + ddddocr CAPTCHA) |
 | 7 | `etl_anp_vendas.yml` | External cron-job.org dispatch | `vendas` |
 | 8 | `etl_anp_fase3.yml` | Monthly 1st 13:00 UTC | `anp_daie`, `anp_desembaracos` (importador/cnpj/uf_cnpj preserved) |
-| 9 | `etl_anp_lpc.yml` | Weekly Wed 14:30 UTC | `anp_lpc` |
+| 9 | `etl_anp_lpc.yml` | Daily 14:30 UTC | `anp_lpc` (ANP publishes the weekly LPC survey on an unstable weekday — daily scrape is idempotent + incremental, ingests the new week within ~24h) |
 | 10 | `etl_anp_precos.yml` | Weekly Mon 12:00 UTC | `anp_precos_produtores`, `anp_glp` |
-| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
-| 12 | `etl_dg_margins.yml` | Weekly Tue 15:00 UTC + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` |
+| 11 | `etl_mdic_comex.yml` | Daily 14:00 UTC + Weekly Sun 06:00 UTC (12-month revision sweep) | `mdic_comex` (feeds `/imports-exports` unit-price RPCs) |
+| 12 | `etl_dg_margins.yml` | `workflow_run` after a successful `etl_anp_lpc.yml` (primary) + daily 15:00 UTC fallback + dispatch | `d_g_margins` (computed): runs CEPEA + ANP production scrapers → calls `recompute_dg_margins()` bounded to the last ~12 ISO weeks (full-timeline backfill is `workflow_dispatch full_backfill=true` only) |
 | 13 | `supabase_deploy.yml` | On push to main | migrations (`supabase db push`) |
 | 14 | `etl_anp_precos_distribuicao.yml` | Monthly 5th + Weekly Tue | `anp_precos_distribuicao` |
 | 15 | `etl_anp_cdp_diaria.yml` | 3×/day | `anp_cdp_diaria{_instalacao,_poco}` (Power BI public API) |
@@ -182,6 +183,7 @@ All tables have RLS; frontend uses the anon key. Only service role (pipelines) w
 |----------|----------|------|
 | `freshness_monitor.yml` | Daily 12:00 UTC | **Freshness guardian** — emails ops if any base's data is overdue vs a per-source cadence threshold (catches a *silent* stall: green workflow, stale data) |
 | `workflow_failure_monitor.yml` | Every 6h | **Failure pager** — pages ops on ≥3 consecutive non-cancelled failures of 16 critical workflows (catches a *loud* failure); re-homes the retired `etl_workflow_stuck` |
+| `etl_mdic_comex_drift.yml` | Monthly day 5 07:00 UTC | **MDIC ComexStat drift detector** — fetches cheap live monthly aggregates, diffs them against `mdic_comex`, and self-heals only the months that drifted (re-pulls them); catches retroactive ComexStat revisions outside the daily 3-month / weekly 12-month `etl_mdic_comex.yml` window (e.g. the annual *fechamento*). Green = no drift or clean heal; red = a heal failed |
 | `client_alerts_poll.yml` | Every 20 min | **Safety-net poll** — `run_base --all-active`; fires alerts for the hook-less Data Input base (`price_bands`) and backstops every ETL hook |
 | `client_alerts_test.yml` | `workflow_dispatch` | **Test harness** — `run_base --test --source <slug>`; simulates a base update → SMTP send without touching the data table or watermark. Per-base plan: [`docs/alerts/TEST_PLAN.md`](docs/alerts/TEST_PLAN.md) |
 | `alertas_monitor.yml` | **DISABLED** | Legacy local-only Gmail monitor — retired (subsumed by the freshness guardian + failure pager); workflow disabled (reversible), 3 internal recipients migrated to Client Alerts |

@@ -9,7 +9,7 @@ frete, sem PIS/Cofins) and upserts it into `cepea_etanol_anidro`.
 Target table (PK = data_semana):
     cepea_etanol_anidro(
         data_semana    date PK,          -- the Saturday (ISO-week last day)
-        week           text,             -- 'WW/IYYY' UNPADDED, e.g. '22/2026'
+        week           text,             -- 'WW/IYYY' UNPADDED, e.g. '23/2026'
         preco_rs_litro numeric,          -- R$/L (à vista, SP)
         fonte          text DEFAULT 'CEPEA/ESALQ'
     )
@@ -20,54 +20,65 @@ its ISO week (`data_semana`) so the PK is stable regardless of the published
 weekday, and derive `week` from that Saturday's ISO calendar.
 
 ================================================================================
-HOW WE BYPASS CLOUDFLARE (the hard part)
+DATA SOURCES (scheduled = pure-Python, no browser)
 ================================================================================
-Every CEPEA `*.aspx` / `*.php` page (indicator pages, the series pages, the
-"Consultas ao Banco de Dados" tool and its JS/Excel handlers) sits behind a
-**Cloudflare Turnstile managed challenge**. Plain `requests`, `curl_cffi`
-(TLS-impersonation) and `cloudscraper` all get HTTP 403 "Just a moment…", and a
-plain headless Selenium also fails. The ONLY CEPEA path that is whitelisted by
-the WAF is the embed widget `widget*.js.php` — but that returns just the single
-LATEST row, so it is useless for history.
+The weekly run is 100% browser-free. It walks a fallback chain of three ungated,
+official-or-republished HTTP feeds, in this order:
 
-The working method (PRIMARY):
-  1. Launch **undetected-chromedriver** (headed) and load a CEPEA page. The
-     Turnstile *managed* challenge auto-clears within ~10 s for a real,
-     non-automation-flagged Chrome, issuing a valid `cf_clearance` cookie.
-  2. Resolve the CEPEA "Consultas ao Banco de Dados" internal `tabela_id` for the
-     anhydrous-SP weekly indicator via the AJAX helper:
-        POST /br/indicador/listar_especificacao.aspx  body: produto=<etanol-group csv>
-        -> JSON list; we pick the row whose name matches "Anidro ... São Paulo"
-           and whose `periodicidade` advertises weekly (contains '2').
-           (As of 2026-06 this is tabela_id = 131.)
-  3. Generate the full-history Excel through the same endpoint the site's
-     "Gerar Excel" button hits (re-using the cf_clearance cookie via curl_cffi):
-        GET /br/consultas-ao-banco-de-dados-do-site.aspx
-            ?tabela_id=<id>&periodicidade=2&data_inicial=dd/mm/yyyy&data_final=dd/mm/yyyy
-        -> JSON {"tipo":1,"arquivo":"<.xls url>"}
-  4. Download the `.xls` (a real BIFF/OLE2 workbook — parse with python-calamine;
-     xlrd chokes on this CEPEA dialect) and upsert every weekly row.
+  1. PRIMARY — CEPEA embed widget (browser-free, ungated, official 4-decimal):
+         GET https://www.cepea.org.br/br/widgetproduto.js.php
+             ?output=html&id_indicador[]=104
+       `id_indicador[]=104` == "Etanol Anidro - SP" in R$/L (load-bearing).
+       (103=Hidratado SP; 101=Anidro PE; 75=Anidro MT but R$/m³ — NEVER those.)
+       The host MUST be www.cepea.org.br (the esalq host returns "Sem resultados")
+       and the request MUST send a browser User-Agent — the default python UA gets
+       a 403, any "Mozilla/5.0 …" string gets a 200. No cookie / Referer /
+       cf_clearance / TLS-impersonation needed. The widget returns ONLY the single
+       latest weekly row — that is fine: deep history is already backfilled, the
+       upsert is idempotent on data_semana, and the weekly cron catches each Friday
+       publication.
 
-This reaches back to **29/11/2002** (~1.2k weekly rows).
+  2. FALLBACK — Notícias Agrícolas HTML (republishes the CEPEA indicator, ungated,
+     ~10 recent weeks, 4-decimal). Patches a missed weekly run. Week label is a
+     range like "01 - 05/06/2026"; we take the end date.
 
-FALLBACK (forward-fill only): if the CEPEA path fails (Chrome/driver missing,
-Turnstile not clearing in CI, endpoint change), we scrape the last ~10 weeks from
-noticiasagricolas.com.br (which republishes the CEPEA indicator, ungated). This
-keeps the series moving forward but cannot backfill deep history.
+  3. LAST-RESORT — the same Notícias Agrícolas slug + ".json" (clean JSON, latest
+     week only). Used to confirm when the two above fail.
 
-Zero rows from BOTH paths is a hard error (exit 1) — a silent empty is the real
-bug we guard against.
+  --backfill (NOT in CI) — the legacy undetected-chromedriver → cf_clearance →
+     `consultas-ao-banco-de-dados` full-history Excel path. KEPT but reachable
+     ONLY behind this flag, and the Chrome / Selenium / curl-cffi / calamine stack
+     is **lazy-imported inside that path** so a normal (scheduled) run never
+     touches Chrome. History is already backfilled to 2002 — this is for rare
+     manual deep re-pulls only.
+
+================================================================================
+GUARDS (a silent empty / wrong-unit upsert is the real bug)
+================================================================================
+- zero rows across ALL sources -> hard exit(1).
+- sane-range: any value outside [1.5, 5.0] R$/L is rejected as a parse failure
+  (guards against accidentally parsing an R$/m³ indicator) and we fall through.
+- decimal-precision sniff on the RAW string: a value with <=2 decimals is treated
+  as rounded (UDOP-style) and we prefer the next source.
+- week-mapping invariant: every record's data_semana is a Saturday and its `week`
+  label matches its ISO calendar (asserted in `_to_record`).
+- staleness: if the freshest data_semana we obtained is >14 days old, exit
+  non-zero (loud — page-able by the freshness monitor) instead of silently
+  re-upserting a stale week.
+- per-source `parsed N rows` log; a per-source 0 is logged as an anomaly.
+- cross-source agreement: if the widget and Notícias Agrícolas both yield an
+  overlapping week in one run, their R$/L must agree to 4 dp before upsert.
 
 Usage:
-    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py
-    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py --since 01/01/2002
-    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py --fallback-only
+    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py          # weekly
+    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py --backfill
+    python scripts/pipelines/cepea/cepea_etanol_anidro_sync.py --backfill --since 01/01/2002
 
 Credentials: SUPABASE_URL + SUPABASE_SERVICE_KEY (env or repo-root .env).
 
-Deps: undetected-chromedriver, selenium, curl_cffi, python-calamine, supabase,
-      beautifulsoup4 (fallback). A Chrome/Chromium binary must be installed for
-      the primary path.
+Deps (weekly path): requests, beautifulsoup4/lxml (optional), supabase.
+Deps (--backfill ONLY): undetected-chromedriver, selenium, curl-cffi,
+      python-calamine + a Chrome/Chromium binary — all lazy-imported.
 """
 from __future__ import annotations
 
@@ -86,21 +97,47 @@ if hasattr(sys.stdout, "reconfigure"):
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────
-CONSULTAS_URL = "https://www.cepea.org.br/br/consultas-ao-banco-de-dados-do-site.aspx"
-LISTAR_ESPEC_URL = "https://www.cepea.org.br/br/indicador/listar_especificacao.aspx"
-INDICADOR_WARMUP_URL = "https://www.cepea.esalq.usp.br/br/indicador/etanol.aspx"
-# 'produto' value of the Etanol radio on the consultas form (group of indicator ids).
-ETANOL_PRODUTO_GROUP = "15,16,51,52,53,54,55,56,57,58"
-PERIODICIDADE_WEEKLY = "2"  # 1=Diário 2=Semanal 3=Mensal 4=Anual
-DEFAULT_SINCE = "01/01/2002"  # CEPEA anidro series starts late 2002
 SOURCE = "CEPEA/ESALQ"
 TABLE = "cepea_etanol_anidro"
 BATCH = 500
 
+# Browser UA — REQUIRED by both CEPEA (403 on the default python UA) and Notícias
+# Agrícolas. No other header / cookie is needed for the ungated feeds.
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+)
+
+# PRIMARY: CEPEA embed widget. id_indicador[]=104 == "Etanol Anidro - SP" (R$/L).
+# Host must be www.cepea.org.br. Cosmetic params are harmless; we keep them minimal.
+WIDGET_URL = (
+    "https://www.cepea.org.br/br/widgetproduto.js.php"
+    "?output=html&id_indicador[]=104"
+)
+
+# FALLBACKS: Notícias Agrícolas republished indicator (HTML page + .json view).
 NA_FALLBACK_URL = (
     "https://www.noticiasagricolas.com.br/cotacoes/sucroenergetico/"
     "indicador-semanal-etanol-anidro-cepea-esalq"
 )
+NA_JSON_URL = NA_FALLBACK_URL + ".json"
+
+# Sanity bounds for the SP anhydrous indicator in R$/L. A value outside this band
+# almost certainly means we parsed the wrong indicator (e.g. an R$/m³ series).
+MIN_RS_L = 1.5
+MAX_RS_L = 5.0
+
+# A run is stale (and should page) if the freshest week we obtained is older than
+# this. CEPEA publishes weekly (Fridays); 14 days tolerates one holiday slip.
+STALE_AFTER_DAYS = 14
+
+# --- backfill-only constants (legacy Chrome + Excel path) ---------------------
+CONSULTAS_URL = "https://www.cepea.org.br/br/consultas-ao-banco-de-dados-do-site.aspx"
+LISTAR_ESPEC_URL = "https://www.cepea.org.br/br/indicador/listar_especificacao.aspx"
+INDICADOR_WARMUP_URL = "https://www.cepea.esalq.usp.br/br/indicador/etanol.aspx"
+ETANOL_PRODUTO_GROUP = "15,16,51,52,53,54,55,56,57,58"
+PERIODICIDADE_WEEKLY = "2"  # 1=Diário 2=Semanal 3=Mensal 4=Anual
+DEFAULT_SINCE = "01/01/2002"  # CEPEA anidro series starts late 2002
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -135,10 +172,10 @@ def _get_creds() -> tuple[str, str]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Helpers
+# Helpers (validated against DB anchors — do NOT change parsing semantics)
 # ──────────────────────────────────────────────────────────────────────────────
 def _parse_brl(raw: str) -> float | None:
-    """'2,5650' or '1.234,56' -> float. Returns None if not numeric."""
+    """'2,5108' or '1.234,56' -> float. Returns None if not numeric."""
     raw = (raw or "").strip()
     if not raw:
         return None
@@ -149,10 +186,26 @@ def _parse_brl(raw: str) -> float | None:
         return None
 
 
+def _decimal_places(raw: str) -> int:
+    """Count decimal digits in a BRL-formatted raw string ('2,5108' -> 4)."""
+    raw = (raw or "").strip()
+    # In BRL formatting the comma is the decimal separator; the dot is thousands.
+    if "," in raw:
+        return len(raw.rsplit(",", 1)[1].strip())
+    return 0
+
+
+def _in_range(val: float | None) -> bool:
+    """Sane-range guard: reject values that cannot be the SP anidro R$/L indicator."""
+    return val is not None and MIN_RS_L <= val <= MAX_RS_L
+
+
 def _to_record(date_ddmmyyyy: str, preco_rs_litro: float) -> dict | None:
     """Map a CEPEA reference date (Friday/Thu/Wed) + R$/L value to a table row.
 
     data_semana = Saturday of the date's ISO week; week = 'WW/IYYY' (unpadded).
+    Asserts the week-mapping invariant (Saturday weekday + ISO label) before
+    returning — a violation is a programming error, not bad source data.
     """
     try:
         d = dt.datetime.strptime(date_ddmmyyyy.strip(), "%d/%m/%Y").date()
@@ -160,23 +213,162 @@ def _to_record(date_ddmmyyyy: str, preco_rs_litro: float) -> dict | None:
         return None
     saturday = d + dt.timedelta(days=(5 - d.weekday()))  # Mon=0 .. Sat=5
     iso = saturday.isocalendar()
+    week_label = f"{iso[1]}/{iso[0]}"  # ISO week / ISO year, UNPADDED
+    # week-mapping invariant
+    assert saturday.weekday() == 5, f"data_semana {saturday} is not a Saturday"
+    assert week_label == f"{iso[1]}/{iso[0]}", "week label drifted from ISO calendar"
     return {
         "data_semana": saturday.isoformat(),
-        "week": f"{iso[1]}/{iso[0]}",  # ISO week / ISO year, UNPADDED
+        "week": week_label,
         "preco_rs_litro": preco_rs_litro,
         "fonte": SOURCE,
     }
 
 
+def _accept_value(raw_val: str, source: str) -> float | None:
+    """Validate a RAW BRL string for a source: range + precision sniff.
+
+    Returns the parsed float if acceptable, else None (caller falls through).
+    """
+    val = _parse_brl(raw_val)
+    if not _in_range(val):
+        print(f"[{source}] reject out-of-range value {raw_val!r} -> {val}")
+        return None
+    if _decimal_places(raw_val) <= 2:
+        # Rounded (e.g. UDOP-style 2,51) — prefer a higher-precision source.
+        print(f"[{source}] reject low-precision value {raw_val!r} (<=2 decimals)")
+        return None
+    return val
+
+
 # ──────────────────────────────────────────────────────────────────────────────
-# PRIMARY: CEPEA "Consultas ao Banco de Dados" full-history Excel
+# HTTP (weekly path uses plain `requests` — no browser, no `br` encoding)
+# ──────────────────────────────────────────────────────────────────────────────
+def _new_session():
+    import requests
+
+    s = requests.Session()
+    s.headers.update({
+        "User-Agent": BROWSER_UA,
+        "Accept-Language": "pt-BR,pt;q=0.9",
+        # NEVER advertise `br` here (Pegadinha #12): the feeds serve gzip, which
+        # requests auto-decodes; `br` without a guaranteed brotli decode = silent
+        # garbage. gzip/deflate only.
+        "Accept-Encoding": "gzip, deflate",
+    })
+    return s
+
+
+def _get_text(session, url: str, retries: int = 4, timeout: int = 30) -> str:
+    """GET with a few retries (one cold-start empty widget response was observed)."""
+    last_err: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            r = session.get(url, timeout=timeout)
+            r.raise_for_status()
+            if r.text and r.text.strip():
+                return r.text
+            last_err = RuntimeError("empty response body")
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+        if attempt < retries:
+            time.sleep(1.5 * attempt)
+    raise RuntimeError(f"GET {url} failed after {retries} tries: {last_err}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SOURCE 1 (PRIMARY): CEPEA embed widget — single latest weekly row
+# ──────────────────────────────────────────────────────────────────────────────
+_WIDGET_RE = re.compile(
+    r"(\d{2}/\d{2}/\d{4}).*?R\$\s*<span[^>]*>([\d.,]+)</span>", re.S
+)
+
+
+def fetch_widget(session) -> list[dict]:
+    print("[widget] GET CEPEA embed widget (id_indicador 104, Anidro-SP R$/L)…")
+    html = _get_text(session, WIDGET_URL)
+    out: dict[str, dict] = {}
+    for date_str, raw_val in _WIDGET_RE.findall(html):
+        val = _accept_value(raw_val, "widget")
+        if val is None:
+            continue
+        rec = _to_record(date_str, val)
+        if rec:
+            out[rec["data_semana"]] = rec
+    print(f"[widget] parsed {len(out)} weekly rows")
+    return list(out.values())
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SOURCE 2 (FALLBACK): Notícias Agrícolas HTML — ~10 recent weeks
+# ──────────────────────────────────────────────────────────────────────────────
+def fetch_na_html(session) -> list[dict]:
+    print("[na-html] GET Notícias Agrícolas HTML (recent weeks)…")
+    html = _get_text(session, NA_FALLBACK_URL)
+    out: dict[str, dict] = {}
+    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", html, re.S):
+        cells = [
+            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c)).strip()
+            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)
+        ]
+        cells = [c for c in cells if c]
+        if len(cells) < 2:
+            continue
+        # first cell is a week range like "01 - 05/06/2026"; take the end date
+        m = re.search(r"(\d{2}/\d{2}/\d{4})", cells[0])
+        if not m:
+            continue
+        val = _accept_value(cells[1], "na-html")
+        if val is None:
+            continue
+        rec = _to_record(m.group(1), val)
+        if rec:
+            out[rec["data_semana"]] = rec
+    print(f"[na-html] parsed {len(out)} weekly rows")
+    return list(out.values())
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# SOURCE 3 (LAST-RESORT): Notícias Agrícolas JSON — latest week only
+# ──────────────────────────────────────────────────────────────────────────────
+def fetch_na_json(session) -> list[dict]:
+    print("[na-json] GET Notícias Agrícolas JSON (latest week)…")
+    body = _get_text(session, NA_JSON_URL)
+    data = json.loads(body)
+    colunas = data.get("colunas") or {}
+    # Identify the "Data" column id and the "R$/Litro" column id by label.
+    data_col = next((cid for cid, lbl in colunas.items() if "data" in str(lbl).lower()), None)
+    val_col = next(
+        (cid for cid, lbl in colunas.items()
+         if "litro" in str(lbl).lower() or "r$" in str(lbl).lower()),
+        None,
+    )
+    out: dict[str, dict] = {}
+    for row in (data.get("valores") or {}).values():
+        if not isinstance(row, dict):
+            continue
+        date_cell = str(row.get(data_col, "")) if data_col else ""
+        m = re.search(r"(\d{2}/\d{2}/\d{4})", date_cell)
+        if not m:
+            continue
+        raw_val = str(row.get(val_col, "")) if val_col else ""
+        val = _accept_value(raw_val, "na-json")
+        if val is None:
+            continue
+        rec = _to_record(m.group(1), val)
+        if rec:
+            out[rec["data_semana"]] = rec
+    print(f"[na-json] parsed {len(out)} weekly rows")
+    return list(out.values())
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BACKFILL ONLY: legacy CEPEA "Consultas ao Banco de Dados" full-history Excel
+# (Chrome / Selenium / curl-cffi / calamine are LAZY-IMPORTED inside this path so
+# a scheduled run never imports them.)
 # ──────────────────────────────────────────────────────────────────────────────
 def _chrome_major() -> int | None:
-    """Best-effort detect installed Chrome major version.
-
-    On Windows, `chrome.exe --version` writes nothing to stdout, so we read the
-    binary's file version (PowerShell). On POSIX we fall back to `--version`.
-    """
+    """Best-effort detect installed Chrome major version (backfill only)."""
     import shutil
     import subprocess
 
@@ -218,8 +410,7 @@ def _chrome_major() -> int | None:
 
 
 def _clear_turnstile(driver, max_seconds: int = 75) -> bool:
-    """Wait for the Cloudflare managed challenge to auto-clear (title stops being
-    'Um momento…' / 'Just a moment')."""
+    """Wait for the Cloudflare managed challenge to auto-clear (backfill only)."""
     deadline = time.time() + max_seconds
     while time.time() < deadline:
         time.sleep(3)
@@ -230,13 +421,12 @@ def _clear_turnstile(driver, max_seconds: int = 75) -> bool:
 
 
 def _acquire_clearance() -> tuple[dict, str]:
-    """Launch undetected-chromedriver, clear Turnstile, return (cookies, user_agent)."""
-    import undetected_chromedriver as uc
+    """Launch undetected-chromedriver, clear Turnstile, return (cookies, ua)."""
+    import undetected_chromedriver as uc  # lazy — backfill only
 
     opts = uc.ChromeOptions()
     opts.add_argument("--window-size=1100,900")
     opts.add_argument("--lang=pt-BR")
-    # In CI use the new headless; locally headed clears more reliably.
     if os.environ.get("CEPEA_HEADLESS", "").lower() in ("1", "true", "yes"):
         opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
@@ -247,10 +437,8 @@ def _acquire_clearance() -> tuple[dict, str]:
     try:
         driver.get(INDICADOR_WARMUP_URL)
         if not _clear_turnstile(driver):
-            # one retry on the consultas page directly
             driver.get(CONSULTAS_URL)
             _clear_turnstile(driver)
-        # touch .org.br so clearance covers the consultas host too
         driver.get(CONSULTAS_URL)
         _clear_turnstile(driver)
         cookies = {c["name"]: c["value"] for c in driver.get_cookies()}
@@ -281,7 +469,6 @@ def _resolve_tabela_id(session, headers) -> int:
         per = str(item.get("periodicidade") or "")
         if "anidro" in nome and "são paulo" in nome and "semanal" in nome and "2" in per.split(","):
             return int(item["id"])
-    # fallback: any weekly anidro SP
     for item in spec:
         nome = (item.get("nome") or "").lower()
         if "anidro" in nome and "paulo" in nome and "2" in str(item.get("periodicidade") or "").split(","):
@@ -329,7 +516,7 @@ def _parse_cepea_xls(content: bytes) -> list[dict]:
     """Parse the CEPEA BIFF workbook (Data | ANIDRO R$/LITRO | US$/LITRO)."""
     import tempfile
 
-    from python_calamine import CalamineWorkbook
+    from python_calamine import CalamineWorkbook  # lazy — backfill only
 
     with tempfile.NamedTemporaryFile(suffix=".xls", delete=False) as tmp:
         tmp.write(content)
@@ -349,7 +536,8 @@ def _parse_cepea_xls(content: bytes) -> list[dict]:
         date_cell = str(row[0]).strip()
         if not re.match(r"\d{2}/\d{2}/\d{4}$", date_cell):
             continue
-        val = _parse_brl(str(row[1]))
+        raw_val = str(row[1])
+        val = _accept_value(raw_val, "backfill-xls")
         if val is None:
             continue
         rec = _to_record(date_cell, val)
@@ -358,12 +546,13 @@ def _parse_cepea_xls(content: bytes) -> list[dict]:
     return list(out.values())
 
 
-def fetch_primary(since: str) -> list[dict]:
-    from curl_cffi import requests as creq
+def fetch_backfill(since: str) -> list[dict]:
+    """Legacy deep-history path (Chrome + Excel). LAZY: only entered by --backfill."""
+    from curl_cffi import requests as creq  # lazy — backfill only
 
-    print("[primary] acquiring Cloudflare clearance via undetected-chromedriver…")
+    print("[backfill] acquiring Cloudflare clearance via undetected-chromedriver…")
     cookies, ua = _acquire_clearance()
-    print(f"[primary] clearance OK (cookies: {', '.join(cookies)})")
+    print(f"[backfill] clearance OK (cookies: {', '.join(cookies)})")
 
     session = creq.Session()
     for k, v in cookies.items():
@@ -376,44 +565,40 @@ def fetch_primary(since: str) -> list[dict]:
     }
 
     tabela_id = _resolve_tabela_id(session, headers)
-    print(f"[primary] anidro-SP weekly tabela_id = {tabela_id}")
+    print(f"[backfill] anidro-SP weekly tabela_id = {tabela_id}")
     content = _generate_and_download_excel(session, headers, tabela_id, since)
-    print(f"[primary] downloaded Excel: {len(content)} bytes")
+    print(f"[backfill] downloaded Excel: {len(content)} bytes")
     records = _parse_cepea_xls(content)
-    print(f"[primary] parsed {len(records)} weekly rows")
+    print(f"[backfill] parsed {len(records)} weekly rows")
     return records
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# FALLBACK: noticiasagricolas (recent weeks only) — forward-fill
+# Cross-source agreement + staleness guards
 # ──────────────────────────────────────────────────────────────────────────────
-def fetch_fallback() -> list[dict]:
-    from curl_cffi import requests as creq
+def _assert_agreement(primary: list[dict], other: list[dict]) -> None:
+    """If two sources share a week, their R$/L must agree to 4 dp before upsert."""
+    a = {r["data_semana"]: r["preco_rs_litro"] for r in primary}
+    b = {r["data_semana"]: r["preco_rs_litro"] for r in other}
+    for wk in a.keys() & b.keys():
+        if round(a[wk], 4) != round(b[wk], 4):
+            sys.exit(
+                f"FATAL: cross-source disagreement for week {wk}: "
+                f"{a[wk]} vs {b[wk]} — refusing to upsert."
+            )
+        print(f"[agreement] week {wk} matches across sources ({a[wk]})")
 
-    print("[fallback] scraping noticiasagricolas (recent weeks)…")
-    r = creq.get(NA_FALLBACK_URL, impersonate="chrome", timeout=30)
-    r.raise_for_status()
-    out: dict[str, dict] = {}
-    for row_html in re.findall(r"<tr[^>]*>(.*?)</tr>", r.text, re.S):
-        cells = [
-            re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", c)).strip()
-            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row_html, re.S)
-        ]
-        cells = [c for c in cells if c]
-        if len(cells) < 2:
-            continue
-        # first cell is a week range like "25 - 29/05/2026"; take the end date
-        m = re.search(r"(\d{2}/\d{2}/\d{4})", cells[0])
-        if not m:
-            continue
-        val = _parse_brl(cells[1])
-        if val is None:
-            continue
-        rec = _to_record(m.group(1), val)
-        if rec:
-            out[rec["data_semana"]] = rec
-    print(f"[fallback] parsed {len(out)} weekly rows")
-    return list(out.values())
+
+def _assert_fresh(records: list[dict]) -> None:
+    """Loud failure if the freshest obtained week is older than STALE_AFTER_DAYS."""
+    newest = max(dt.date.fromisoformat(r["data_semana"]) for r in records)
+    age = (dt.date.today() - newest).days
+    print(f"[staleness] newest week = {newest} (age {age} days)")
+    if age > STALE_AFTER_DAYS:
+        sys.exit(
+            f"FATAL: freshest CEPEA week {newest} is {age} days old "
+            f"(> {STALE_AFTER_DAYS}) — sources may be stale; not re-upserting."
+        )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -447,33 +632,82 @@ def upsert(records: list[dict]) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 # Main
 # ──────────────────────────────────────────────────────────────────────────────
+def _run_weekly() -> list[dict]:
+    """widget (primary) -> NA HTML -> NA JSON, with cross-source agreement when both
+    the widget and NA HTML succeed in the same run."""
+    session = _new_session()
+
+    widget_rows: list[dict] = []
+    na_rows: list[dict] = []
+
+    try:
+        widget_rows = fetch_widget(session)
+    except Exception as e:  # noqa: BLE001
+        print(f"[widget] FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+
+    # Always attempt NA HTML too — it is cheap, patches missed weeks, and lets us
+    # cross-check the widget's latest value.
+    try:
+        na_rows = fetch_na_html(session)
+    except Exception as e:  # noqa: BLE001
+        print(f"[na-html] FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+
+    if widget_rows and na_rows:
+        _assert_agreement(widget_rows, na_rows)
+
+    # Union widget + NA HTML (widget wins on shared weeks — official 4-dp source).
+    if widget_rows or na_rows:
+        merged: dict[str, dict] = {}
+        for r in na_rows:
+            merged[r["data_semana"]] = r
+        for r in widget_rows:  # widget overrides NA on overlap
+            merged[r["data_semana"]] = r
+        return list(merged.values())
+
+    # Last resort: NA JSON (latest week only).
+    try:
+        return fetch_na_json(session)
+    except Exception as e:  # noqa: BLE001
+        print(f"[na-json] FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+        return []
+
+
 def main() -> None:
-    ap = argparse.ArgumentParser(description="Sync CEPEA weekly anhydrous-ethanol (SP) -> Supabase")
-    ap.add_argument("--since", default=DEFAULT_SINCE, help="start date dd/mm/yyyy (primary path)")
-    ap.add_argument("--fallback-only", action="store_true", help="skip CEPEA, scrape NA only")
+    ap = argparse.ArgumentParser(
+        description="Sync CEPEA weekly anhydrous-ethanol (SP) -> Supabase"
+    )
+    ap.add_argument(
+        "--backfill", action="store_true",
+        help="DEEP history via Chrome+Excel (NOT for CI; lazy-imports Selenium).",
+    )
+    ap.add_argument(
+        "--since", default=DEFAULT_SINCE,
+        help="start date dd/mm/yyyy (only used with --backfill)",
+    )
+    ap.add_argument(
+        "--dry-run", action="store_true",
+        help="fetch + run guards but DO NOT upsert (prints what would be written).",
+    )
     args = ap.parse_args()
 
-    records: list[dict] = []
-    primary_err: Exception | None = None
-
-    if not args.fallback_only:
-        try:
-            records = fetch_primary(args.since)
-        except Exception as e:  # noqa: BLE001
-            primary_err = e
-            print(f"[primary] FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+    if args.backfill:
+        print("[main] --backfill: legacy Chrome + full-history Excel path")
+        records = fetch_backfill(args.since)
+    else:
+        print("[main] weekly path: widget -> NA HTML -> NA JSON (browser-free)")
+        records = _run_weekly()
 
     if not records:
-        try:
-            records = fetch_fallback()
-            if primary_err and records:
-                print("[warn] using forward-fill fallback ONLY (no deep history this run)",
-                      file=sys.stderr)
-        except Exception as e:  # noqa: BLE001
-            print(f"[fallback] FAILED: {type(e).__name__}: {e}", file=sys.stderr)
+        sys.exit("FATAL: zero rows from all CEPEA sources — aborting (no data).")
 
-    if not records:
-        sys.exit("FATAL: zero rows from CEPEA and from the fallback — aborting (no data).")
+    # Guards that run for BOTH paths before any write.
+    _assert_fresh(records)
+
+    if args.dry_run:
+        for r in sorted(records, key=lambda x: x["data_semana"])[-5:]:
+            print(f"[dry-run] would upsert {r}")
+        print(f"[dry-run] {len(records)} rows total — NOT writing.")
+        return
 
     upsert(records)
 

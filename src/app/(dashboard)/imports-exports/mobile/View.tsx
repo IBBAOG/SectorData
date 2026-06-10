@@ -36,7 +36,6 @@
 // fetching for the active product; the tab + product change land together so
 // only one refetch cycle is triggered per user gesture.
 
-import dynamic from "next/dynamic";
 import type { Layout, PlotData } from "plotly.js";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -57,9 +56,12 @@ import type {
   PriceSummaryRow,
 } from "../useImportsExportsData";
 
-import { COMMON_LAYOUT, AXIS_LINE, PALETTE, emptyPlot } from "../../../../lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, PALETTE, COUNTRY_COLORS, emptyPlot } from "../../../../lib/plotlyDefaults";
+import PlotlyChart from "../../../../components/PlotlyChart";
+import { applyStackedLegendOrder } from "../../../../lib/charts/colors";
 
-const Plot = dynamic(() => import("react-plotly.js"), { ssr: false });
+// PlotlyChart wraps react-plotly.js + the trace lock (validateTraces). `ctx`
+// values match desktop and the lock's MIGRATED_CTX allowlist.
 
 // Unit conversions (USD/m³ → USD/bbl / USD/ton / ¢/gal) are done inside the
 // shared hook (`useImportsExportsData`) — both `importsPriceSummary` and
@@ -77,12 +79,12 @@ const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   label: string;
   color: string;
 }> = [
-  { dbName: "Rússia", label: "Russia", color: "#000000" },
-  { dbName: "Estados Unidos", label: "United States", color: "#FF5000" },
-  { dbName: "Emirados Árabes Unidos", label: "UAE", color: "#73C6A1" },
-  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: "#FFAE66" },
-  { dbName: "Índia", label: "India", color: "#8258A0" },
-  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: "#D2FF00" },
+  { dbName: "Rússia", label: "Russia", color: COUNTRY_COLORS.Russia },
+  { dbName: "Estados Unidos", label: "United States", color: COUNTRY_COLORS["United States"] },
+  { dbName: "Emirados Árabes Unidos", label: "UAE", color: COUNTRY_COLORS.UAE },
+  { dbName: "Países Baixos (Holanda)", label: "Netherlands", color: COUNTRY_COLORS.Netherlands },
+  { dbName: "Índia", label: "India", color: COUNTRY_COLORS.India },
+  { dbName: "Arábia Saudita", label: "Saudi Arabia", color: COUNTRY_COLORS["Saudi Arabia"] },
 ];
 
 const OTHERS_COLOR = "#7F7F7F";
@@ -335,10 +337,18 @@ function PriceSummaryTable({
   rows,
   unitLabel,
   loading,
+  anchorAno,
+  anchorMes,
 }: {
   rows: PriceSummaryRow[];
   unitLabel: string;
   loading: boolean;
+  /** Nominal anchor month (period.end) — the month the Latest/MoM%/YoY% columns
+   *  represent. A row whose own anchor differs (it had no data at period.end and
+   *  the hook walked backward) gets a muted month label on its data cells so the
+   *  value is not silently misattributed to period.end. */
+  anchorAno: number;
+  anchorMes: number;
 }) {
   if (loading && rows.length === 0) {
     return (
@@ -382,6 +392,31 @@ function PriceSummaryTable({
       {rows.map((r) => {
         const mom = fmtDelta(r.momPct);
         const yoy = fmtDelta(r.yoyPct);
+        // When this row's data could not be read at the nominal anchor month
+        // (period.end), the hook walked backward to the most recent month with
+        // data. Surface the real month so the value is not silently
+        // misattributed to period.end. Mirrors desktop/View.tsx.
+        const anchorDiffers =
+          r.anchorAno !== anchorAno || r.anchorMes !== anchorMes;
+        const rowPrevMonthCursor = addMonths(
+          { ano: r.anchorAno, mes: r.anchorMes },
+          -1,
+        );
+        const rowPrevYearCursor = addMonths(
+          { ano: r.anchorAno, mes: r.anchorMes },
+          -12,
+        );
+        const latestSuffix = anchorDiffers
+          ? formatMonth(r.anchorAno, r.anchorMes)
+          : null;
+        const momSuffix =
+          anchorDiffers && r.momPct != null
+            ? formatMonth(rowPrevMonthCursor.ano, rowPrevMonthCursor.mes)
+            : null;
+        const yoySuffix =
+          anchorDiffers && r.yoyPct != null
+            ? formatMonth(rowPrevYearCursor.ano, rowPrevYearCursor.mes)
+            : null;
         return (
           <div
             key={r.country}
@@ -437,6 +472,11 @@ function PriceSummaryTable({
               <span style={{ fontSize: 9, color: "#999", fontWeight: 400, marginLeft: 4 }}>
                 {unitLabel}
               </span>
+              {latestSuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {latestSuffix}
+                </div>
+              )}
             </div>
             <div
               style={{
@@ -447,6 +487,11 @@ function PriceSummaryTable({
               }}
             >
               {mom.text}
+              {momSuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {momSuffix}
+                </div>
+              )}
             </div>
             <div
               style={{
@@ -457,6 +502,11 @@ function PriceSummaryTable({
               }}
             >
               {yoy.text}
+              {yoySuffix && (
+                <div style={{ fontSize: 9, color: "#999", fontWeight: 400 }}>
+                  {yoySuffix}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -1392,15 +1442,16 @@ export default function MobileView(): React.ReactElement {
           />
           <div style={{ padding: "0 8px 8px" }}>
             {importsPaisesTraces.length > 0 ? (
-              <Plot
+              <PlotlyChart
+                ctx="imports-exports:by-origin-country"
                 data={importsPaisesTraces}
-                layout={importsPaisesLayout}
+                layout={applyStackedLegendOrder(importsPaisesLayout)}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
             ) : !paisesLoading ? (
-              <Plot
-                data={emptyPlot().data}
+              <PlotlyChart
+                data={emptyPlot().data as PlotData[]}
                 layout={{ ...emptyPlot().layout, height: 280 }}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
@@ -1460,9 +1511,10 @@ export default function MobileView(): React.ReactElement {
           )}
           <div style={{ padding: "0 8px 8px" }}>
             {importersTraces.length > 0 ? (
-              <Plot
+              <PlotlyChart
+                ctx="imports-exports:by-importer"
                 data={importersTraces}
-                layout={importersLayout}
+                layout={applyStackedLegendOrder(importersLayout)}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
@@ -1519,6 +1571,8 @@ export default function MobileView(): React.ReactElement {
             rows={importsPriceSummary}
             unitLabel="USD/ton"
             loading={importsUnitPriceLoading}
+            anchorAno={filters.period.end.ano}
+            anchorMes={filters.period.end.mes}
           />
 
           <div
@@ -1545,15 +1599,16 @@ export default function MobileView(): React.ReactElement {
           />
           <div style={{ padding: "0 8px 8px" }}>
             {exportsPaisesTraces.length > 0 ? (
-              <Plot
+              <PlotlyChart
+                ctx="imports-exports:exports-by-destination"
                 data={exportsPaisesTraces}
-                layout={exportsPaisesLayout}
+                layout={applyStackedLegendOrder(exportsPaisesLayout)}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
               />
             ) : !exportsPaisesLoading ? (
-              <Plot
-                data={emptyPlot().data}
+              <PlotlyChart
+                data={emptyPlot().data as PlotData[]}
                 layout={{ ...emptyPlot().layout, height: 280 }}
                 config={{ responsive: true, displayModeBar: false }}
                 style={{ width: "100%" }}
@@ -1594,6 +1649,8 @@ export default function MobileView(): React.ReactElement {
             rows={exportsPriceSummaryColored}
             unitLabel="USD/bbl"
             loading={exportsUnitPriceLoading}
+            anchorAno={filters.period.end.ano}
+            anchorMes={filters.period.end.mes}
           />
 
           <div

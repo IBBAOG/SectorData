@@ -61,12 +61,6 @@ const SECTION_ICONS: Record<SectionId, React.ReactNode> = {
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </svg>
   ),
-  "alert-recipients": (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
-      <polyline points="22,6 12,13 2,6" />
-    </svg>
-  ),
   "client-alerts": (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -133,22 +127,6 @@ export default function DesktopView(): React.ReactElement | null {
     savingUser,
     savedUser,
     handleRoleChange,
-
-    recipients,
-    recipientsLoading,
-    recipientsError,
-    newEmail,
-    setNewEmail,
-    addingEmail,
-    addEmailError,
-    addEmailSuccess,
-    togglingId,
-    removingId,
-    confirmRemoveId,
-    setConfirmRemoveId,
-    handleAddRecipient,
-    handleToggleRecipient,
-    handleRemoveRecipient,
 
     caStats,
     caBases,
@@ -308,7 +286,6 @@ export default function DesktopView(): React.ReactElement | null {
     handleConfirmDeleteSgTable,
     handleCancelDeleteSgTable,
 
-    isValidEmail,
     formatDateBR,
   } = useAdminPanelData();
 
@@ -725,132 +702,6 @@ export default function DesktopView(): React.ReactElement | null {
                 key={activeDataInputSlug}
                 config={EDITABLE_TABLES.find((t) => t.slug === activeDataInputSlug)!}
               />
-            </div>
-          )}
-
-          {/* ── Alert Recipients ─────────────────────────────────────────────── */}
-          {activeSection === "alert-recipients" && (
-            <div className="settings-card">
-              <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
-                Alert Recipients
-              </h2>
-              <p style={{ fontSize: 13, color: "#888", margin: "0 0 20px" }}>
-                Emails that will receive automatic notifications of new data releases (ANP, MDIC, etc.).
-              </p>
-
-              {/* Add form */}
-              <div style={{ display: "flex", gap: 10, marginBottom: 24, alignItems: "flex-start" }}>
-                <div style={{ flex: 1 }}>
-                  <input
-                    type="email"
-                    value={newEmail}
-                    onChange={e => { setNewEmail(e.target.value); }}
-                    onKeyDown={e => e.key === "Enter" && handleAddRecipient()}
-                    placeholder="email@empresa.com"
-                    disabled={addingEmail}
-                    style={{
-                      width: "100%", padding: "8px 12px", borderRadius: 8,
-                      border: `1px solid ${addEmailError ? "#e53e3e" : "#e0e0e0"}`,
-                      fontSize: 13, fontFamily: "Arial, sans-serif", outline: "none",
-                      boxSizing: "border-box",
-                    }}
-                  />
-                  {addEmailError && (
-                    <div style={{ fontSize: 12, color: "#e53e3e", marginTop: 4 }}>{addEmailError}</div>
-                  )}
-                </div>
-                <button
-                  onClick={handleAddRecipient}
-                  disabled={addingEmail || !isValidEmail(newEmail)}
-                  style={{
-                    padding: "8px 18px", borderRadius: 8, border: "none",
-                    background: addingEmail || !isValidEmail(newEmail) ? "#e0e0e0" : ORANGE,
-                    color: addingEmail || !isValidEmail(newEmail) ? "#aaa" : "#fff",
-                    fontSize: 13, fontWeight: 600,
-                    cursor: addingEmail || !isValidEmail(newEmail) ? "not-allowed" : "pointer",
-                    fontFamily: "Arial, sans-serif", whiteSpace: "nowrap",
-                    transition: "background 0.15s",
-                  }}
-                >
-                  {addingEmail ? "Adding…" : addEmailSuccess ? "✓ Added" : "Add"}
-                </button>
-              </div>
-
-              {/* List */}
-              {recipientsLoading ? (
-                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>Loading…</div>
-              ) : recipientsError ? (
-                <div style={{ padding: "16px", background: "#fff5f5", borderRadius: 8, color: "#e53e3e", fontSize: 13 }}>
-                  Error: {recipientsError}
-                </div>
-              ) : recipients.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", color: "#bbb", fontSize: 13 }}>No recipients registered.</div>
-              ) : (
-                recipients.map((r) => {
-                  const isToggling = togglingId === r.id;
-                  const isRemoving = removingId === r.id;
-                  const isConfirming = confirmRemoveId === r.id;
-                  return (
-                    <div key={r.id} className="settings-module-row" style={{ alignItems: "center", gap: 12 }}>
-                      {/* Email + date */}
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {r.email}
-                        </div>
-                        <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
-                          Added on {formatDateBR(r.created_at)}
-                        </div>
-                      </div>
-                      {/* Status badge */}
-                      <span style={{
-                        fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 12,
-                        background: r.is_active ? "rgba(72,187,120,0.15)" : "rgba(160,160,160,0.15)",
-                        color: r.is_active ? "#38a169" : "#999",
-                        flexShrink: 0,
-                      }}>
-                        {r.is_active ? "Active" : "Inactive"}
-                      </span>
-                      {/* Actions */}
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                        {isConfirming ? (
-                          <>
-                            <span style={{ fontSize: 12, color: "#e53e3e" }}>Are you sure?</span>
-                            <button
-                              onClick={() => handleRemoveRecipient(r.id)}
-                              disabled={isRemoving}
-                              style={{ fontSize: 12, fontWeight: 600, padding: "4px 10px", borderRadius: 6, border: "none", background: "#e53e3e", color: "#fff", cursor: isRemoving ? "wait" : "pointer", fontFamily: "Arial, sans-serif" }}
-                            >
-                              {isRemoving ? "…" : "Remove"}
-                            </button>
-                            <button
-                              onClick={() => setConfirmRemoveId(null)}
-                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e0e0e0", background: "#fff", color: "#555", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleToggleRecipient(r.id, r.is_active)}
-                              disabled={!!togglingId}
-                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: `1px solid ${r.is_active ? "#e0e0e0" : ORANGE}`, background: "#fff", color: r.is_active ? "#666" : ORANGE, cursor: isToggling ? "wait" : "pointer", fontFamily: "Arial, sans-serif", opacity: isToggling ? 0.6 : 1 }}
-                            >
-                              {r.is_active ? "Deactivate" : "Activate"}
-                            </button>
-                            <button
-                              onClick={() => setConfirmRemoveId(r.id)}
-                              style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid #e0e0e0", background: "#fff", color: "#e53e3e", cursor: "pointer", fontFamily: "Arial, sans-serif" }}
-                            >
-                              Remove
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
             </div>
           )}
 

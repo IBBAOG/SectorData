@@ -228,7 +228,7 @@ export default function MobileView(): React.ReactElement | null {
     // Company level
     selectedEmpresa, setSelectedEmpresa,
     companySerieRows,
-    companyFieldAggregates, companyFieldsNoData,
+    companyFieldAggregates, companyFieldCount, companyFieldsNoData,
     companyMonthlyOilChart,
   } = useAnpCdpDiariaData();
 
@@ -443,6 +443,7 @@ export default function MobileView(): React.ReactElement | null {
           serieLoading={serieLoading}
           companySerieRows={companySerieRows}
           companyFieldAggregates={companyFieldAggregates}
+          companyFieldCount={companyFieldCount}
           companyFieldsNoData={companyFieldsNoData}
           companyOilTrace={companyOilTrace}
           companyMonthlyOilChart={companyMonthlyOilChart}
@@ -1036,6 +1037,7 @@ function CompanyMobileContent({
   serieLoading,
   companySerieRows,
   companyFieldAggregates,
+  companyFieldCount,
   companyFieldsNoData,
   companyOilTrace,
   companyMonthlyOilChart,
@@ -1044,6 +1046,8 @@ function CompanyMobileContent({
   serieLoading: boolean;
   companySerieRows: AnpCdpDiariaEmpresaSeriePonto[];
   companyFieldAggregates: CompanyFieldAggregate[];
+  /** Honest distinct-field-with-daily-data count (not the capped top-6+Others). */
+  companyFieldCount: number;
   companyFieldsNoData: { campo: string; stakePct: number }[];
   companyOilTrace: PlotData[];
   companyMonthlyOilChart: { data: PlotData[]; layout: Partial<Layout> };
@@ -1066,7 +1070,7 @@ function CompanyMobileContent({
           unit="kbpd"
           topN={0}
           isExplicit
-          explicitCount={companyFieldAggregates.length}
+          explicitCount={companyFieldCount}
           updating={serieLoading}
           companyTotal
         >
@@ -1106,7 +1110,7 @@ function CompanyMobileContent({
           unit="kbpd"
           topN={0}
           isExplicit
-          explicitCount={companyFieldAggregates.length}
+          explicitCount={companyFieldCount}
           updating={serieLoading}
           companyTotal
         >
@@ -1206,16 +1210,19 @@ function CompanyFieldCard({
       }
       subtitle={
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-          <span
-            style={{
-              display: "inline-flex", alignItems: "center", padding: "2px 8px",
-              borderRadius: 6, background: "var(--mobile-surface-2, #fafafc)",
-              border: "1px solid var(--mobile-border, #e0e0e0)",
-              color: "var(--mobile-text-muted, #6b6b73)", fontSize: 11, fontWeight: 700,
-            }}
-          >
-            {formatStakePct(item.stakePct)}
-          </span>
+          {/* Others is a mixed-stake aggregate → no stake badge. */}
+          {Number.isFinite(item.stakePct) && (
+            <span
+              style={{
+                display: "inline-flex", alignItems: "center", padding: "2px 8px",
+                borderRadius: 6, background: "var(--mobile-surface-2, #fafafc)",
+                border: "1px solid var(--mobile-border, #e0e0e0)",
+                color: "var(--mobile-text-muted, #6b6b73)", fontSize: 11, fontWeight: 700,
+              }}
+            >
+              {formatStakePct(item.stakePct)}
+            </span>
+          )}
           {item.bacia && (
             <span style={{ fontSize: 11, color: "var(--mobile-text-muted, #6b6b73)" }}>
               {item.bacia}

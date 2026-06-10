@@ -703,6 +703,8 @@ def buscar_itaqui() -> pd.DataFrame:
     mapeamento = {0: "Atracado", 1: "Fundeado", 2: "Esperado"}
     partes = []
     total_diesel_rows = 0
+    total_nao_import_rows = 0
+    total_sem_direcao_rows = 0
 
     for i, status in mapeamento.items():
         if i >= len(raw_tables):
@@ -712,11 +714,61 @@ def buscar_itaqui() -> pd.DataFrame:
         col_carga = _col(df, "Carga", required=False)
         if col_carga is None:
             continue
-        mask = df[col_carga].str.strip().str.upper().str.contains("DIESEL", na=False)
-        f = df.loc[mask].copy()
-        if f.empty:
-            continue
-        total_diesel_rows += len(f)
+        diesel_mask = df[col_carga].str.strip().str.upper().str.contains("DIESEL", na=False)
+
+        # ── Per-table direction asymmetry (diagnosed 2026-06-08) ──────────────
+        # The Itaqui page publishes THREE tables with DIFFERENT schemas:
+        #   [0] Atracado (berthed)  — NO `Operação` column at all. Columns are
+        #       Berço | IMO | Navio | Bordo | Comp | DWT | Carga | Qtd.Carga | …
+        #       ("Bordo" = BORESTE/BOMBORDO = physical berthing side, NOT a
+        #       cargo direction). There is no import/export/transbordo signal.
+        #   [1] Fundeado (anchored) — HAS `Operação` (IMPORTAÇÃO/EXPORTAÇÃO/…).
+        #   [2] Esperado (expected) — HAS `Operação` + `Prev Chegada`. This is
+        #       where the DALLAS (IMO 9390020) TRANSBORDO 70.000 t row appears.
+        #
+        # So `Operação` is NOT uniformly present (the earlier assumption that it
+        # exists on all three was wrong — see fix 40cf3592). We therefore branch:
+        #   • Tables WITH `Operação` → keep the IMPORTAÇÃO-only filter (drops the
+        #     DALLAS transbordo and any EXPORTAÇÃO row — the original intent).
+        #   • The Atracado table WITHOUT `Operação` → capture diesel, Maceió-style
+        #     (buscar_maceio): a diesel ship AT BERTH is physically discharging
+        #     into the terminal, i.e. an import in practice, and the page gives no
+        #     direction to filter on. Cabotage (Brazilian-flag coastal) is removed
+        #     downstream by 04_cabotage_cleanup. Skipping it instead (the old
+        #     "pular por segurança") would silently DROP legitimate diesel imports
+        #     at berth — a sub-capture regression in the opposite direction.
+        col_op = _col(df, "Opera", required=False)
+        if col_op is None:
+            # Atracado-style table: no direction column → capture diesel as-is.
+            # (Only the Atracado table reaches here on the current schema; if a
+            # NEW direction-less table appeared elsewhere, the same Maceió-style
+            # capture + downstream cabotage filter applies.)
+            f = df.loc[diesel_mask].copy()
+            n_sem_direcao = len(f)
+            total_sem_direcao_rows += n_sem_direcao
+            print(
+                f"    [Itaqui] tabela {status} sem coluna OPERAÇÃO (schema do porto) "
+                f"— capturando {n_sem_direcao} linha(s) diesel como importação "
+                f"de facto (navio atracado descarrega no porto; cabotagem é "
+                f"filtrada a jusante em 04_cabotage_cleanup)"
+            )
+            if f.empty:
+                continue
+            total_diesel_rows += n_sem_direcao
+        else:
+            # "IMPORTA" (não a string completa com cedilha/til) por robustez de
+            # encoding. "EXPORTAÇÃO" NÃO casa com "IMPORTA"; "IMPORTAÇÃO" casa.
+            import_mask = df[col_op].str.strip().str.upper().str.contains("IMPORTA", na=False)
+            mask = diesel_mask & import_mask
+
+            # Contabiliza diesel que NÃO é importação (export/transbordo/consumo)
+            # para que um futuro vazamento seja visível nos logs.
+            total_nao_import_rows += int((diesel_mask & ~import_mask).sum())
+
+            f = df.loc[mask].copy()
+            if f.empty:
+                continue
+            total_diesel_rows += len(f)
 
         col_navio = _col(df, "Navio")
         f = f.rename(columns={col_navio: "Navio", col_carga: "Carga"})
@@ -765,7 +817,11 @@ def buscar_itaqui() -> pd.DataFrame:
 
     print(
         f"    [Itaqui] tabelas parseadas: {len(raw_tables)}, "
-        f"linhas diesel encontradas: {total_diesel_rows}"
+        f"linhas diesel mantidas: {total_diesel_rows} "
+        f"(importação explícita em tabelas com OPERAÇÃO + atracados sem coluna "
+        f"de direção: {total_sem_direcao_rows}), "
+        f"diesel não-importação descartado (export/transbordo/consumo): "
+        f"{total_nao_import_rows}"
     )
     return pd.concat(partes, ignore_index=True, sort=False) if partes else pd.DataFrame()
 

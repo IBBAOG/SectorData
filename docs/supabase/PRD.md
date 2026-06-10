@@ -55,6 +55,7 @@ supabase/
 | `anp_producao_derivados` | input do `recompute_dg_margins` (D&G Margins) | ETL (`scripts/pipelines/anp/producao/anp_producao_derivados_sync.py`) — produção mensal nacional m³ (Gasolina A / Óleo Diesel, 1990→presente) |
 | `fuel_tax_reference` | input do `recompute_dg_margins` (D&G Margins) | Imposto federal + ICMS R$/L por período — ANP Síntese de Preços (federal) + CONFAZ ad-rem (ICMS) |
 | `fuel_blend_ratio` | input do `recompute_dg_margins` (D&G Margins) | % de mandato de etanol/biodiesel por período |
+| `anp_lpc_brasil` | input do `recompute_dg_margins` (D&G Margins — pump price) | ETL (`scripts/pipelines/anp/lpc_sync.py`, mesmo run do `etl_anp_lpc.yml`) — preço de **revenda nacional** publicado pela ANP (volume-weighted, aba BRASIL do resumo semanal); ~146 semanas 2023-05→presente com lacunas |
 | `field_stakes` | future `/production` dashboard (read) + dash-admin "Field Stakes" editor (write via SECURITY DEFINER + `is_admin()`) | Admin via `admin_upsert_field_stakes(p_campo, p_stakes jsonb)` — replace-all-in-1-tx with `SUM(stake_pct)=100` validation. Migration `20260527600000_field_stakes.sql`. |
 | `price_bands` | dash-price-bands | Dados Locais (manual via `upload_price_bands.py`) |
 | `stock_portfolios` | dash-stocks | App (CRUD direto via PostgREST). Desde `20260522000001`: coluna `is_public` + nullable `user_id` + seed do portfolio público `00000000-...-001` "Brazilian Oil & Gas (default)" |
@@ -534,6 +535,21 @@ ON CONFLICT (variant) DO UPDATE
 
 **Conservative scope of this round.** Other "X de Y" variants exist in the data (LESTE DE POÇO XAVIER, NORTE DE FAZENDA CARUAÇU, NORTE DE PESCADA, OESTE DE ATAPU, OESTE DE UBARANA, SUL DE BERBIGÃO, SUL DE CORURIPE, SUL DE LULA) but the PDF only explicitly aggregates Sul de Tupi into Tupi. All other variants stay separate until a PDF/IR doc justifies merging.
 
+#### Override (2026-06-08) — `PITANGOLA → PEREGRINO` — Migration `20260614000000_anp_cdp_diaria_merge_pitangola_into_peregrino.sql`
+
+CEO rule: investors treat **Peregrino = Peregrino + Pitangola** (both PRIO 80% working interest, both in bacia `Campos`). Adds a second manual row to `field_canonical_names`:
+
+```sql
+INSERT INTO public.field_canonical_names (variant, canonical, source)
+VALUES ('PITANGOLA', 'PEREGRINO', 'manual')
+ON CONFLICT (variant) DO UPDATE
+   SET canonical = EXCLUDED.canonical, source = EXCLUDED.source;
+```
+
+The migration's primary target is `/anp-cdp-diaria`: it recreates the 4 **field/company-scoped** daily RPCs (`get_anp_cdp_diaria_serie`, `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos`) to project `canonical_field_name(campo)` + `SUM(...)` + GROUP BY canonical (relabel-and-aggregate, since `anp_cdp_diaria` carries separate raw PEREGRINO/PITANGOLA rows per day). Signatures, `SECURITY DEFINER`, `search_path` and grants preserved. The installation/well daily RPCs are untouched (field-scoped merge only).
+
+> **Cross-table caveat — `field_canonical_names` is shared.** Because `canonical_field_name()` is also baked into the `/well-by-well` MVs (`mv_production_monthly`, `mv_brazil_canonical_monthly`) at refresh time, this override **will** fold PITANGOLA into PEREGRINO there too on the **next MV refresh** (via `02_upload.py`'s `refresh_mv_production()` hook). That is consistent with the same investor convention (PRIO IR reports Peregrino combined), so it is acceptable — but note it is **not isolated to `/anp-cdp-diaria`**. This migration does **not** issue a REFRESH (the daily dashboard reads `anp_cdp_diaria` live, not the MVs); the `/well-by-well` MVs pick it up on their normal refresh cadence. If a future analyst needs Peregrino and Pitangola kept separate on `/well-by-well`, this override would have to be scoped differently (the canonical helper is global today).
+
 #### Round 12 (2026-05-29) — Migration `20260529300000_well_by_well_header_expand.sql`
 
 Expands `get_well_by_well_header(p_empresa, p_year, p_month)` from 16 rows to **24 rows** so the per-empresa section matches the structure of the Brazil section verbatim. Before Round 12 the empresa block carried only Oil rows (display_order 13–16). After Round 12 it carries Oil + Gas + Main fields, mirroring Brazil (1–12).
@@ -642,6 +658,7 @@ Todas com RLS habilitada, policy `acesso autenticado` FOR SELECT TO authenticate
 | `anp_desembaracos` | (ano, mes, ncm_codigo, pais_origem, cnpj) | quantidade_kg, **importador**, **cnpj**, **uf_cnpj** — enriquecida em `20260525000010` (Imports & Exports reform). PK estendida com `cnpj`. Rows pré-backfill carregam sentinela `cnpj='__legacy__'` até Worktree B ETL backfill rodar. Desde `20260608400000` alimenta apenas o lado By Importer (Brazil) do `/imports-exports` (única fonte com CNPJ); o gráfico By Origin Country + YoY `paises` migraram para `mdic_comex`/ComexStat. | `20260504000003_anp_fase3.sql` + `20260525000010_imports_exports_enrichment.sql` | `pipelines/anp/fase3/02_desembaracos_sync.py` |
 | ~~`anp_painel_imp_dist`~~ | — | **DROPADA** em `20260525000010_imports_exports_enrichment.sql` (CASCADE) — substituída pela `anp_desembaracos` enriquecida na reforma Imports & Exports | — | — |
 | `anp_lpc` | (data_fim, produto, estado) | preco_medio_venda, preco_medio_compra, n_postos | `20260504000004_lpc_sindicom.sql` | `pipelines/anp/lpc_sync.py` |
+| `anp_lpc_brasil` | (data_fim, produto) | preco_revenda, n_postos, fonte. Preço de **revenda nacional** publicado pela ANP (volume-weighted por região), aba **BRASIL** do `resumo_semanal_lpc_*.xlsx`. `produto` normalizado: `GASOLINA COMUM` / `DIESEL S10`. Consumida diretamente como **pump price** pelo `recompute_dg_margins` (D&G Margins) — substitui o cálculo station-weighted sobre `anp_lpc`, que rodava ~R$0,04 alto. **Separada de propósito** de `anp_lpc` (per-UF, consumida por `/anp-prices`) — não fundir. ~146 semanas (2023-05→presente) **com lacunas** (ANP não publica o resumo toda semana). RLS: SELECT `authenticated`; writes só service-role. | `20260617000000_anp_lpc_brasil.sql` | `pipelines/anp/lpc_sync.py` (mesmo run do `etl_anp_lpc.yml` que popula `anp_lpc`) |
 | `anp_cdp_producao` | (ano, mes, poco, campo, bacia, local) | petroleo_bbl_dia, gas_total_mm3_dia, oleo_bbl_dia, agua_bbl_dia, operador, local (PosSal/PreSal/Terra), instalacao_destino, tipo_instalacao, tempo_prod_hs_mes | `20260504000005_anp_cdp.sql` (v1) → `_v7` (schema final) → `20260504000013` (RLS authenticated) | `pipelines/anp/cdp/01_extract.py` → `02_upload.py` (~1.8M rows) |
 | `anp_precos_distribuicao` | (data_referencia, distribuidora, produto, uf) | preco_distribuicao, unidade | `20260507000005_anp_precos_distribuicao.sql` | `pipelines/anp/precos_distribuicao_sync.py` |
 | `anp_cdp_diaria` | (data, campo, bacia) | petroleo_bbl_dia, gas_mm3_dia; histórico desde 2025-11-09 (limitação da fonte Power BI). Populada por `scripts/extractors/anp_cdp_powerbi.py` 3×/dia em modo **append-only** (`ON CONFLICT DO NOTHING`). Linhas existentes nunca são sobrescritas — snapshot histórico imutável a partir de 2025-11-09. | `20260508000001_anp_cdp_diaria.sql` | `scripts/extractors/anp_cdp_powerbi.py` (workflow `etl_anp_cdp_diaria.yml`, 3×/dia) |
@@ -779,16 +796,18 @@ Total: 23 sources (era 22). Atributos preservados na recriação: `LANGUAGE sql 
 
 ### Fixed subsidy regime since 2026-06-01
 
-Migration: `supabase/migrations/20260608200000_subsidy_fixed_diesel_1_12.sql` (applied in production).
+Migration: `supabase/migrations/20260613000000_subsidy_fixed_diesel_1_47.sql` (applied in production) — supersedes the earlier `20260608200000_subsidy_fixed_diesel_1_12.sql` (which set the flat value to 1.12).
 
 A regulatory change effective **2026-06-01** turned the fuel subsidy into a **flat value** for both agents:
 
 | Product | Fixed value (≥ 2026-06-01) | Where it lives |
 |---|---|---|
-| Diesel | **1.12 BRL/L** (`importador` and `produtor`) | DB — `compute_subsidy_reimbursement` |
+| Diesel | **1.47 BRL/L** effective (`importador` and `produtor`) | DB — `compute_subsidy_reimbursement` |
 | Gasoline | **0.44 BRL/L** delta (Petrobras +0.44, import parity −0.44) | client-side in `/price-bands` (`use<PriceBands>Data` hook) — see `docs/app/price-bands.md` |
 
-**Diesel mechanics:** `compute_subsidy_reimbursement(p_date, p_tipo_agente)` was `CREATE OR REPLACE`d with a leading `CASE WHEN p_date >= DATE '2026-06-01' THEN 1.12 ELSE (<historical AVG-over-5-regions-of-MIN(MAX(ref−comm,0),cap) formula>) END`. The historical branch is byte-for-byte the prior formula wrapped as a scalar subquery, so dates before 2026-06-01 are **untouched** and still depend on `anp_subsidy_caps` + `anp_subsidy_commercialization` + `anp_subsidy_diesel_reference`. SECURITY DEFINER + `search_path` + `GRANT EXECUTE TO anon, authenticated` re-applied (Pegadinha #18). The migration finishes by calling `_pb_refresh_w_subsidy_from_date(DATE '2026-06-01')` so the `price_bands._w_subsidy` columns (and therefore `/price-bands` Petrobras-w/subsidy and `/subsidy-tracker` `petrobras_adjusted` / `ipp_adjusted`) pick up the flat value automatically.
+**Why 1.47, not the 1.12 headline:** MP nº 1.363 (30/05/2026) carries a **headline** subvention of BRL 1.12. The **effective** subsidy that keeps Petrobras / importers whole is **1.47 = 1.12 (subvention) + 0.35 (compensation)**: on 2026-06-01 Petrobras cut its refinery price by BRL 0.35 (3.65 → 3.30, already reflected in `price_bands.petrobras_price`) and PIS/COFINS of an equivalent amount was reactivated. Economic identity: 3.30 (price) + 1.47 (subsidy) = 4.77 = the pre-reform realization (3.65 + 1.12). The dashboards reflect the **effective** economics (1.47), not the MP headline (1.12). Validated with the CEO on 2026-06-08. **Do not revert to 1.12.**
+
+**Diesel mechanics:** `compute_subsidy_reimbursement(p_date, p_tipo_agente)` was `CREATE OR REPLACE`d with a leading `CASE WHEN p_date >= DATE '2026-06-01' THEN 1.47 ELSE (<historical AVG-over-5-regions-of-MIN(MAX(ref−comm,0),cap) formula>) END`. The historical branch is byte-for-byte the prior formula wrapped as a scalar subquery, so dates before 2026-06-01 are **untouched** and still depend on `anp_subsidy_caps` + `anp_subsidy_commercialization` + `anp_subsidy_diesel_reference`. SECURITY DEFINER + `search_path` + `GRANT EXECUTE TO anon, authenticated` re-applied (Pegadinha #18). The migration finishes by calling `_pb_refresh_w_subsidy_from_date(DATE '2026-06-01')` so the `price_bands._w_subsidy` columns (and therefore `/price-bands` Petrobras-w/subsidy and `/subsidy-tracker` `petrobras_adjusted` / `ipp_adjusted`) pick up the flat value automatically.
 
 **Implication:** `anp_subsidy_caps` and `anp_subsidy_commercialization` no longer affect any date on/after 2026-06-01 — they only drive the historical (< 2026-06-01) leg. Their ETL (`etl_anp_subsidy_diesel.yml`) keeps running and remains the freshness signal for those sources, but new caps/commercialization rows have no effect on current-regime reimbursement.
 
@@ -859,7 +878,7 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 |---|---|---|
 | Market Share (absorveu Sales Volumes em 2026-05-26) | `get_ms_*` (sole family in use). `get_sv_*` legacy RPCs dropped in migration `20260526400000_drop_sv_rpcs.sql`. | dash-market-share |
 | Navios | `get_nd_*` | dash-navios-diesel |
-| D&G Margins | `get_dg_*` (read, anon/authenticated) + `recompute_dg_margins(p_week_start text, p_week_end text)` — **SECURITY DEFINER, `EXECUTE` only `service_role`** (recompute job chamado pelo `etl_dg_margins.yml`; recalcula `d_g_margins` a partir das tabelas-fonte de preço/produção/etanol/imposto/blend) | dash-margins |
+| D&G Margins | `get_dg_*` (read, anon/authenticated) + `recompute_dg_margins(p_week_start text, p_week_end text)` — **SECURITY DEFINER, `SET search_path = public, pg_temp`, `SET statement_timeout = '300s'`, `EXECUTE` only `service_role`** (recompute job chamado pelo `etl_dg_margins.yml`; recalcula `d_g_margins` a partir das tabelas-fonte de preço/produção/etanol/imposto/blend). Bounded args são ISO `"W/YYYY"` unpadded (ex. `12/2026`), parseados via `to_date('IYYY-IW')`; ambos NULL = timeline completa. Ver § "`recompute_dg_margins` — timeout guard & optimization (incident 2026-06-09)". | dash-margins |
 | Price Bands | `get_price_bands_*` | dash-price-bands |
 | Profile / Admin | `get_my_*`, `set_*`, `upsert_my_*`, `set_module_public_visibility`, `admin_list_default_news_keywords`, `admin_add_default_news_keyword`, `admin_set_default_news_keyword_match_type`, `admin_remove_default_news_keyword` | dash-admin |
 | News Hunter | `seed_my_news_hunter_keywords`, `get_default_news_keywords` (retrocompat — retorna `text[]`), `get_default_news_keywords_with_flags` (retorna `keyword, match_type` — consumido pelo scanner repo). Writes admin via `admin_*_default_news_keyword*` listados em Profile/Admin | dash-news-hunter |
@@ -1281,6 +1300,43 @@ GRANT EXECUTE ON FUNCTION public.<func>(<args>) TO authenticated;
 ```
 
 A migration `20260525250000_default_news_keywords_match_type.sql` aplica esse padrão nas 4 RPCs admin (`admin_list_*`, `admin_add_*`, `admin_set_*_match_type`, `admin_remove_*`). Auditoria periódica via `has_function_privilege('anon', p.oid, 'EXECUTE')` em RPCs admin é desejável — qualquer linha onde a função `admin_*` retorna `true` é gap.
+
+### `recompute_dg_margins` — timeout guard & optimization (incident 2026-06-09)
+
+Migration `20260616100000_recompute_dg_margins_timeout_guard.sql` (live in prod). Signature is **unchanged** — `recompute_dg_margins(p_week_start text, p_week_end text)`, `LANGUAGE plpgsql`, `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` only `service_role`. Args are unpadded ISO `"W/YYYY"` (e.g. `12/2026`), parsed to that ISO week's Monday via `to_date(split_part(...,'/',2) || '-' || split_part(...,'/',1), 'IYYY-IW')`; both NULL = full timeline.
+
+**What the migration added:**
+
+1. **Function-level `SET statement_timeout = '300s'`** (plus a `SET LOCAL statement_timeout = '300s'` at the top of the body).
+2. **Set-based `imp_pct` precompute.** The import%/production% split is a pure function of `(fuel_type, target month)`. The old body evaluated that correlated `INTERSECT`/`MAX`/`SUM` block once **per `(week, fuel)` grid row** (~2254 rows). It is now computed **once per distinct `(fuel_type, m_year, m_month)`** (~526 combinations, ~4.3× fewer evaluations of the heaviest subquery) in an `imp_pct_by_month` CTE, then `LEFT JOIN`ed back to the grid. **Results are identical** (verified by QA): `imp_pct` depends only on `(fuel_type, m_year, m_month)`, so deduplicating its evaluation cannot change any value; every other column and the final arithmetic are byte-for-byte the prior body (`20260613300000`).
+
+**Critical nuance — the function-level `SET statement_timeout` does NOT rescue the PostgREST call path.** PostgREST connects as the `authenticator` login role, whose role config carries `statement_timeout=30s`; `SET ROLE service_role` does **not** pick up `service_role`'s config (its `rolconfig` is NULL), so the request runs under the 30s `authenticator` cap. The `SELECT recompute_dg_margins(...)` statement's timer is armed at 30s **before** the function body executes, and a `SET` inside an already-running statement does **not** re-arm that timer. So:
+
+- The **function-level `SET statement_timeout`** only protects **direct in-database callers** whose enclosing statement *is* the function call — psql / pg_cron / a SECURITY DEFINER caller / a future internal call (their timer is armed after the GUC is in effect).
+- The things that actually fix the **prod (ETL → PostgREST) path** are (a) the **set-based optimization** (full recompute now runs well under 30s) and (b) the **ETL's bounded-window call** (`etl_dg_margins.yml` recomputes only the last ~12 ISO weeks, ~2s). See `docs/etl-pipelines/PRD.md` § "D&G Margins — ordering & bounded recompute (incident 2026-06-09)".
+
+> Incident origin: GitHub run 27223589112 (2026-06-09 17:22 UTC) died at the recompute step with PostgREST `57014` (`canceling statement due to statement timeout`) ~31s in; the failed step skipped the gated Client Alerts hook, so subscribers got no alert and `/diesel-gasoline-margins` went stale.
+
+### `recompute_dg_margins` — pump = ANP national (Brasil) resale price (2026-06-08)
+
+Migrations `20260617000000_anp_lpc_brasil.sql` (new table) + `20260617100000_recompute_dg_margins_brasil_pump.sql` (recompute body; commit `1f83077f`). Signature, `SECURITY DEFINER`, `SET search_path`, `SET statement_timeout = '300s'`, and service-role-only grants are **unchanged**; `CREATE OR REPLACE` + explicit REVOKE/GRANT re-application (Pegadinha #18 defence).
+
+**Only behavioural change vs `20260616100000`** — the `pump` value:
+
+```
+pump(fuel, week) = COALESCE(
+  -- (1) ANP-published Brasil value for the same ISO (week, isoyear) of the grid's
+  --     monday, matched to the fuel's anp_lpc_brasil produto
+  --     ('GASOLINA COMUM' for Gasoline C, 'DIESEL S10' for Diesel B):
+  anp_lpc_brasil.preco_revenda,   -- ORDER BY data_fim DESC LIMIT 1 (defensive)
+  -- (2) fallback ONLY on gap weeks with no Brasil row — byte-for-byte the old
+  --     station-weighted anp_lpc aggregation:
+  SUM(preco_medio_venda * n_postos) / NULLIF(SUM(n_postos), 0)
+)
+```
+
+- New table `anp_lpc_brasil(data_fim, produto, preco_revenda, n_postos, fonte)` (PK `(data_fim, produto)`) holds ANP's official **volume-weighted national** resale price (`GASOLINA COMUM` / `DIESEL S10`), ~146 weeks 2023-05→present **with gaps**. `pump` now matches the ANP national figure exactly on covered weeks (e.g. wk23/2026 Gasolina 6.61 / Diesel 7.12); the prior always-station-weighted pump ran ~R$0.04 high.
+- `total = pump` (unchanged definition). `distribution_and_resale_margin` is the residual off `pump`, so **only `total` and `dist_margin` shift** on covered weeks (~ −R$0.04); `base_fuel`, `biofuel_component`, `federal_tax`, `state_tax` are identical. The skip-if-NULL guard still fires only when **both** the Brasil row and the `anp_lpc` rows are absent for a week.
 
 ## Contratos com outros departamentos
 
