@@ -330,6 +330,8 @@ Pre-aggregated materialized views to fix `/well-by-well` load latency. The 7 pro
 
 Both stake-weighted MVs filter to campos with `SUM(stake_pct) = 100` via `valid_stakes` CTE inside the MV definition — same business rule the RPCs applied at runtime, now pre-applied at refresh time. The `canonical_field_name()` call is also pre-baked into `mv_production_monthly.canonical`.
 
+> **⚠️ `mv_production_monthly` is consumed OUTSIDE `/well-by-well` since `20260618000000`:** the `/anp-cdp-diaria` company RPCs (`get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos`) read columns `canonical`, `empresa`, `ano`, `mes`, `oil_bbl_dia`, `stake_pct_weighted` to derive per-(canonical field, month) blended stakes. Do NOT drop/rename this MV or these columns without updating those RPCs — see § "Blended company stakes for `/anp-cdp-diaria`" below.
+
 **Indexes (each MV has UNIQUE PK + 1-2 secondary):**
 
 - `mv_brazil_monthly_pk (ano, mes, ambiente)` UNIQUE — required for CONCURRENTLY
@@ -545,9 +547,31 @@ ON CONFLICT (variant) DO UPDATE
    SET canonical = EXCLUDED.canonical, source = EXCLUDED.source;
 ```
 
-The migration's primary target is `/anp-cdp-diaria`: it recreates the 4 **field/company-scoped** daily RPCs (`get_anp_cdp_diaria_serie`, `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos`) to project `canonical_field_name(campo)` + `SUM(...)` + GROUP BY canonical (relabel-and-aggregate, since `anp_cdp_diaria` carries separate raw PEREGRINO/PITANGOLA rows per day). Signatures, `SECURITY DEFINER`, `search_path` and grants preserved. The installation/well daily RPCs are untouched (field-scoped merge only).
+The migration's primary target is `/anp-cdp-diaria`: it recreates the 4 **field/company-scoped** daily RPCs (`get_anp_cdp_diaria_serie`, `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos`) to project `canonical_field_name(campo)` + `SUM(...)` + GROUP BY canonical (relabel-and-aggregate, since `anp_cdp_diaria` carries separate raw PEREGRINO/PITANGOLA rows per day). Signatures, `SECURITY DEFINER`, `search_path` and grants preserved. The installation/well daily RPCs are untouched (field-scoped merge only). The two `_empresa_*` RPCs were later redefined again by `20260618000000` (blended stakes — see § "Blended company stakes" below).
 
 > **Cross-table caveat — `field_canonical_names` is shared.** Because `canonical_field_name()` is also baked into the `/well-by-well` MVs (`mv_production_monthly`, `mv_brazil_canonical_monthly`) at refresh time, this override **will** fold PITANGOLA into PEREGRINO there too on the **next MV refresh** (via `02_upload.py`'s `refresh_mv_production()` hook). That is consistent with the same investor convention (PRIO IR reports Peregrino combined), so it is acceptable — but note it is **not isolated to `/anp-cdp-diaria`**. This migration does **not** issue a REFRESH (the daily dashboard reads `anp_cdp_diaria` live, not the MVs); the `/well-by-well` MVs pick it up on their normal refresh cadence. If a future analyst needs Peregrino and Pitangola kept separate on `/well-by-well`, this override would have to be scoped differently (the canonical helper is global today).
+
+#### Blended company stakes for `/anp-cdp-diaria` (2026-06-10) — Migration `20260618000000_anp_cdp_diaria_blended_stakes.sql`
+
+Redefines `get_anp_cdp_diaria_empresa_serie` and `get_anp_cdp_diaria_empresa_campos` (signatures + return columns unchanged) to fix a stake-weighting bug on merged contract tranches.
+
+**Bug:** the old raw-name join `field_stakes.campo = anp_cdp_diaria.campo` weighted contract-split fields at the 100% ToR stake. `field_stakes` carries tranches as separate raw rows (Petrobras: BÚZIOS 100% + BÚZIOS_ECO 85%, ATAPU 100% + ATAPU_ECO 52.5%, SÉPIA 100% + SÉPIA_ECO 30%), but the daily Power BI panel publishes ONE merged row per field — `*_ECO` names never appear there, so only the 100% row matched. Quantified effect (Apr-2026, Petrobras): **+184.8 kbpd net-oil overstatement** (BÚZIOS +91.3, SÉPIA +59.3, ATAPU +34.2).
+
+**New `stake_pct` semantics:**
+
+| Aspect | Behavior |
+|---|---|
+| Value | Per-(canonical field, month) **effective blended stake** = production-weighted blend of the field's tranches, read from `mv_production_monthly.stake_pct_weighted` and re-aggregated across `ambiente` by reconstructing gross production (`gross = net × 100 / stake`) — exactly the Round 5 blend formula (verified to the 3rd decimal: BÚZIOS 88.918, ATAPU 71.262, SÉPIA 51.909, TUPI 67.311, PEREGRINO 80.000 — Apr-2026) |
+| Carry-forward | The daily panel leads monthly CDP by 1-2 months; daily months with no blend use the field's most recent prior month's blend (zero/NULL-production months skipped via `HAVING SUM > 0`). Lookback bounded to year(earliest served day) − 1 |
+| Fallback | Fields with no blend in the lookback window (incl. campos failing the MV's `SUM(stake_pct)=100` validity filter) keep the raw-name stake — byte-identical to the previous behavior |
+| `_empresa_campos` | `stake_pct` = the field's LATEST available blend (last ~2 calendar years), so coverage labels match the serie; `has_daily_data` semantics unchanged |
+| Row shape | Canonical fields whose variants all carry a blend collapse to ONE row per (data, canonical campo) — e.g. TUPI + SUL DE TUPI: previously 2 rows/day, now 1 at the blended ≈67.3%. Set of canonical fields returned is identical; only the weight changed |
+
+> **⚠️ Cross-dashboard dependency (NEW):** these two `/anp-cdp-diaria` RPCs now READ **`mv_production_monthly`** (the `/well-by-well` MV from `20260528400000_well_by_well_perf_mv.sql` — columns `canonical`, `empresa`, `ano`, `mes`, `oil_bbl_dia`, `stake_pct_weighted`). Anyone changing, dropping or renaming that MV (or `refresh_mv_production()`) now affects `/anp-cdp-diaria` too. Blends move when `refresh_mv_production()` runs (pg_cron after the monthly ETL); the carry-forward absorbs the refresh lag. Reading the MV instead of recomputing the blend from `anp_cdp_producao` per call avoids a ~40× latency regression (2-6 s vs ~150 ms) that would risk the PostgREST `authenticator` ~30s cap (Pegadinha #25).
+
+**Security (Pegadinha #18 preserved):** both RPCs stay `SECURITY DEFINER` + `SET search_path = public, pg_temp` with `GRANT EXECUTE TO anon, authenticated` re-issued explicitly (`anp_cdp_diaria` RLS is authenticated-only; the MV has anon/authenticated SELECT revoked).
+
+**Untouched:** `get_anp_cdp_diaria_empresas` (returns field counts, no stake weight; retired from the frontend since the Two-Tier Tabs IA, 2026-06-05). Known residual gap vs `/well-by-well` (~75-90 kbpd, source limitation of ANP's daily panel roster) documented in [`docs/app/anp-cdp-diaria.md`](../app/anp-cdp-diaria.md) § "Blended effective stakes".
 
 #### Round 12 (2026-05-29) — Migration `20260529300000_well_by_well_header_expand.sql`
 
@@ -866,9 +890,12 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 | `mv_ms_serie` | `classificar_agentes()` | — |
 | `mv_ms_serie_fast` | `classificar_agentes()` | versão otimizada de `mv_ms_serie` |
 | `mv_anp_cdp_pocos` | `refresh_anp_cdp_pocos()` | UNIQUE (poco, campo, bacia, local); campo, bacia, estado |
+| `mv_brazil_monthly` / `mv_production_monthly` / `mv_production_installation_monthly` | `refresh_mv_production()` (pg_cron + post-ETL hook + `field_stakes` trigger) | ver § "Round 5" |
+| `mv_brazil_canonical_monthly` / `mv_brazil_installation_monthly` | `refresh_mv_production()` | ver § "Round 9" |
 
 `mv_ms_serie` / `mv_ms_serie_fast`: refresh após upload em `vendas`.
 `mv_anp_cdp_pocos`: pré-agrega metadados de poços (~24K rows) para o filter UI do dash anp-cdp. Refresh chamado pelo script de upload após cada upsert. Suporta `REFRESH CONCURRENTLY` (índice único presente). Definida em `20260504000011_anp_cdp_v7.sql`.
+`mv_production_monthly`: `/well-by-well` MV (§ "Round 5") — **also consumed by the `/anp-cdp-diaria` company RPCs since `20260618000000`** (blended stakes). Drop/rename impacts BOTH dashboards.
 
 ### RPCs (ver detalhe nos sub-PRDs)
 
@@ -891,6 +918,7 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 | ANP CDP Diária — Field | `get_anp_cdp_diaria_filtros`, `get_anp_cdp_diaria_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Installation | `get_anp_cdp_diaria_instalacao_filtros`, `get_anp_cdp_diaria_instalacao_serie` | dash-anp-cdp-diaria |
 | ANP CDP Diária — Well | `get_anp_cdp_diaria_poco_filtros`, `get_anp_cdp_diaria_poco_serie` | dash-anp-cdp-diaria |
+| ANP CDP Diária — Company | `get_anp_cdp_diaria_empresa_serie`, `get_anp_cdp_diaria_empresa_campos` — net production per company (`anp_cdp_diaria` × `field_stakes`). Since `20260618000000`, `stake_pct` is a per-(canonical field, month) **blended effective stake** read from `mv_production_monthly.stake_pct_weighted` (carry-forward for months not yet in monthly CDP; raw-stake fallback). **Depend on the `/well-by-well` MV** — see § "Blended company stakes for `/anp-cdp-diaria`". (`get_anp_cdp_diaria_empresas` dormant — retired from the frontend 2026-06-05.) | dash-anp-cdp-diaria |
 | Export count (Tier 2) | `get_ms_export_count(p_data_inicio, p_data_fim, p_regioes, p_ufs, p_mercados) → bigint`, `get_anp_cdp_export_count(p_pocos, p_campos, p_bacoes, p_locais, p_estados, p_operadores, p_instalacoes, p_tipos_instalacao, p_ano_inicio, p_ano_fim) → bigint`, `get_anp_lpc_export_count(p_produtos, p_estados, p_data_inicio, p_data_fim) → bigint` | APP (useExportSize) — retornam count filtrado para estimar tamanho do export antes do download. Migration: `20260507000003_export_count_rpcs.sql`. (Nota: `get_mdic_comex_export_count` foi DROPPED em 2026-05-25 com a retirada de `/mdic-comex`.) |
 | Data Sources freshness | `get_data_sources_freshness() → TABLE(source_key text, last_update timestamptz, row_count bigint)` | Consumida pela tabela live "Data Sources" da `/home` (desktop only). UNION ALL sobre 23 tabelas ETL-fed (era 22 — Subsidy Reform `20260527300000` trocou `anp_subsidy_history` por `anp_subsidy_caps` + `anp_subsidy_commercialization`). SECURITY DEFINER + `search_path = public, pg_temp`; `GRANT EXECUTE TO anon, authenticated`. Migrations: `20260526200000_data_sources_freshness.sql` + hotfix `20260527300000_data_sources_freshness_subsidy_fix.sql`. Detalhes em § "Data Sources Freshness". Owner: dash-admin (UI) + worker_supabase (RPC). |
 | Subsidy Tracker | `get_subsidy_tracker_diesel() → TABLE(date, ipp, ipp_adjusted, petrobras, petrobras_adjusted, anp_reference_importador, anp_reference_produtor, anp_commercialization_importador, anp_commercialization_produtor, regions_importador jsonb, regions_produtor jsonb)` + interna `compute_subsidy_reimbursement(date, tipo_agente) → numeric`. RPC rewrite em `20260527200000_subsidy_reform.sql` (era 1 col simples antes; nova signature dual-agent com sufixos PT). SECURITY DEFINER + `search_path = public, pg_temp` + `GRANT EXECUTE TO anon, authenticated`. Detalhes em § "Subsidy Reform". | dash-subsidy-tracker + dash-price-bands (trigger-side: `_pb_populate_w_subsidy` lê via `compute_subsidy_reimbursement` para preencher `price_bands._w_subsidy`) |

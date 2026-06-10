@@ -6,6 +6,14 @@ Entries newest first.
 
 ---
 
+## 2026-06-10 — `/anp-cdp-diaria` blended company stakes (Petrobras net oil ~185 kbpd overstatement fixed)
+
+- **Bug**: the company-level daily RPCs joined `field_stakes.campo = anp_cdp_diaria.campo` by raw name. Contract-split fields (BÚZIOS / ATAPU / SÉPIA, which have separate `*_ECO` tranche rows in `field_stakes`) matched only the 100% ToR row, because the daily Power BI panel merges tranches into one field row — the whole field was weighted at 100%. Petrobras net oil overstated **~185 kbpd** (Apr-2026: 2808.3 shown vs ≈2623.5 correct).
+- **Fix**: `get_anp_cdp_diaria_empresa_serie` / `get_anp_cdp_diaria_empresa_campos` now return a per-(canonical field, month) **effective blended stake** — production-weighted tranche blend read from `mv_production_monthly.stake_pct_weighted`, carried forward to daily months not yet in monthly CDP, raw-stake fallback for fields with no blend. Signatures / return columns unchanged.
+- **New cross-RPC dependency**: the `/anp-cdp-diaria` company RPCs now READ `mv_production_monthly` (the `/well-by-well` Round 5 MV — `20260528400000_well_by_well_perf_mv.sql`, originally MCP-applied as `20260527133039`). Changing or dropping that MV now affects both dashboards — see `docs/supabase/PRD.md` § "Blended company stakes for `/anp-cdp-diaria`".
+- **Known residual (not a bug)**: `/anp-cdp-diaria` genuinely sits ~75–90 kbpd below `/well-by-well` — ANP's daily panel roster is missing 2 new Búzios wells + ~19 small onshore fields (source limitation; documented in `docs/app/anp-cdp-diaria.md`).
+- Migration `20260618000000_anp_cdp_diaria_blended_stakes.sql`. See `docs/app/anp-cdp-diaria.md` § "Blended effective stakes" and `docs/supabase/PRD.md`.
+
 ## 2026-06-05 — Diesel & Gasoline Margins Automation (manual → computed)
 
 - The `/diesel-gasoline-margins` base table `d_g_margins` stopped being filled **manually** (Excel `dg_margins_upload.py` + `manual_dg_margins.yml` + admin Data Input form) and is now **computed automatically** by the SQL function `recompute_dg_margins(p_week_start text, p_week_end text)` (`SECURITY DEFINER`, `EXECUTE` only `service_role`).
