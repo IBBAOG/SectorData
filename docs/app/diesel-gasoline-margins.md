@@ -106,7 +106,8 @@ Visualização típica: **stacked bar/area chart** ao longo de semanas, com filt
 |---|---|---|
 | `cepea_etanol_anidro` | Preço semanal R$/L do etanol anidro | CEPEA/ESALQ |
 | `anp_producao_derivados` | Produção mensal nacional (m³) de Gasolina A / Óleo Diesel | ANP |
-| `fuel_tax_reference` | Imposto federal + ICMS (R$/L) por período | ANP Síntese de Preços (federal) + CONFAZ (ICMS ad-rem) |
+| `anp_sintese_taxes` | **Imposto federal + ICMS (R$/L)** publicados pela ANP — `federal_rs_litro` (Tributos Federais) + `icms_rs_litro` (ICMS) por `(data_fim, fuel_type)`; **fonte primária** dos impostos, auto-atualizável | ANP Síntese de Preços (composição), via `anp_sintese_taxes_sync.py` |
+| `fuel_tax_reference` | Imposto federal + ICMS (R$/L) por período — **fallback** histórico/lacuna do `anp_sintese_taxes` | ANP Síntese de Preços (federal) + CONFAZ (ICMS ad-rem) |
 | `fuel_blend_ratio` | % de mandato de etanol / biodiesel por período | ANP / regulação |
 | `price_bands` | Paridade de importação + preço Petrobras | Dados Locais (`price_bands`) |
 | `anp_lpc_brasil` | **Preço de bomba (pump)** — revenda **nacional publicada pela ANP** (volume-weighted, aba BRASIL do resumo semanal); fonte primária do pump desde 2026-06-08 | ANP LPC (aba BRASIL) |
@@ -128,6 +129,7 @@ etl_dg_margins.yml
   steps:
     ├─ scripts/pipelines/cepea/cepea_etanol_anidro_sync.py            → cepea_etanol_anidro
     ├─ scripts/pipelines/anp/producao/anp_producao_derivados_sync.py  → anp_producao_derivados
+    ├─ scripts/pipelines/anp/sintese/anp_sintese_taxes_sync.py        → anp_sintese_taxes (continue-on-error; nunca trava o recompute)
     └─ recompute_dg_margins(week_start, week_end)                     → d_g_margins (upsert por (fuel_type, week))
          routine: bounded to the last ~12 ISO weeks (dynamic), p_week_end=NULL
          full timeline: only via workflow_dispatch full_backfill=true
@@ -177,8 +179,8 @@ Cada componente é em R$/L; `total` reconstrói o preço de bomba.
 |---|---|
 | `base_fuel` | `(import_parity × import% + petrobras_price × production%) × (1 − blend)`. `import_parity`/`petrobras_price` vêm de `price_bands`. |
 | `biofuel_component` | **Gasolina:** etanol anidro (lag de 1 semana, `week−1`) × `ethanol_blend`. **Diesel:** Biodiesel B-100 (mesma semana) × `biodiesel_blend`. |
-| `federal_tax` | de `fuel_tax_reference` (ANP Síntese de Preços). |
-| `state_tax` | ICMS de `fuel_tax_reference` (CONFAZ ad-rem). |
+| `federal_tax` | **Tributos Federais** publicados pela ANP Síntese (`anp_sintese_taxes.federal_rs_litro`) para a semana ISO; **fallback** para a soma das linhas não-ICMS de `fuel_tax_reference` nas semanas sem Síntese. |
+| `state_tax` | **ICMS** publicado pela ANP Síntese (`anp_sintese_taxes.icms_rs_litro`) para a semana ISO; **fallback** para o ICMS de `fuel_tax_reference` (CONFAZ ad-rem) nas semanas sem Síntese. |
 | `distribution_and_resale_margin` | **residual** = `pump − (todos os componentes acima)`. |
 | `total` | = preço de bomba (pump) = **revenda nacional publicada pela ANP** (`anp_lpc_brasil`, volume-weighted, `'GASOLINA COMUM'` / `'DIESEL S10'`), com **fallback** para a média station-weighted de `anp_lpc` só nas semanas sem resumo ANP. Ver § "Pump price". |
 
@@ -199,13 +201,32 @@ pump(fuel, week) = COALESCE(
 - A fonte primária `anp_lpc_brasil` cobre ~146 semanas (2023-05→presente) **com lacunas** — a ANP não publica o resumo toda semana; nessas semanas o pump cai no fallback station-weighted (byte-for-byte o cálculo antigo).
 - Só `total` e `dist_margin` mudam nas semanas cobertas; `base_fuel`, `biofuel_component`, `federal_tax`, `state_tax` são idênticos. Migrations `20260617000000_anp_lpc_brasil.sql` + `20260617100000_recompute_dg_margins_brasil_pump.sql`.
 
+### Impostos federais + ICMS — fonte primária ANP Síntese, auto-atualizável (2026-06-08)
+
+Desde 2026-06-08 `federal_tax` e `state_tax` usam as linhas de imposto **publicadas pela ANP Síntese de Preços** (`anp_sintese_taxes`) como fonte primária, com `fuel_tax_reference` como fallback histórico/lacuna.
+
+```
+federal_tax(fuel, week) = COALESCE(
+  anp_sintese_taxes.federal_rs_litro,   -- (1) "Tributos Federais" da Síntese p/ a mesma semana ISO
+  SUM(fuel_tax_reference.rate_rs_litro WHERE tax_type <> 'ICMS' AND ativo)  -- (2) fallback
+)
+state_tax(fuel, week) = COALESCE(
+  anp_sintese_taxes.icms_rs_litro,      -- (1) "ICMS" da Síntese p/ a mesma semana ISO
+  fuel_tax_reference.rate_rs_litro WHERE tax_type = 'ICMS' AND ativo            -- (2) fallback
+)
+```
+
+- **Por quê**: a Síntese é raspada semanalmente (`anp_sintese_taxes_sync.py`, step 2b do `etl_dg_margins.yml`), então quando a ANP mudar um imposto publicado o scraper captura o novo valor e o próximo recompute o adota — **sem edição manual** em `fuel_tax_reference`.
+- **Sem mudança de valor hoje**: as linhas da Síntese publicadas hoje são **iguais** aos valores seedados de `fuel_tax_reference`, então `total` e o residual `dist_margin` ficam byte-for-byte nas semanas cobertas. A mudança é puramente estrutural (liga o caminho de auto-atualização).
+- `fuel_tax_reference` continua como **fallback** histórico/lacuna (a composição da Síntese só é parseável de forma confiável ~meados de 2025+). O guard skip-if-NULL é preservado — a Síntese só ADICIONA cobertura. Migrations `20260618100000_anp_sintese_taxes.sql` + `20260621100000_recompute_dg_margins_prefer_sintese_taxes.sql`.
+
 ### Fontes (exibidas no dashboard)
 
 "Sources: ANP · CEPEA/ESALQ · CONFAZ".
 
-- **ANP** — produção de derivados, preços LPC/produtor (incl. revenda **nacional Brasil** = pump, `anp_lpc_brasil`; per-UF `anp_lpc` como fallback), Síntese de Preços (composição de impostos federais).
+- **ANP** — produção de derivados, preços LPC/produtor (incl. revenda **nacional Brasil** = pump, `anp_lpc_brasil`; per-UF `anp_lpc` como fallback), **Síntese de Preços (composição) = fonte primária dos impostos federais + ICMS** (`anp_sintese_taxes`).
 - **CEPEA/ESALQ** — preço do etanol anidro (licença **CC BY-NC, atribuição obrigatória**).
-- **CONFAZ** — ICMS ad-rem.
+- **CONFAZ** — ICMS ad-rem (fallback histórico/lacuna via `fuel_tax_reference`).
 - **`price_bands`** — paridade de importação / preço Petrobras.
 
 ### Escopo do cutover
