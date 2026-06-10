@@ -122,11 +122,12 @@ export interface UseStockGuideData {
   unitMarginNote: string | null;
 
   /**
-   * Footnote flagging the companies whose P/E denominator uses ADJUSTED net
-   * income (e.g. Vibra), or null when none. Rendered in both Views next to the
-   * live-derivation note.
+   * Footnote flagging the companies whose live market cap is ADJUSTED by the NPV
+   * of recognized tax credits / non-operating assets (e.g. Vibra, Ultrapar)
+   * before computing the multiples and the upside-adjusted price, or null when
+   * none. Rendered in both Views next to the live-derivation note.
    */
-  adjustedEarningsNote: string | null;
+  mcapAdjNote: string | null;
 
   /** Live-quote state for the batched fetch. */
   quotesLoading: boolean;
@@ -575,20 +576,20 @@ export function useStockGuideData(): UseStockGuideData {
     return `Assumed unit margin (EBITDA ÷ volumes): ${parts.join("; ")}.`;
   }, [rows, config.y1_label, config.y2_label]);
 
-  // Footnote: which visible companies' P/E uses adjusted earnings (data-driven).
-  const adjustedEarningsNote = useMemo<string | null>(() => {
+  // Footnote: which visible companies' market cap is adjusted by the NPV of
+  // recognized tax credits before computing the multiples + upside (data-driven).
+  const mcapAdjNote = useMemo<string | null>(() => {
     const names = rows
       .filter(
         (r) =>
-          r.is_visible &&
-          (r.net_income_adj_y1 != null || r.net_income_adj_y2 != null),
+          r.is_visible && (r.mcap_adj_y1 != null || r.mcap_adj_y2 != null),
       )
       .sort((a, b) => a.display_order - b.display_order)
       .map((r) => r.company_name);
     if (names.length === 0) return null;
-    return `P/E for ${names.join(
+    return `For ${names.join(
       ", ",
-    )} uses adjusted net income (recurring earnings, excluding non-recurring tax credits).`;
+    )} the market cap is adjusted (the NPV of recognized tax credits is subtracted as a non-operating asset) before computing EV/EBITDA, P/E, FCFE Yield, Div Yield and the upside-adjusted price.`;
   }, [rows]);
 
   // ── c. Live quotes — ONE batched fetch of visible rows' symbols ───────────
@@ -647,32 +648,59 @@ export function useStockGuideData(): UseStockGuideData {
 
     return scoped.map((r) => {
       const livePrice = livePriceFor(r);
-      // Market cap (BRL mn) = absolute share count × live BRL price / 1e6.
+      // Market cap (BRL mn) = absolute share count × live BRL price / 1e6 — a
+      // single current value.
       const marketCapBrlMn =
         r.shares_outstanding != null && livePrice != null
           ? (r.shares_outstanding * livePrice) / 1e6
           : null;
+
+      // ── Tax-credit NPV adjustment (per forward year) ──────────────────────
+      // The NPV of recognized tax credits / non-operating assets (e.g. Vibra,
+      // Ultrapar) is SUBTRACTED from the market cap before computing the four
+      // multiples + the upside-adjusted price. NULL → subtract 0 (no
+      // adjustment), preserving the prior behaviour. The adjustment is per year.
+      const adjMcapY1 =
+        marketCapBrlMn != null ? marketCapBrlMn - (r.mcap_adj_y1 ?? 0) : null;
+      const adjMcapY2 =
+        marketCapBrlMn != null ? marketCapBrlMn - (r.mcap_adj_y2 ?? 0) : null;
+
+      // ── Upside vs the NPV-ADJUSTED price ──────────────────────────────────
+      // CTO decision (2026-06-10): the upside subtracts the YEAR-1 (short-term)
+      // NPV per share from the LIVE price; the target price is NOT adjusted. This
+      // keeps the upside coherent with the year-1 multiples column, since
+      // `adjMcapY1 = shares × adjustedPrice / 1e6`. When `mcap_adj_y1` is null the
+      // NPV per share is 0 → adjustedPrice = livePrice → unadjusted behaviour.
+      // (If the analyst later wants the year-2 NPV or an adjusted target, it is a
+      // small tweak.)
+      const npvPerShareY1 =
+        r.mcap_adj_y1 != null &&
+        r.shares_outstanding != null &&
+        r.shares_outstanding > 0
+          ? (r.mcap_adj_y1 * 1e6) / r.shares_outstanding
+          : 0;
+      const adjustedPrice = livePrice != null ? livePrice - npvPerShareY1 : null;
       const upsidePct =
-        r.target_price != null && livePrice != null && livePrice > 0
-          ? r.target_price / livePrice - 1
+        r.target_price != null && adjustedPrice != null && adjustedPrice > 0
+          ? r.target_price / adjustedPrice - 1
           : null;
 
       // ── Live derivation of the 4 price-sensitive multiples ────────────────
       // All monetary inputs are BRL mn → EV/EBITDA and P/E are dimensionless;
       // the yields are ×100 for percent points. Every denominator is guarded:
-      // EBITDA≤0 and Net income≤0 → null (multiple not meaningful); market cap
-      // must be > 0 for the yields. Null-safe throughout → renders "—", no NaN.
+      // EBITDA≤0 and Net income≤0 → null (multiple not meaningful); the adjusted
+      // market cap must be > 0 for the yields. Null-safe throughout → "—", no NaN.
 
-      // EV is FORWARD PER YEAR: market cap (single current value) + the net debt
-      // of that forward year. Net debt may be negative (net cash), which
+      // EV is FORWARD PER YEAR: the year's ADJUSTED market cap + the net debt of
+      // that forward year. Net debt may be negative (net cash), which
       // legitimately lowers EV.
       const evBrlMnY1 =
-        marketCapBrlMn != null && r.net_debt_y1 != null
-          ? marketCapBrlMn + r.net_debt_y1
+        adjMcapY1 != null && r.net_debt_y1 != null
+          ? adjMcapY1 + r.net_debt_y1
           : null;
       const evBrlMnY2 =
-        marketCapBrlMn != null && r.net_debt_y2 != null
-          ? marketCapBrlMn + r.net_debt_y2
+        adjMcapY2 != null && r.net_debt_y2 != null
+          ? adjMcapY2 + r.net_debt_y2
           : null;
 
       const evEbitdaY1 =
@@ -684,46 +712,45 @@ export function useStockGuideData(): UseStockGuideData {
           ? evBrlMnY2 / r.ebitda_y2
           : null;
 
-      // P/E uses the ADJUSTED net income when present (e.g. Vibra, which strips
-      // non-recurring tax credits), else falls back to the reported net income.
-      // The Net Income column always shows the reported value. P/E is not
-      // meaningful for non-positive earnings → null.
-      const peEarningsY1 = r.net_income_adj_y1 ?? r.net_income_y1;
-      const peEarningsY2 = r.net_income_adj_y2 ?? r.net_income_y2;
+      // P/E uses the REPORTED net income (the adjusted-earnings override is gone;
+      // tax credits now shrink the equity value via `adjMcapYN`, not the
+      // earnings). P/E is not meaningful for non-positive earnings → null.
       const peY1 =
-        marketCapBrlMn != null && peEarningsY1 != null && peEarningsY1 > 0
-          ? marketCapBrlMn / peEarningsY1
+        adjMcapY1 != null && r.net_income_y1 != null && r.net_income_y1 > 0
+          ? adjMcapY1 / r.net_income_y1
           : null;
       const peY2 =
-        marketCapBrlMn != null && peEarningsY2 != null && peEarningsY2 > 0
-          ? marketCapBrlMn / peEarningsY2
+        adjMcapY2 != null && r.net_income_y2 != null && r.net_income_y2 > 0
+          ? adjMcapY2 / r.net_income_y2
           : null;
 
-      // FCFE yield = FCFE / market cap × 100. FCFE may be negative → negative
-      // yield is fine to show; only require market cap > 0.
+      // FCFE yield = FCFE / adjusted market cap × 100. FCFE may be negative →
+      // negative yield is fine to show; only require adjusted market cap > 0.
       const fcfeYieldY1 =
-        r.fcfe_y1 != null && marketCapBrlMn != null && marketCapBrlMn > 0
-          ? (r.fcfe_y1 / marketCapBrlMn) * 100
+        r.fcfe_y1 != null && adjMcapY1 != null && adjMcapY1 > 0
+          ? (r.fcfe_y1 / adjMcapY1) * 100
           : null;
       const fcfeYieldY2 =
-        r.fcfe_y2 != null && marketCapBrlMn != null && marketCapBrlMn > 0
-          ? (r.fcfe_y2 / marketCapBrlMn) * 100
+        r.fcfe_y2 != null && adjMcapY2 != null && adjMcapY2 > 0
+          ? (r.fcfe_y2 / adjMcapY2) * 100
           : null;
 
-      // Dividend yield = total dividends / market cap × 100.
+      // Dividend yield = total dividends / adjusted market cap × 100.
       const divYieldY1 =
-        r.dividends_y1 != null && marketCapBrlMn != null && marketCapBrlMn > 0
-          ? (r.dividends_y1 / marketCapBrlMn) * 100
+        r.dividends_y1 != null && adjMcapY1 != null && adjMcapY1 > 0
+          ? (r.dividends_y1 / adjMcapY1) * 100
           : null;
       const divYieldY2 =
-        r.dividends_y2 != null && marketCapBrlMn != null && marketCapBrlMn > 0
-          ? (r.dividends_y2 / marketCapBrlMn) * 100
+        r.dividends_y2 != null && adjMcapY2 != null && adjMcapY2 > 0
+          ? (r.dividends_y2 / adjMcapY2) * 100
           : null;
 
       return {
         ...r,
         livePrice,
         marketCapBrlMn,
+        adjMcapY1,
+        adjMcapY2,
         upsidePct,
         evBrlMnY1,
         evBrlMnY2,
@@ -1244,7 +1271,7 @@ export function useStockGuideData(): UseStockGuideData {
     sectorsPresent,
     restrictedNames,
     unitMarginNote,
-    adjustedEarningsNote,
+    mcapAdjNote,
     quotesLoading,
     quotesError,
     refreshQuotes,
