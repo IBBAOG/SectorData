@@ -950,8 +950,8 @@ function AxisStepper({
   };
 
   const stepBtnStyle: CSSProperties = {
-    width: 32,
-    height: 32,
+    width: 26,
+    height: 28,
     flex: "0 0 auto",
     display: "inline-flex",
     alignItems: "center",
@@ -959,7 +959,7 @@ function AxisStepper({
     border: "1px solid #e6e6e6",
     background: "#fff",
     color: axis.disabled ? "#cbd5e1" : BRAND_ORANGE,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 700,
     lineHeight: 1,
     cursor: axis.disabled ? "not-allowed" : "pointer",
@@ -967,141 +967,134 @@ function AxisStepper({
   };
 
   return (
-    <div style={{ marginBottom: 16 }}>
+    <div style={{ marginBottom: 12 }}>
       <div
         style={{
           display: "flex",
           alignItems: "baseline",
           justifyContent: "space-between",
-          gap: 8,
+          gap: 6,
           fontFamily: "Arial, Helvetica, sans-serif",
-          marginBottom: 6,
+          marginBottom: 4,
         }}
       >
-        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1f2937" }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1f2937", lineHeight: 1.25 }}>
           {axis.label} ({axis.unit})
         </span>
-        <span
-          style={{
-            color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af",
-            fontWeight: 600,
-            fontSize: 11,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {axis.liveValue != null ? `live ${fmtSlider(axis.liveValue)}` : "live —"}
-        </span>
+        {axis.overridden && !axis.disabled && (
+          <button
+            type="button"
+            onClick={() => onResetAxis(tableId, axisIdx)}
+            title="Reset to live"
+            aria-label={`Reset ${axis.label} to live`}
+            style={{
+              flex: "0 0 auto",
+              border: "none",
+              background: "none",
+              padding: 0,
+              cursor: "pointer",
+              color: BRAND_ORANGE,
+              fontSize: 10.5,
+              fontWeight: 700,
+              fontFamily: "Arial, Helvetica, sans-serif",
+              textDecoration: "underline",
+            }}
+          >
+            ↺ live
+          </button>
+        )}
       </div>
 
       {axis.disabled ? (
         <span
           style={{
             display: "inline-block",
-            fontSize: 12,
+            fontSize: 11.5,
             fontWeight: 700,
             color: "#9ca3af",
             fontVariantNumeric: "tabular-nums",
             background: "#f3f4f6",
             border: "1px solid #e5e7eb",
-            borderRadius: 8,
-            padding: "6px 12px",
+            borderRadius: 7,
+            padding: "5px 10px",
           }}
         >
           fixed {fmtSlider(axis.value)} {axis.unit}
         </span>
       ) : (
-        <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
-          <button
-            type="button"
-            onClick={() => bump(-1)}
-            disabled={axis.value <= axis.min}
-            aria-label={`Decrease ${axis.label} to previous multiple of ${GRID_AXIS_STEP}`}
-            style={{
-              ...stepBtnStyle,
-              borderRadius: "8px 0 0 8px",
-              opacity: axis.value <= axis.min ? 0.45 : 1,
-            }}
-          >
-            −
-          </button>
-          <input
-            type="number"
-            inputMode="decimal"
-            step={GRID_AXIS_STEP}
-            min={axis.min}
-            max={axis.max}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={(e) => commit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                commit((e.target as HTMLInputElement).value);
-                (e.target as HTMLInputElement).blur();
-              }
-            }}
-            aria-label={`${axis.label} (${axis.unit})`}
-            style={{
-              width: 96,
-              textAlign: "center",
-              border: "1px solid #e6e6e6",
-              borderLeft: "none",
-              borderRight: "none",
-              padding: "6px 4px",
-              fontSize: 14,
-              fontWeight: 700,
-              color: BRAND_ORANGE,
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontVariantNumeric: "tabular-nums",
-              outline: "none",
-            }}
-          />
-          <button
-            type="button"
-            onClick={() => bump(1)}
-            disabled={axis.value >= axis.max}
-            aria-label={`Increase ${axis.label} to next multiple of ${GRID_AXIS_STEP}`}
-            style={{
-              ...stepBtnStyle,
-              borderRadius: "0 8px 8px 0",
-              opacity: axis.value >= axis.max ? 0.45 : 1,
-            }}
-          >
-            +
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "stretch", gap: 0, flex: "0 0 auto" }}>
+            <button
+              type="button"
+              onClick={() => bump(-1)}
+              disabled={axis.value <= axis.min}
+              aria-label={`Decrease ${axis.label} to previous multiple of ${GRID_AXIS_STEP}`}
+              style={{
+                ...stepBtnStyle,
+                borderRadius: "7px 0 0 7px",
+                opacity: axis.value <= axis.min ? 0.45 : 1,
+              }}
+            >
+              −
+            </button>
+            <input
+              type="number"
+              inputMode="decimal"
+              step={GRID_AXIS_STEP}
+              min={axis.min}
+              max={axis.max}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={(e) => commit(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  commit((e.target as HTMLInputElement).value);
+                  (e.target as HTMLInputElement).blur();
+                }
+              }}
+              aria-label={`${axis.label} (${axis.unit})`}
+              style={{
+                width: 64,
+                textAlign: "center",
+                border: "1px solid #e6e6e6",
+                borderLeft: "none",
+                borderRight: "none",
+                padding: "5px 2px",
+                fontSize: 13,
+                fontWeight: 700,
+                color: BRAND_ORANGE,
+                fontFamily: "Arial, Helvetica, sans-serif",
+                fontVariantNumeric: "tabular-nums",
+                outline: "none",
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => bump(1)}
+              disabled={axis.value >= axis.max}
+              aria-label={`Increase ${axis.label} to next multiple of ${GRID_AXIS_STEP}`}
+              style={{
+                ...stepBtnStyle,
+                borderRadius: "0 7px 7px 0",
+                opacity: axis.value >= axis.max ? 0.45 : 1,
+              }}
+            >
+              +
+            </button>
+          </div>
           <span
             style={{
-              alignSelf: "center",
-              marginLeft: 10,
-              fontSize: 11,
-              color: "#9ca3af",
+              fontSize: 10.5,
+              color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af",
+              fontWeight: 600,
               fontFamily: "Arial, Helvetica, sans-serif",
               fontVariantNumeric: "tabular-nums",
+              lineHeight: 1.25,
             }}
           >
-            range {fmtSlider(axis.min)}–{fmtSlider(axis.max)}
+            {axis.liveValue != null ? `live ${fmtSlider(axis.liveValue)}` : "live —"}
           </span>
         </div>
-      )}
-
-      {axis.overridden && (
-        <button
-          type="button"
-          onClick={() => onResetAxis(tableId, axisIdx)}
-          style={{
-            marginTop: 8,
-            padding: "3px 10px",
-            borderRadius: 12,
-            cursor: "pointer",
-            border: `1px solid ${BRAND_ORANGE}`,
-            background: "rgba(255,80,0,0.08)",
-            color: BRAND_ORANGE,
-            fontSize: 11,
-            fontWeight: 700,
-            fontFamily: "Arial, Helvetica, sans-serif",
-          }}
-        >
-          Reset to live
-        </button>
       )}
     </div>
   );
@@ -1161,18 +1154,18 @@ function GridPanel({
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(280px, 1.1fr) minmax(280px, 1fr)",
-          gap: 24,
+          gridTemplateColumns: "minmax(240px, 280px) minmax(0, 1fr)",
+          gap: 20,
           alignItems: "start",
         }}
       >
-        {/* ── Axis sliders (1..3, stacked) ──────────────────────────────────── */}
+        {/* ── Axis sliders (1..3, stacked) — narrow control rail ────────────── */}
         <div
           style={{
             border: "1px solid #e6e6e6",
-            borderRadius: 12,
+            borderRadius: 10,
             background: "#fff",
-            padding: 18,
+            padding: 12,
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
           }}
         >
@@ -1191,14 +1184,14 @@ function GridPanel({
               type="button"
               onClick={() => onResetAll(table.id)}
               style={{
-                marginTop: 4,
-                padding: "5px 12px",
-                borderRadius: 14,
+                marginTop: 2,
+                padding: "4px 10px",
+                borderRadius: 12,
                 cursor: "pointer",
                 border: `1px solid ${BRAND_ORANGE}`,
                 background: BRAND_ORANGE,
                 color: "#fff",
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 700,
                 fontFamily: "Arial, Helvetica, sans-serif",
               }}
