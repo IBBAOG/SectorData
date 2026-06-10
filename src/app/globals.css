@@ -605,7 +605,11 @@ body {
   white-space: nowrap;
 }
 
-@media (max-width: 991.98px) {
+/* Hamburger-overlay collapse: only inside the vertical dark overlay (≤767.98px).
+   Above this width (768–991px split-screen) the nav-center is still the
+   horizontal desktop row, so dropdowns/mega-menus must stay absolute floating
+   cards — collapsing them to static here was the 768–991px dead-zone bug. */
+@media (max-width: 767.98px) {
   #main-navbar .nav-module-dropdown {
     position: static;
     background: transparent;
