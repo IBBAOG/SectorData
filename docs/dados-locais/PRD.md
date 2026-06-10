@@ -8,7 +8,7 @@ Dados que o CEO mantém **manualmente** em arquivos Excel/CSV no disco, e os scr
 data/
   price_bands.xlsx              Bandas de preço (paridade import/export, Petrobras)
   field_stakes_brasil.xlsx      Stakes (working interest) por campo × empresa — ANP Anuário 2025 (seed inicial)
-  stock_guide_brent_grid.xlsx   Malha 1-D Brent → target price por papel (/stock-guide)
+  stock_guide_brent_grid.xlsx   Malha multi-eixo (1–3 eixos) de Brent → target price por papel (/stock-guide)
   Liquidos_Vendas_Atual.csv     Vendas líquidos (snapshot)
 
 scripts/manual/price_bands_upload.py            Upload de price_bands → Supabase
@@ -27,7 +27,7 @@ Schema é dono do APP. Aqui só listamos o contrato esperado.
 |---|---|---|
 | `data/price_bands.xlsx` | `price_bands` | `(date, product)` |
 | `data/field_stakes_brasil.xlsx` | `field_stakes` | `(campo, empresa)` (one-shot seed; edits via Admin Panel) |
-| `data/stock_guide_brent_grid.xlsx` | `stock_guide_scenario_grid` | `(sensitivity_id, ticker, x_value)` (replace-total snapshot por `sensitivity_id`) |
+| `data/stock_guide_brent_grid.xlsx` | `stock_guide_scenario_grid` | `(sensitivity_id, ticker, x_value, y_value, z_value)` (replace-total snapshot por `sensitivity_id`) |
 | `data/Liquidos_Vendas_Atual.csv` | (verificar uso atual) | — |
 
 ## Fluxo padrão
@@ -185,55 +185,80 @@ Important: re-running is idempotent at the campo level (DELETE + INSERT per camp
 
 ---
 
-## Stock Guide — Brent scenario grid (manual upload)
+## Stock Guide — Brent scenario grid multi-eixo (manual upload)
 
 ### O que é
 
-`data/stock_guide_brent_grid.xlsx` — malha 1-D que o analista gera no modelo dele: para cada nível de Brent (US$/bbl) e cada papel, o target price (R$/ação) correspondente. O `/stock-guide` lê essa malha e **interpola ao vivo** contra o nível de Brent atual. Substitui a camada linear de "compose" no lado do dashboard.
+`data/stock_guide_brent_grid.xlsx` — malha Cartesiana multi-eixo (**1 a 3 eixos**) que o analista gera no modelo dele. Cada **linha** do Excel é um cenário (uma rodada do modelo): uma combinação de níveis dos eixos (ex. Avg Brent 2026 × 2027 × 2028+) → o target price (R$/ação) de cada papel. O `/stock-guide` lê essa malha e **interpola multilinearmente ao vivo** (2^d cantos) contra os níveis correntes dos eixos. Substitui a camada linear de "compose" no lado do dashboard.
 
 Cada malha pertence a uma "casca" (shell) que o analista cria no Admin Panel — uma linha em `stock_guide_sensitivities` marcada por `definition.grid` (metadados de eixo apenas, sem valores). Os valores por papel ficam na tabela relacional `stock_guide_scenario_grid`, não no jsonb.
 
-### Formato do Excel (WIDE)
+Shape do `definition.grid` (migration `20260618200000`):
 
-Sheet única (a 1ª sheet é lida):
+```jsonc
+{ "axes": [                                  // 1..3, ordem = storage (x, y, z)
+    { "driver_key": "avg_brent_2026", "label": "Brent (avg 2026)", "unit": "USD/bbl" },
+    { "driver_key": "avg_brent_2027", "label": "Brent (avg 2027)", "unit": "USD/bbl" },
+    { "driver_key": "avg_brent_2028", "label": "Brent 2028+ (LT)", "unit": "USD/bbl" } ],
+  "output": "target_price" }
+```
 
-| Coluna | Conteúdo |
-|---|---|
-| `brent` (1ª coluna) | Níveis de Brent em US$/bbl (pode ter milhares de linhas) |
-| demais colunas | header = ticker (`PETR4`, `PRIO3`, …); célula = target price (R$/ação) naquele Brent |
+### Formato do Excel (LONG — canônico)
 
-Exemplo:
+Sheet única (a 1ª sheet é lida). **Uma linha por cenário.** As colunas de coordenada são nomeadas **exatamente** pelos `driver_key` dos eixos da shell (match case-insensitive + trim) — sem ambiguidade de ano por construção. As demais colunas não-vazias são tickers; cada célula = target price (R$/ação).
+
+Exemplo (2 eixos — `avg_brent_2026` × `avg_brent_2027`):
 
 ```
-brent | PETR4 | PRIO3 | RECV3
-60    | 28.10 | 32.40 | 18.90
-65    | 30.05 | 35.10 | 20.15
+avg_brent_2026 | avg_brent_2027 | PETR4 | PRIO3
+40             | 40             | 22.10 | 28.40
+40             | 50             | 24.05 | 30.10
+50             | 40             | 25.30 | 31.20
+50             | 50             | 27.80 | 33.90
 ...
 ```
 
-Melt wide→long: cada célula `(brent, ticker)` com valor numérico não-nulo vira 1 linha. Células vazias são puladas.
+Records: `x_value = coords[0]`, `y_value = coords[1]` (se d≥2, senão 0), `z_value = coords[2]` (se d≥3, senão 0). Eixo não usado = 0 permanente.
 
 ### Gerar o template vazio
 
-`scripts/manual/make_brent_grid_template.py` — gera o esqueleto WIDE pronto pra preencher: coluna `brent` pré-populada (default 40→150 step 5 = 23 linhas) + uma coluna por ticker com células vazias. Os tickers são descobertos de `stock_guide_companies` (visíveis, ordenados por `display_order`) via RPC anon `get_stock_guide_comps`. Não sobrescreve arquivo existente sem `--force` (protege input do analista).
+`scripts/manual/make_brent_grid_template.py` — gera o esqueleto LONG pronto pra preencher: uma coluna de coordenada por eixo (header = `driver_key`) pré-populada com o **produto Cartesiano** dos níveis (1º eixo varia mais devagar) + uma coluna por ticker com células vazias. Não sobrescreve arquivo existente sem `--force` (protege input do analista).
+
+Eixos resolvidos nesta ordem:
+1. `--axes avg_brent_2026,avg_brent_2027,avg_brent_2028` (offline, explícito).
+2. `--sensitivity-id N` / `--table-title "..."` → lê `definition.grid.axes` da shell via RPC anon `get_stock_guide_sensitivity_tables` (retorna `definition` com o bloco `grid` intacto).
+3. Nada passado → default **3 eixos de Brent** (`avg_brent_2026/2027/2028`).
+
+Ranges por eixo via flag repetível `--range KEY=MIN:MAX:STEP` (ex. `--range avg_brent_2026=40:150:10`). Eixo sem `--range` explícito usa o default `40:150:10` (12 níveis). Níveis arredondados a 6 decimais (igual ao uploader — neutraliza drift de float). As antigas flags `--min/--max/--step` foram **removidas** (clean break).
+
+Tickers descobertos de `stock_guide_companies` (visíveis, `display_order`) via RPC anon `get_stock_guide_comps`; override com `--tickers`.
 
 ```bash
-# Default (descobre tickers, Brent 40→150 step 5, escreve em data/stock_guide_brent_grid.xlsx):
+# Default (3 eixos Brent 40→150 step 10, tickers do Supabase, escreve em data/stock_guide_brent_grid.xlsx):
 python scripts/manual/make_brent_grid_template.py
 
-# Regenerar do zero (DESTRÓI input do analista) + tickers/range custom:
-python scripts/manual/make_brent_grid_template.py --force --tickers PETR4,PRIO3,RECV3 --min 50 --max 120 --step 5
+# Eixos vindos de uma shell + ranges custom:
+python scripts/manual/make_brent_grid_template.py --sensitivity-id 7 \
+    --range avg_brent_2026=40:120:10 --range avg_brent_2027=40:120:10 --force
+
+# Offline: eixos + ranges + tickers explícitos:
+python scripts/manual/make_brent_grid_template.py \
+    --axes avg_brent_2026,avg_brent_2027 \
+    --range avg_brent_2026=50:120:10 --range avg_brent_2027=50:120:10 \
+    --tickers PETR4,PRIO3,RECV3 --force
 ```
+
+O print final mostra a matemática dos combos (ex. `12 × 12 × 12 = 1,728 scenarios × 8 tickers = 13,824 mesh points`) e **avisa se > 60k mesh points**.
 
 ### Alvo
 
 | Tabela | Colunas | PK | Escrita por |
 |---|---|---|---|
-| `stock_guide_scenario_grid` | `sensitivity_id`, `ticker`, `x_value`, `primary_value` | `(sensitivity_id, ticker, x_value)` | Este script (service role, bypassa RLS) |
+| `stock_guide_scenario_grid` | `sensitivity_id`, `ticker`, `x_value`, `y_value`, `z_value`, `primary_value` | `(sensitivity_id, ticker, x_value, y_value, z_value)` | Este script (service role, bypassa RLS) |
 
-Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`. RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id)`; escritas só via service role.
+Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`, estendida para multi-eixo por `20260618200000_stock_guide_scenario_grid_multi_axis.sql` (ALTER + PK 5-col + RPC recriada com 5 colunas). RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id)`; escritas só via service role.
 
-### Script
+### Script de upload
 
 `scripts/manual/stock_guide_brent_grid_upload.py` — loader **replace-total** (snapshot, não série temporal). Cada run apaga TODAS as linhas do `sensitivity_id` alvo e reinsere o conteúdo do Excel. Idempotente (rodar 2× = mesmo estado). A regra "nunca deletar mês parcial" **não se aplica** aqui — replace-total é o correto.
 
@@ -241,11 +266,18 @@ Alvo selecionado por **exatamente um** de:
 - `--sensitivity-id N` — id da linha em `stock_guide_sensitivities` (preferido, inequívoco).
 - `--table-title "..."` — lookup do id por `title`; erro claro se 0 ou >1 match.
 
-Validações:
-- `brent` numérico (linhas não-numéricas descartadas com warning), ordenado asc, avisa duplicatas.
-- células de ticker numéricas (NaN/não-numéricas descartadas com warning).
-- tickers ausentes em `stock_guide_companies` → warning (não aborta).
-- loga contagem de pontos por ticker + total; **total=0 = ERRO** (silent-empty é bug, pegadinha #12 do CLAUDE.md).
+A shell é buscada via service role; o `definition.grid.axes` deriva as colunas de coordenada esperadas (ERRO claro se a shell não tiver `grid`/`axes` — "re-save the shell in the Admin Panel").
+
+**Validações duras (em ordem):**
+- Match de headers: cada `driver_key` casa **exatamente 1** header (ERRO listando esperado vs encontrado). Headers restantes não-vazios e não-"Unnamed" = tickers. WARN se um header restante for uma key do catálogo de drivers que não está nos eixos desta shell (arquivo/shell errados).
+- Linhas 100% vazias dropadas em silêncio.
+- Coordenada não-numérica = **ERRO** (lista até 10 nº de linha do Excel; não warn-skip). Coords arredondadas a 6 decimais.
+- Tupla de coordenadas duplicada = **ERRO** (até 5 exemplos).
+- **Completude Cartesiana**: `len(linhas) == Π(níveis distintos por eixo)` — ERRO com nº de combos faltantes + até 5 tuplas exemplo.
+- Por ticker: coluna 100% vazia = WARN+skip; parcialmente vazia = **ERRO** ("ticker X: N of M combos empty — the mesh must be complete per ticker"); célula não-numérica = ERRO.
+- `total=0` = **ERRO** (silent-empty é bug, pegadinha #12 do CLAUDE.md).
+- Ticker fora de `stock_guide_companies` = WARN (não aborta).
+- Print final: WARN se total > 60k ("keep ≤15 levels/axis for 3-D meshes").
 
 ### Como rodar
 
@@ -254,19 +286,33 @@ Validações:
 python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7
 
 # Por título (deve ser único):
-python scripts/manual/stock_guide_brent_grid_upload.py --table-title "Brent scenarios (avg 2026)"
+python scripts/manual/stock_guide_brent_grid_upload.py --table-title "Brent scenario grid 3-D"
 
 # Excel alternativo:
 python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7 --excel path/to/grid.xlsx
 # ou via env var:
 STOCK_GUIDE_BRENT_GRID_XLSX=path/to/grid.xlsx python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7
+
+# Dry run (parse + valida + reporta; NÃO deleta, NÃO faz upsert — produção intocada):
+python scripts/manual/stock_guide_brent_grid_upload.py --sensitivity-id 7 --dry-run
 ```
+
+`--dry-run` ainda precisa de `SUPABASE_URL` + `SUPABASE_SERVICE_KEY` (read-only basta) pra buscar os eixos da shell; só pula o delete/upsert.
 
 Caminho default do Excel: `$STOCK_GUIDE_BRENT_GRID_XLSX` → `C:\Users\eduar\dashboard_projeto\data\stock_guide_brent_grid.xlsx`. O Excel é gitignored (não commitar).
 
+### Guidance de payload
+
+A malha inteira é baixada pelo browser e interpolada ao vivo. Mantenha o payload sob controle:
+- **3-D**: ≤15 níveis/eixo (≈ 3.375 cenários × N tickers).
+- **2-D**: ≤40×40 (1.600 cenários).
+- **1-D**: livre.
+
+Ambos os scripts avisam acima de 60k mesh points.
+
 ### Refresh cadence
 
-Ad-hoc, quando o analista regenera a malha no modelo (mudança de premissas, nova curva de Brent, novos papéis). Smoke test live só após o deploy da migration `20260612000000` em produção (push pra main → `supabase_deploy.yml`).
+Ad-hoc, quando o analista regenera a malha no modelo (mudança de premissas, nova curva de Brent, novos eixos/papéis). Mudar os eixos da shell exige **re-upload** do Excel (a malha antiga vira órfã; o replace-total por `sensitivity_id` é o workflow correto).
 
 ---
 
