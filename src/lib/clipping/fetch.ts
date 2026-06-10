@@ -324,7 +324,15 @@ export async function curlImpersonateRequest(
     timeoutSecs?: number;
   } = {},
 ): Promise<ImpersonateResponse> {
-  const curlPath = await resolveCurlImpersonatePath();
+  // Prefer the plain static curl binary: it already passes brasilenergia.com.br's
+  // Cloudflare check in production (the scrape cascade's "curl" hop reaches the
+  // origin) and is the transport the Brasil Energia login was verified against.
+  // The impersonate (chrome131) wrapper is only a fallback — on Vercel it is not
+  // always traced into this function's bundle, which would otherwise drop the
+  // login down to undici (Cloudflare-403'd) and silently fail. resolveCurlStaticPath
+  // returns "curl" on dev, so local testing still works.
+  const curlPath =
+    (await resolveCurlStaticPath()) ?? (await resolveCurlImpersonatePath());
   if (!curlPath) {
     return { ok: false, status: 0, body: "", setCookies: [], detail: "curl_impersonate_not_found" };
   }
