@@ -71,6 +71,8 @@ import {
   rpcAdminUpsertStockGuideSensitivityTable,
   rpcAdminDeleteStockGuideSensitivityTable,
   rpcGetStockGuideScenarioGrid,
+  rpcAdminReplaceStockGuideScenarioGrid,
+  rpcAdminCountStockGuideScenarioGrid,
   rpcListSubscribableBases,
   rpcAdminAlertsStats,
   rpcAdminAlertsListSubscribers,
@@ -97,7 +99,41 @@ import type {
   StockGuideDriver,
   SensitivityAxis,
   SensitivityTableAdmin,
+  SensitivityGridBlock,
 } from "../../../types/stockGuide";
+import {
+  parseScenarioGridWorkbook,
+  chunkUploadRows,
+  type GridUploadResult,
+} from "../../../lib/stockGuideGridUpload";
+
+/**
+ * State machine for the in-admin filled-template upload widget (parse → report →
+ * upload → done / error). Exported so the desktop View can type its editor props.
+ */
+export type SgUploadState =
+  | { phase: "idle" }
+  | { phase: "parsing"; fileName: string }
+  | { phase: "report"; fileName: string; result: GridUploadResult }
+  | {
+      phase: "uploading";
+      fileName: string;
+      result: GridUploadResult;
+      sent: number;
+      total: number;
+    }
+  | {
+      phase: "done";
+      fileName: string;
+      total: number;
+      byMetric: Record<string, number>;
+    }
+  | {
+      phase: "error";
+      fileName: string;
+      message: string;
+      result: GridUploadResult | null;
+    };
 
 // ── Field Stakes — canonical grouping (Round 4) ───────────────────────────────
 //
@@ -436,6 +472,38 @@ function gridToDraft(
   return {
     axes: axes.length > 0 ? axes : blankGridDraft().axes,
     outputs: outputs.length > 0 ? outputs : [{ ...SG_GRID_OUTPUT_CATALOG[0] }],
+  };
+}
+
+/**
+ * Project the editable grid draft into a real `SensitivityGridBlock` (the shape
+ * the upload parser validates against). Mirrors the on-save serialization: axes
+ * read positionally in storage (x/y/z) order, outputs as configured. Used by the
+ * in-admin filled-template upload to know the axis count + output (metric) keys.
+ */
+function sgDraftToGridBlock(g: SgGridDraft): SensitivityGridBlock {
+  return {
+    axes: g.axes.map((a) => {
+      const did = strToNum(a.driverId);
+      const block: SensitivityGridBlock["axes"][number] = {
+        label: a.label.trim(),
+        unit: a.unit.trim(),
+      };
+      if (did != null) block.driver_id = did;
+      if (a.driverKey.trim()) block.driver_key = a.driverKey.trim();
+      const tmin = strToNum(a.tmin);
+      const tmax = strToNum(a.tmax);
+      const tstep = strToNum(a.tstep);
+      if (tmin != null) block.tmin = tmin;
+      if (tmax != null) block.tmax = tmax;
+      if (tstep != null) block.tstep = tstep;
+      return block;
+    }),
+    outputs: g.outputs.map((o) => ({
+      key: o.key.trim(),
+      mode: o.mode,
+      label: o.label.trim() || o.key.trim(),
+    })),
   };
 }
 
@@ -941,6 +1009,17 @@ export interface UseAdminPanelData {
   sgGridPointCount: number | null;
   /** True while the grid point count is being fetched. */
   sgGridPointCountLoading: boolean;
+  /**
+   * In-admin filled-template upload widget state (parse → report → upload → done
+   * / error). `idle` until the admin picks a file.
+   */
+  sgUpload: SgUploadState;
+  /** Parse + validate a chosen .xlsx against the saved grid shell (no network). */
+  handleSelectSgGridUploadFile: (file: File) => Promise<void>;
+  /** Confirm the validated upload — chunked replace-total of the mesh. */
+  handleConfirmSgGridUpload: () => Promise<void>;
+  /** Dismiss the upload widget (back to idle). */
+  handleResetSgGridUpload: () => void;
   handleChangeSgTableSingleCompany: (ticker: string) => void;
   handleChangeSgAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
   handleChangeSgAxisDriver: (axis: "row" | "col", driverId: string) => void;
@@ -2486,6 +2565,8 @@ export function useAdminPanelData(): UseAdminPanelData {
   // selected grid table changes; null for a non-grid / unsaved table.
   const [sgGridPointCount, setSgGridPointCount] = useState<number | null>(null);
   const [sgGridPointCountLoading, setSgGridPointCountLoading] = useState(false);
+  // Bumped after a successful upload to force the read-only count to re-fetch.
+  const [sgGridCountNonce, setSgGridCountNonce] = useState(0);
   const sgGridDraftId = sgTableDraft?.grid ? sgTableDraft.id : null;
   useEffect(() => {
     if (!supabase || sgGridDraftId == null) {
@@ -2508,7 +2589,92 @@ export function useAdminPanelData(): UseAdminPanelData {
     return () => {
       cancelled = true;
     };
-  }, [supabase, sgGridDraftId]);
+  }, [supabase, sgGridDraftId, sgGridCountNonce]);
+
+  // ── In-admin filled-template upload (browser parse → validate → chunked replace) ─
+  //
+  // Closes the loop: configure shell → Download template → fill → Upload (no
+  // terminal). Flow states: idle → parsing → report (errors block; warnings allow)
+  // → uploading (chunked, replace-total) → done (confirmed via the count RPC) /
+  // error (retry re-runs the whole replace — idempotent). The service-role Python
+  // uploader (`scripts/manual/stock_guide_brent_grid_upload.py`) stays as the
+  // automation fallback.
+  const [sgUpload, setSgUpload] = useState<SgUploadState>({ phase: "idle" });
+
+  /** Reset the upload widget back to idle (e.g. after closing the report). */
+  const handleResetSgGridUpload = useCallback(() => {
+    setSgUpload({ phase: "idle" });
+  }, []);
+
+  /** Parse + validate a chosen .xlsx against the saved grid shell (no network). */
+  const handleSelectSgGridUploadFile = useCallback(
+    async (file: File) => {
+      const d = sgTableDraft;
+      if (!d || !d.grid) return;
+      setSgUpload({ phase: "parsing", fileName: file.name });
+      try {
+        const ExcelJS = (await import("exceljs")).default;
+        const wb = new ExcelJS.Workbook();
+        const buf = await file.arrayBuffer();
+        await wb.xlsx.load(buf);
+        const block = sgDraftToGridBlock(d.gridDef);
+        const result = parseScenarioGridWorkbook(wb, block);
+        setSgUpload({ phase: "report", fileName: file.name, result });
+      } catch (e: unknown) {
+        const message =
+          e && typeof e === "object" && "message" in e
+            ? String((e as { message?: unknown }).message ?? "Could not read the workbook.")
+            : "Could not read the workbook.";
+        setSgUpload({ phase: "error", fileName: file.name, message, result: null });
+      }
+    },
+    [sgTableDraft],
+  );
+
+  /** Confirm the upload: chunked replace-total against the saved sensitivity id. */
+  const handleConfirmSgGridUpload = useCallback(async () => {
+    const sb = supabase;
+    const id = sgTableDraft?.grid ? sgTableDraft.id : null;
+    // Snapshot the report (works for the initial confirm AND a retry from error).
+    const cur = sgUpload;
+    if (cur.phase !== "report" && cur.phase !== "error") return;
+    const result = cur.result;
+    if (!sb || id == null || !result || result.rows.length === 0) return;
+    if (result.errors.length > 0) return; // blocked
+
+    const chunks = chunkUploadRows(result.rows, 2000);
+    const total = result.rows.length;
+    const fileName = cur.fileName;
+    setSgUpload({ phase: "uploading", fileName, result, sent: 0, total });
+    let sent = 0;
+    try {
+      for (const chunk of chunks) {
+        await rpcAdminReplaceStockGuideScenarioGrid(sb, id, chunk.rows, chunk.firstChunk);
+        sent += chunk.rows.length;
+        setSgUpload({ phase: "uploading", fileName, result, sent, total });
+      }
+      // Confirm via the count RPC.
+      const count = await rpcAdminCountStockGuideScenarioGrid(sb, id);
+      setSgUpload({
+        phase: "done",
+        fileName,
+        total: count.total,
+        byMetric: count.byMetric,
+      });
+      setSgGridCountNonce((n) => n + 1); // refresh the read-only point count
+    } catch (e: unknown) {
+      const base =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Upload failed.")
+          : "Upload failed.";
+      setSgUpload({
+        phase: "error",
+        fileName,
+        message: `${base} (${sent.toLocaleString()} / ${total.toLocaleString()} sent before the error — retry re-runs the whole replace, which is idempotent.)`,
+        result,
+      });
+    }
+  }, [supabase, sgTableDraft, sgUpload]);
 
   const handleChangeSgTableSingleCompany = useCallback((ticker: string) => {
     setSgTableDraft((d) => (d ? { ...d, singleCompany: ticker } : d));
@@ -3135,6 +3301,10 @@ export function useAdminPanelData(): UseAdminPanelData {
     sgGridTemplateWarning,
     sgGridPointCount,
     sgGridPointCountLoading,
+    sgUpload,
+    handleSelectSgGridUploadFile,
+    handleConfirmSgGridUpload,
+    handleResetSgGridUpload,
     handleSaveSgTable,
     handleDeleteSgTable,
     handleConfirmDeleteSgTable,

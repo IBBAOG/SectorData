@@ -4927,6 +4927,93 @@ export async function rpcAdminDeleteStockGuideSensitivityTable(
   if (error) throw error;
 }
 
+/**
+ * One row of the scenario-grid mesh upload payload, with the SHORT keys the
+ * `admin_replace_stock_guide_scenario_grid` RPC expects (`{ticker, metric, x, y,
+ * z, v}`; `v` = primary_value; `y`/`z` are 0 when the axis is unused). Produced
+ * by the browser parser in `src/lib/stockGuideGridUpload.ts`.
+ */
+export interface ScenarioGridUploadRow {
+  ticker: string;
+  metric: string;
+  x: number;
+  y: number;
+  z: number;
+  v: number;
+}
+
+/**
+ * REPLACE-TOTAL chunked upload of a scenario-grid mesh for one sensitivity table
+ * (the in-admin "Upload filled template" path — same DB shape as the service-role
+ * Python uploader). `firstChunk === true` makes the RPC DELETE every existing row
+ * of `sensitivityId` BEFORE inserting (so the very first chunk wipes the previous
+ * snapshot); subsequent chunks append. Every chunk ON CONFLICTs on the 6-col PK
+ * (idempotent retry). The RPC validates server-side (non-empty ticker/metric, 4
+ * finite numerics, NaN rejected with `22023`) and is `is_admin()`-guarded (`42501`).
+ *
+ * NOT atomic across chunks — the caller MUST validate the whole workbook
+ * client-side BEFORE the first chunk; on a mid-upload failure, re-run the WHOLE
+ * upload (firstChunk=true again — idempotent).
+ *
+ * Backed by SECURITY DEFINER RPC `admin_replace_stock_guide_scenario_grid`.
+ * Returns the number of rows written by this chunk.
+ */
+export async function rpcAdminReplaceStockGuideScenarioGrid(
+  supabase: SupabaseClient,
+  sensitivityId: number,
+  rows: ScenarioGridUploadRow[],
+  firstChunk: boolean,
+): Promise<number> {
+  const { data, error } = await supabase.rpc(
+    "admin_replace_stock_guide_scenario_grid",
+    {
+      p_sensitivity_id: sensitivityId,
+      p_rows: rows,
+      p_first_chunk: firstChunk,
+    },
+  );
+  if (error) throw error;
+  return Number(data ?? 0);
+}
+
+/** Post-upload point count for a scenario-grid table, broken down by metric. */
+export interface ScenarioGridCount {
+  total: number;
+  byMetric: Record<string, number>;
+}
+
+/**
+ * Confirm a scenario-grid upload landed: total point count + a per-metric
+ * breakdown. `is_admin()`-guarded. The `by_metric` jsonb arrives as an object of
+ * `metric → count`; counts are coerced to `number`.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_count_stock_guide_scenario_grid`.
+ */
+export async function rpcAdminCountStockGuideScenarioGrid(
+  supabase: SupabaseClient,
+  sensitivityId: number,
+): Promise<ScenarioGridCount> {
+  const { data, error } = await supabase.rpc(
+    "admin_count_stock_guide_scenario_grid",
+    { p_sensitivity_id: sensitivityId },
+  );
+  if (error) throw error;
+  // RPC RETURNS TABLE(total bigint, by_metric jsonb) → an array with one row.
+  const row = (Array.isArray(data) ? data[0] : data) as
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const byMetric: Record<string, number> = {};
+  const raw = row?.by_metric;
+  if (raw && typeof raw === "object") {
+    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+      const n = toNumOrNull(v);
+      if (n != null) byMetric[k] = n;
+    }
+  }
+  return { total: toNumOrNull(row?.total) ?? 0, byMetric };
+}
+
 // ─── MODULE: Home — Data Sources freshness ────────────────────────────────────
 //
 // Single aggregated RPC returning MAX(temporal_col) + count(*) for every
