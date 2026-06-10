@@ -89,7 +89,7 @@ scripts/utils/                      # one-shots (não-ETL)
 |---|---|---|---|
 | `etl_ais_candidates.yml` | Cada 4h | `pipelines/ais/candidates_discover.py` | `import_candidates` |
 | `etl_ais_positions.yml` | Cada 6h+15min | `pipelines/ais/positions_sync.py` | `vessel_registry`, `vessel_positions`, `port_arrivals` |
-| `etl_anp_vendas.yml` | Trigger externo (cron-job.org via `workflow_dispatch`) | `pipelines/anp/vendas_watch.py --force` | (vendas combustíveis ANP) |
+| `etl_anp_vendas.yml` | **Dual trigger** (mesmo design do `etl_anp_cdp.yml`): trigger externo cron-job.org via `workflow_dispatch` a cada 30 min (primário) **+** cron interno `17 */2 * * *` (a cada 2h, fallback — adicionado 2026-06-10 após a morte do dispatcher externo em 2026-06-01). Concurrency group `anp-vendas` (`cancel-in-progress: false`) serializa external × internal. | `pipelines/anp/vendas_watch.py --force` | `vendas`. Semântica de upload (idempotente sob re-runs frequentes): período estritamente mais novo → upload só daquele mês; **mesmo período com MAIS rows na fonte que no DB → refresh in-place do mês** (delete+insert; mês parcial cresce até completo, nunca encolhe, nunca toca histórico — adicionado 2026-06-10, ver § "ANP Vendas — dispatcher death & frozen partial month"); mesmo período, mesmas/menos rows → no-op. |
 | `etl_anp_fase3.yml` | Mensal — 1º dia, 13:00 UTC | `pipelines/anp/fase3/01_daie_sync.py` → `02_desembaracos_sync.py` | `anp_daie` (6.912 rows), `anp_desembaracos` (enriched with `importador`/`cnpj`/`uf_cnpj`; PK extended to `(ano,mes,ncm_codigo,pais_origem,cnpj)` since 2026-05-25). `03_painel_imp_sync.py` + `anp_painel_imp_dist` removed by Imports & Exports reform. |
 | `etl_anp_lpc.yml` | Daily 14:30 UTC (`30 14 * * *`) — changed from weekly Wed on 2026-06-09 (incident) | `pipelines/anp/lpc_sync.py` | `anp_lpc` (160.243 rows — histórico 2004–2026 após backfill). ANP publishes the weekly "Levantamento de Preços" on an **unstable weekday** (assumed Wed; on 2026-06-09 it was a Tuesday) — a Wed-only cron silently lagged `anp_lpc` by up to a week. The scrape is incremental (downloads only weeks newer than `MAX(data_fim)`) + idempotent (`ON CONFLICT data_fim,produto,estado`), so daily is a clean no-op when nothing new is published and ingests the new week within ~24h on whatever weekday ANP drops it. Upstream half of the dg-margins fix: `etl_dg_margins.yml` now runs downstream of this via `workflow_run`. |
 | `etl_anp_precos.yml` | Semanal — segunda, 12:00 UTC (`0 12 * * 1`) | `pipelines/anp/glp_sync.py` + `precos/02_precos_produtores_sync.py` | `anp_glp` (3.106), `anp_precos_produtores` (54.738 — histórico 2002–2026 após backfill) |
@@ -156,6 +156,52 @@ timeout`) ~31s in (GitHub run 27223589112).
 > `imp_pct` optimization that brings the full recompute well under 30s, and (b) the
 > ETL's bounded-window call (a 12-week recompute runs in ~2s). See
 > `docs/supabase/PRD.md` for the RPC-side detail.
+
+### ANP Vendas — dispatcher death & frozen partial month (incident 2026-06-01→10)
+
+`etl_anp_vendas.yml` had **no internal cron** — it was dispatched exclusively by an
+external cron-job.org job firing every 30 min. On **2026-06-01T02:30 UTC that job
+went permanently silent** (the sibling cron-job.org job for `etl_anp_cdp.yml` kept
+firing, so it was NOT an account/credential expiry — the vendas job specifically
+died). For 9+ days the pipeline had **zero runs**. Two structural blind spots made
+the outage invisible:
+
+1. **Silence ≠ failure.** `workflow_failure_monitor` only counted FAILED runs; with
+   no runs at all there was nothing to count. `freshness_monitor`'s `vendas`
+   threshold is 75d (monthly M+1 class) — far too slow for this failure mode.
+2. **Frozen partial month.** `vendas` Apr/2026 was ingested on 2026-06-01 as a
+   4,043-row PARTIAL snapshot from the Power BI panel (complete months run
+   ~11.5–12.2k rows). The watcher's upload gate was *strictly newer period only* —
+   so even with the dispatcher alive, the same-period growth (partial → complete)
+   would never re-ingest. Verified on 2026-06-10: the official
+   `Liquidos_Vendas_Atual.csv` already carried the **complete 11,813-row April**,
+   blocked by the period-equality no-op while `/market-share` served the 4,043-row
+   partial.
+
+**Fixes (2026-06-10):**
+
+- **Internal cron fallback** `17 */2 * * *` added to `etl_anp_vendas.yml` (dual
+  design mirroring `etl_anp_cdp.yml`) + concurrency group `anp-vendas`
+  (`cancel-in-progress: false`) so a revived 30-min external cadence can never
+  overlap the internal cron (the watcher's delete+insert month replace is only
+  race-safe when runs are serialized).
+- **Same-period in-place refresh** in `pipelines/anp/vendas_watch.py`: when the
+  source reports the SAME period as the DB max, it now transforms the month and
+  re-ingests **iff the source yields MORE rows than the DB holds** (delete+insert
+  of that month only; never shrinks on a source glitch, never touches history;
+  counts compare post-transform records vs DB exact count so a re-run right after
+  a refresh is an exact-equality no-op). This both heals Apr/2026 on the first
+  post-merge run and makes partial→complete growth automatic going forward.
+- **Dispatcher-silence detector** in `workflow_failure_monitor.py`
+  (`SILENCE_THRESHOLD_HOURS`, see "Monitoring & testing" below) — pages ops within
+  ~26h+6h if either externally-dispatched workflow stops starting runs again.
+
+**Pending user action:** re-arm the cron-job.org vendas job (external service,
+out of repo control). With the internal 2h cron the pipeline survives without it,
+but the 30-min cadence gives faster pickup on ANP publication days. Known
+limitation (accepted): the refresh only watches the LATEST period — retroactive
+ANP revisions to older months (e.g. Mar/2026 CSV 12,203 vs DB 12,164) are not
+re-pulled; that is a separate revision-sweep design if ever needed.
 
 ### Navios — backfill de maio/2026 (one-shot, 2026-06-03)
 
@@ -757,7 +803,7 @@ Three ops monitors cover the ETL fleet: a **freshness guardian** (catches a *sil
 | Workflow | Schedule | Script / command | What it does |
 |---|---|---|---|
 | `freshness_monitor.yml` | Daily `0 12 * * *` UTC | `scripts/freshness_monitor.py` | **Freshness guardian.** Reads `get_data_sources_freshness()` (service-role), compares each base's `last_update` vs a per-source `OVERDUE_HOURS` threshold tuned to the source's REAL publication cadence (not its cron). Emails ONE ops digest to `ALERTAS_DEST_EMAIL` only when a base is genuinely overdue; logs the full per-base snapshot every run. Catches silent green-but-stale stalls (source went quiet, scraper returns 0 rows behind a 200, CAPTCHA path degraded). |
-| `workflow_failure_monitor.yml` | Every 6h `0 */6 * * *` UTC | `scripts/workflow_failure_monitor.py` | **Failure pager.** Polls the GitHub Actions API for 16 critical workflows (`CRITICAL_WORKFLOWS`); pages ops on **≥3 consecutive non-cancelled failures**. Debounced via `alertas_estado` (key `workflow_failure_monitor`): pages once `ok→stuck`, recovery note `stuck→ok`, no re-page while still stuck. `cancelled`/`skipped`/in-flight runs are ignored. Needs `actions:read` on `GITHUB_TOKEN`. Re-homes the retired `etl_workflow_stuck` capability. |
+| `workflow_failure_monitor.yml` | Every 6h `0 */6 * * *` UTC | `scripts/workflow_failure_monitor.py` | **Failure pager + dispatcher-silence detector.** (a) *Failure*: polls the GitHub Actions API for 16 critical workflows (`CRITICAL_WORKFLOWS`); pages ops on **≥3 consecutive non-cancelled failures**. (b) *Silence* (additive, 2026-06-10): for workflows opted into `SILENCE_THRESHOLD_HOURS` — `etl_anp_vendas.yml` (26h) and `etl_anp_cdp.yml` (26h), the two with external cron-job.org dispatchers — also pages when the **most recent run (ANY conclusion, cancelled included) started more than the threshold ago**. Silence ≠ failure: a dead dispatcher produces zero runs, so the failure streak never trips (2026-06-01 vendas incident). Both checks share the same debounce via `alertas_estado` (key `workflow_failure_monitor`): pages once `ok→stuck`/`ok→silent`, recovery note back to ok, no re-page while still alerting; STUCK wins when both conditions hold. A detected silence emails and exits 0 — the job goes red only when the check itself breaks. `cancelled`/`skipped`/in-flight runs are ignored by the failure streak (but DO count as activity for the silence check). Needs `actions:read` on `GITHUB_TOKEN`. Re-homes the retired `etl_workflow_stuck` capability. |
 | `cdp_roster_canary.yml` | Daily `15 12 * * *` UTC | `scripts/cdp_roster_canary.py` | **CDP daily-panel roster canary** (built 2026-06-10 after the P-78 case — Pegadinha 3 of `etl_anp_cdp_diaria`). Pure read-only SQL over our own tables (no Power BI calls): compares the well roster of the latest COMPLETE month in `anp_cdp_producao` (a month is complete when its producing-well count ≥ 70% of the previous month's; steps back up to 3 months) against the wells seen in `anp_cdp_diaria_poco` over the last **10 days of data** (relative to `MAX(data)` — the frontier lags D-6/D-8). Reference roster = wells > 1 kbpd monthly avg (~250–400 wells, server-side filter); well match = normalized exact (both sources use the standard ANP well code; parenthetical designations stripped). Also compares `instalacao_destino` vs `anp_cdp_diaria_instalacao.instalacao` with a fuzzy **digit-aware** match (both fleets use 'PETROBRAS NN' naming — the NUMBER is the identity, so 'PETROBRAS 78' must NOT match 'PETROBRAS 08'; unnumbered installations match on any shared alpha token / substring) — informational only. **Emails ops only when the missing wells' aggregate monthly production exceeds 10 kbpd** (lists each well, kbpd, field, installation); below threshold = log-only. Red run only when the CHECK ITSELF breaks (env/RPC/SMTP); a roster gap emails and exits 0. Offline simulation on real data (2026-06-10): flags exactly the 5 genuinely-missing wells, 62.4 kbpd aggregate, 'PETROBRAS 78' as the unmatched installation — fires on day 1 for the known P-78 case by design. Known benign listings: wells shut in after the reference month; name-format drift. |
 | `client_alerts_poll.yml` | Every 20 min `*/20 * * * *` | `run_base --all-active` | **Safety-net poll.** Runs the immediate path for every active source. Detects new periods for the **hook-less Data Input base** (`price_bands` — admin-edited, no ETL hook) within ~20 min, and backstops every base if an ETL hook is ever skipped (`d_g_margins` now has its hook in `etl_dg_margins`). Idempotent (period-watermark + UNIQUE-deduped outbox) → a no-op poll sends nothing, a poll racing an ETL hook never double-sends. |
 | `client_alerts_test.yml` | `workflow_dispatch` (inputs: `source`, optional `to`) | `run_base --test --source <slug> [--to <email>]` | **Production-safe test harness.** Simulates a base update by inserting a synthetic `test:`-keyed `alert_events` row for the real current period → fanout → SMTP send, **without writing the data table or touching the watermark** (`alert_source_state`). Always delivers immediately (even for digest bases); `--to` mails an extra copy to one address. The method to test any base in production. Per-base test plan: [`docs/alerts/TEST_PLAN.md`](../alerts/TEST_PLAN.md). |

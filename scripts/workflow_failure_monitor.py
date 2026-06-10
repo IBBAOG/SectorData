@@ -17,11 +17,21 @@ What it does
     streak). A run conclusion in {failure, timed_out, startup_failure} counts as
     a failure; a 'success' breaks the streak.
   * A workflow with >= 3 consecutive failures is STUCK.
+  * ADDITIVE silence check (2026-06-10): for workflows listed in
+    SILENCE_THRESHOLD_HOURS, also flags SILENT when the most recent run — ANY
+    conclusion, cancelled included (what matters is that the trigger fired at
+    all) — was created more than the per-workflow threshold ago. Silence is NOT
+    failure: a dead external dispatcher (cron-job.org) produces ZERO runs, so
+    the failure streak never trips (2026-06-01 incident: etl_anp_vendas.yml went
+    9+ days with no runs at all and no monitor noticed). Workflows not in the
+    map keep pure failure semantics.
 
 State machine (debounced — pages on TRANSITIONS only)
-  * ok    -> stuck : page once (this workflow is now failing).
-  * stuck -> ok    : send a recovery note (close the loop).
-  * stuck -> stuck : no re-page (debounce).
+  * ok     -> stuck/silent : page once (this workflow is now failing/silent).
+  * stuck/silent -> ok     : send a recovery note (close the loop).
+  * stuck  -> stuck, silent -> silent : no re-page (debounce).
+  * stuck and silent at once: STUCK wins (more actionable — there ARE runs and
+    they are failing).
   Transition state lives in the Supabase `alertas_estado` table under the single
   key 'workflow_failure_monitor' (a jsonb map of workflow_file -> {status,...}),
   kept DISTINCT from the legacy 'etl_workflow_stuck' key so the two never collide.
@@ -109,6 +119,24 @@ CRITICAL_WORKFLOWS = [
 
 # Minimum LEADING consecutive failures before a workflow is considered STUCK.
 FAILURE_THRESHOLD = 3
+
+# ── Dispatcher-silence thresholds (hours) ─────────────────────────────────────
+# A workflow can die SILENTLY: zero runs at all — e.g. its external cron-job.org
+# dispatcher stops firing. The failure streak above never trips (there are no
+# failed runs to count) and the freshness guardian's cadence threshold for a
+# monthly base is far too slow (75d for `vendas`). 2026-06-01 incident: the
+# cron-job.org job dispatching etl_anp_vendas.yml died permanently; the pipeline
+# had ZERO runs for 9+ days and no monitor noticed.
+# For the workflows listed here, ALSO page when the most recent run (ANY
+# conclusion, cancelled included — what matters is that the trigger fired) was
+# created more than the given number of hours ago. Workflows NOT listed keep
+# pure failure semantics. Thresholds assume the workflow's own internal cron
+# (both below have a 2h-class trigger → 26h gives 12+ missed chances before
+# paging, and slack for GHA schedule jitter).
+SILENCE_THRESHOLD_HOURS: dict[str, float] = {
+    "etl_anp_vendas.yml": 26.0,  # external 30-min dispatch + internal 2h cron fallback
+    "etl_anp_cdp.yml": 26.0,     # external ~2h dispatch + internal monthly cron
+}
 
 # Conclusions that count as a failure (NOT 'cancelled' — a user may cancel a run
 # deliberately and that must not look like a failure).
@@ -231,6 +259,26 @@ def last_success_date(runs: list[dict]) -> str:
     return "never"
 
 
+def hours_since_last_run(runs: list[dict], now: datetime) -> float | None:
+    """
+    Hours since the most recent run was CREATED — any conclusion, cancelled and
+    in-flight included (silence detection asks "did the trigger fire at all?",
+    not "did it pass?"). Returns None when no run has a parsable timestamp.
+    """
+    for run in runs:  # newest-first (API default order)
+        ts = run.get("created_at") or ""
+        if not ts:
+            continue
+        try:
+            created = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        return (now - created).total_seconds() / 3600.0
+    return None
+
+
 # ── Supabase state (alertas_estado) ───────────────────────────────────────────
 def read_state(client) -> dict:
     """
@@ -272,12 +320,14 @@ class WorkflowStatus:
 
     __slots__ = (
         "workflow",
-        "state",  # "STUCK" | "OK" | "NO_DATA"
+        "state",  # "STUCK" | "SILENT" | "OK" | "NO_DATA"
         "consecutive_failures",
         "since",
         "last_success",
         "link",
-        "transition",  # None | "newly_stuck" | "newly_recovered" | "still_stuck"
+        "transition",  # None | "newly_stuck" | "newly_silent" | "newly_recovered"
+        #              # | "still_stuck" | "still_silent"
+        "hours_silent",  # float | None — only set for SILENT verdicts
     )
 
     def __init__(
@@ -289,6 +339,7 @@ class WorkflowStatus:
         last_success: str,
         link: str,
         transition: str | None,
+        hours_silent: float | None = None,
     ) -> None:
         self.workflow = workflow
         self.state = state
@@ -297,6 +348,7 @@ class WorkflowStatus:
         self.last_success = last_success
         self.link = link
         self.transition = transition
+        self.hours_silent = hours_silent
 
 
 def evaluate(
@@ -338,7 +390,19 @@ def evaluate(
         prev = prev_state.get(wf, {})
         prev_status = prev.get("status", "ok")
 
+        # Silence check (additive — only for workflows opted into the map).
+        silence_threshold = SILENCE_THRESHOLD_HOURS.get(wf)
+        hours_silent: float | None = None
+        if silence_threshold is not None:
+            hours_silent = hours_since_last_run(runs, now)
+        is_silent = (
+            silence_threshold is not None
+            and hours_silent is not None
+            and hours_silent > silence_threshold
+        )
+
         if consecutive >= FAILURE_THRESHOLD:
+            # STUCK wins over SILENT: there ARE runs and they are failing.
             since = first_date or prev.get("since") or today
             new_state[wf] = {
                 "status": "stuck",
@@ -351,9 +415,25 @@ def evaluate(
                     wf, "STUCK", consecutive, since, last_ok, _workflow_link(wf), transition
                 )
             )
+        elif is_silent:
+            # No run STARTED within the threshold — the scheduler/dispatcher is
+            # dead (silence != failure: there is nothing red to count).
+            last_run_date = (runs[0].get("created_at") or "")[:10] or "unknown"
+            new_state[wf] = {
+                "status": "silent",
+                "since": last_run_date,
+                "hours_silent": round(hours_silent, 1),
+            }
+            transition = "newly_silent" if prev_status != "silent" else "still_silent"
+            statuses.append(
+                WorkflowStatus(
+                    wf, "SILENT", consecutive, last_run_date, last_ok,
+                    _workflow_link(wf), transition, hours_silent=hours_silent,
+                )
+            )
         else:
             new_state[wf] = {"status": "ok"}
-            transition = "newly_recovered" if prev_status == "stuck" else None
+            transition = "newly_recovered" if prev_status in ("stuck", "silent") else None
             statuses.append(
                 WorkflowStatus(
                     wf, "OK", consecutive, None, last_ok, _workflow_link(wf), transition
@@ -367,13 +447,16 @@ def evaluate(
 def log_statuses(statuses: list[WorkflowStatus]) -> None:
     """Always emit the complete per-workflow snapshot for the run log."""
     stuck = [s for s in statuses if s.state == "STUCK"]
+    silent = [s for s in statuses if s.state == "SILENT"]
     no_data = [s for s in statuses if s.state == "NO_DATA"]
     logger.info(
-        "── Workflow failure snapshot (%d workflows · %d stuck · %d no-data) ──",
-        len(statuses), len(stuck), len(no_data),
+        "── Workflow failure snapshot (%d workflows · %d stuck · %d silent · %d no-data) ──",
+        len(statuses), len(stuck), len(silent), len(no_data),
     )
     for s in statuses:
         extra = f" [{s.transition}]" if s.transition else ""
+        if s.hours_silent is not None:
+            extra = f" silent={s.hours_silent:.1f}h{extra}"
         logger.info(
             "  [%-8s] %-35s fails=%-2d since=%-10s last_success=%-10s%s",
             s.state,
@@ -391,8 +474,12 @@ def render_text(
     still_stuck: list[WorkflowStatus],
     recovered: list[WorkflowStatus],
     generated_at: datetime,
+    newly_silent: list[WorkflowStatus] | None = None,
+    still_silent: list[WorkflowStatus] | None = None,
 ) -> str:
     """Plain-text ops page body."""
+    newly_silent = newly_silent or []
+    still_silent = still_silent or []
     lines: list[str] = []
     lines.append("SectorData — Workflow Failure Pager")
     lines.append(f"Run: {generated_at.strftime('%Y-%m-%d %H:%M UTC')}")
@@ -415,16 +502,43 @@ def render_text(
             lines.append(f"  {s.workflow}: {s.link}")
         lines.append("")
 
+    if newly_silent:
+        lines.append(
+            f"{len(newly_silent)} ETL workflow(s) are SILENT — no run started "
+            f"within their threshold (dead scheduler / external dispatcher?):"
+        )
+        lines.append("")
+        for s in newly_silent:
+            hours = f"{s.hours_silent:.1f}h" if s.hours_silent is not None else "?"
+            threshold = SILENCE_THRESHOLD_HOURS.get(s.workflow)
+            lines.append(
+                f"  - {s.workflow}: last run started {s.since} ({hours} ago, "
+                f"threshold {threshold:.0f}h) · last success {s.last_success}"
+            )
+        lines.append("")
+        lines.append(
+            "If the workflow is dispatched by cron-job.org, check that the "
+            "external cron job is still armed and firing."
+        )
+        lines.append("Action links:")
+        for s in newly_silent:
+            lines.append(f"  {s.workflow}: {s.link}")
+        lines.append("")
+
     if recovered:
-        lines.append(f"{len(recovered)} previously stuck workflow(s) recovered (back to OK):")
+        lines.append(
+            f"{len(recovered)} previously stuck/silent workflow(s) recovered (back to OK):"
+        )
         for s in recovered:
             lines.append(f"  - {s.workflow}: {s.link}")
         lines.append("")
 
-    if still_stuck:
+    if still_stuck or still_silent:
+        already = [s.workflow for s in still_stuck] + [
+            f"{s.workflow} (silent)" for s in still_silent
+        ]
         lines.append(
-            f"Still stuck (already paged, no re-page): "
-            f"{', '.join(s.workflow for s in still_stuck)}"
+            f"Still alerting (already paged, no re-page): {', '.join(already)}"
         )
         lines.append("")
 
@@ -445,8 +559,12 @@ def render_html(
     still_stuck: list[WorkflowStatus],
     recovered: list[WorkflowStatus],
     generated_at: datetime,
+    newly_silent: list[WorkflowStatus] | None = None,
+    still_silent: list[WorkflowStatus] | None = None,
 ) -> str:
     """HTML ops page body."""
+    newly_silent = newly_silent or []
+    still_silent = still_silent or []
 
     def esc(x: object) -> str:
         return html_lib.escape(str(x))
@@ -465,8 +583,9 @@ def render_html(
         "<h2 style='margin:0 0 4px'>Workflow Failure Pager</h2>"
         f"<p style='margin:0 0 16px;color:#666'>Run "
         f"{esc(generated_at.strftime('%Y-%m-%d %H:%M UTC'))} · "
-        f"{len(newly_stuck)} newly failing · {len(recovered)} recovered · "
-        f"{len(still_stuck)} still failing</p>"
+        f"{len(newly_stuck)} newly failing · {len(newly_silent)} newly silent · "
+        f"{len(recovered)} recovered · "
+        f"{len(still_stuck) + len(still_silent)} still alerting</p>"
     )
 
     if newly_stuck:
@@ -489,6 +608,34 @@ def render_html(
             f"{rows}</table>"
         )
 
+    if newly_silent:
+        parts.append(
+            "<h3 style='color:#b9770e;margin:18px 0 6px'>Newly silent "
+            "(no runs at all — dead scheduler / external dispatcher?)</h3>"
+        )
+        rows = "".join(
+            "<tr>"
+            f"<td style='{td}'><b><a href='{esc(s.link)}'>{esc(s.workflow)}</a></b></td>"
+            f"<td style='{td}'>{esc(s.since)}</td>"
+            f"<td style='{td};text-align:right'>"
+            f"{esc(f'{s.hours_silent:.1f}h' if s.hours_silent is not None else '?')}"
+            f" / {esc(f'{SILENCE_THRESHOLD_HOURS.get(s.workflow, 0):.0f}h')}</td>"
+            f"<td style='{td}'>{esc(s.last_success)}</td>"
+            "</tr>"
+            for s in newly_silent
+        )
+        parts.append(
+            "<table style='border-collapse:collapse;font-size:13px;width:100%'>"
+            f"<tr><th style='{th}'>Workflow</th>"
+            f"<th style='{th}'>Last run started</th>"
+            f"<th style='{th}'>Silent for / threshold</th>"
+            f"<th style='{th}'>Last success</th></tr>"
+            f"{rows}</table>"
+            "<p style='margin:6px 0 0;color:#666;font-size:12px'>If the workflow "
+            "is dispatched by cron-job.org, check that the external cron job is "
+            "still armed and firing.</p>"
+        )
+
     if recovered:
         parts.append("<h3 style='color:#1e7e34;margin:18px 0 6px'>Recovered</h3>")
         rows = "".join(
@@ -505,11 +652,14 @@ def render_html(
             f"{rows}</table>"
         )
 
-    if still_stuck:
+    if still_stuck or still_silent:
+        already = [s.workflow for s in still_stuck] + [
+            f"{s.workflow} (silent)" for s in still_silent
+        ]
         parts.append(
-            "<p style='margin:16px 0 0;color:#999;font-size:12px'>Still failing "
+            "<p style='margin:16px 0 0;color:#999;font-size:12px'>Still alerting "
             "(already paged, no re-page): "
-            f"{esc(', '.join(s.workflow for s in still_stuck))}</p>"
+            f"{esc(', '.join(already))}</p>"
         )
 
     parts.append(
@@ -568,23 +718,27 @@ def run() -> int:
     log_statuses(statuses)
 
     newly_stuck = [s for s in statuses if s.transition == "newly_stuck"]
+    newly_silent = [s for s in statuses if s.transition == "newly_silent"]
     recovered = [s for s in statuses if s.transition == "newly_recovered"]
     still_stuck = [s for s in statuses if s.transition == "still_stuck"]
+    still_silent = [s for s in statuses if s.transition == "still_silent"]
 
     # Persist the new transition map regardless of whether we email — so a
-    # still-stuck workflow is not re-paged next run, and a recovery is recorded.
+    # still-stuck/still-silent workflow is not re-paged next run, and a recovery
+    # is recorded.
     try:
         save_state(client, new_state)
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to save state to alertas_estado: %s", exc, exc_info=True)
         return 3
 
-    # Page only on a TRANSITION (newly stuck OR newly recovered).
-    if not newly_stuck and not recovered:
-        if still_stuck:
+    # Page only on a TRANSITION (newly stuck, newly silent OR newly recovered).
+    if not newly_stuck and not newly_silent and not recovered:
+        if still_stuck or still_silent:
             logger.info(
-                "%d workflow(s) still failing — no re-page (debounce): %s",
-                len(still_stuck), ", ".join(s.workflow for s in still_stuck),
+                "%d workflow(s) still alerting — no re-page (debounce): %s",
+                len(still_stuck) + len(still_silent),
+                ", ".join(s.workflow for s in still_stuck + still_silent),
             )
         else:
             logger.info("All %d monitored workflows healthy — sending nothing.", len(statuses))
@@ -597,17 +751,33 @@ def run() -> int:
         return 3
 
     n_failing = len(newly_stuck)
-    if n_failing:
+    n_silent = len(newly_silent)
+    if n_failing and n_silent:
+        subject = (
+            f"[SectorData] WARNING {n_failing} ETL workflow(s) failing, "
+            f"{n_silent} silent"
+        )
+    elif n_failing:
         subject = f"[SectorData] WARNING {n_failing} ETL workflow(s) failing"
+    elif n_silent:
+        subject = f"[SectorData] WARNING {n_silent} ETL workflow(s) silent (no runs)"
     else:
         subject = f"[SectorData] {len(recovered)} ETL workflow(s) recovered"
 
-    text = render_text(newly_stuck, still_stuck, recovered, now)
-    html = render_html(newly_stuck, still_stuck, recovered, now)
+    text = render_text(
+        newly_stuck, still_stuck, recovered, now,
+        newly_silent=newly_silent, still_silent=still_silent,
+    )
+    html = render_html(
+        newly_stuck, still_stuck, recovered, now,
+        newly_silent=newly_silent, still_silent=still_silent,
+    )
 
     logger.info(
-        "Emailing ops page to %s — %d newly failing, %d recovered, %d still failing",
-        DEST_EMAIL, len(newly_stuck), len(recovered), len(still_stuck),
+        "Emailing ops page to %s — %d newly failing, %d newly silent, "
+        "%d recovered, %d still alerting",
+        DEST_EMAIL, len(newly_stuck), len(newly_silent), len(recovered),
+        len(still_stuck) + len(still_silent),
     )
     result = send_email(to=DEST_EMAIL, subject=subject, html=html, text=text)
     if not result.get("success"):

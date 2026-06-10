@@ -1,8 +1,24 @@
 name: ANP Watcher - Vendas Combustíveis
 
+# Serialize runs. The external cron-job.org dispatcher fires every 30 min; the
+# internal schedule below adds one run every 2h. Without a group, a revived
+# external cadence could overlap the internal cron and race the watcher's
+# DELETE-month + INSERT-month upload (duplicated rows). cancel-in-progress=false:
+# never kill an upload mid-flight — let it finish and queue the next run.
+concurrency:
+  group: anp-vendas
+  cancel-in-progress: false
+
 on:
-  # Agendamento gerenciado externamente via cron-job.org → workflow_dispatch
-  # O trigger schedule nativo do GitHub não garante pontualidade em intervalos curtos.
+  # DUAL TRIGGER (same design as etl_anp_cdp.yml):
+  #   1. External: cron-job.org → workflow_dispatch every 30 min (primary; GitHub's
+  #      native schedule does not guarantee punctuality at short intervals).
+  #   2. Internal: schedule every 2h as a FALLBACK so the pipeline survives the
+  #      death of the external dispatcher. Added 2026-06-10 after the cron-job.org
+  #      vendas job went permanently silent on 2026-06-01 (9+ days, zero runs,
+  #      invisible to the failure pager — there were no FAILED runs to count).
+  schedule:
+    - cron: '17 */2 * * *'   # every 2h at :17 (offset minute to dodge GHA peak load)
   workflow_dispatch:
     inputs:
       force:
@@ -51,11 +67,13 @@ jobs:
 
       - name: Rodar ANP Watcher
         run: python scripts/pipelines/anp/vendas_watch.py --force
-        # --force: ignora checagem de dia e state file, roda uma vez e sai.
-        # O script ainda compara o período mais recente da ANP com o do Supabase
-        # e só faz upload se houver dado novo.
-        # O extractor Power BI (Windows-only) é ignorado automaticamente no Linux;
-        # o script usa apenas a fonte CSV/ZIP da ANP.
+        # --force: skip the day-of-month/state-file gates, run once and exit.
+        # The script is idempotent under frequent re-runs:
+        #   * strictly NEWER source period  -> upload that month only;
+        #   * SAME period with MORE source rows than the DB -> in-place refresh of
+        #     that month (delete+insert, partial -> complete; never shrinks);
+        #   * same period, same/fewer rows -> no-op.
+        # The 30-min external dispatch + 2h internal cron are both safe cadences.
 
       # Client Alerts hook — emit + (immediate) deliver for the bases this ETL updates.
       - name: Client Alerts — notify subscribers (vendas)
