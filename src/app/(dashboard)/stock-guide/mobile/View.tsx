@@ -711,32 +711,122 @@ function MobileSensitivityTable({
   );
 }
 
-// ─── Scenario-grid (1-D Brent interpolation) panel — mobile ───────────────────
+// ─── Scenario-grid (multi-axis Brent mesh) panel — mobile ─────────────────────
 //
-// Same analysis as desktop, adapted: ONE stacked Brent slider (marker at the live
-// "today" value) + a stacked Target price / Upside list per company. Same shared
-// brain (the Brent value lives in the hook), so dragging here mirrors desktop.
+// Same analysis as desktop, adapted: 1..3 STACKED axis sliders (marker at each
+// axis's live "today" value) + a stacked Target price / Upside list per company.
+// Same shared brain (the axis values live in the hook), so dragging here mirrors
+// desktop. Resets honor the ≥34px touch target.
 
 function mobileFmtSlider(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+/** One axis slider row inside the mobile grid panel. */
+function MobileAxisSlider({
+  tableId,
+  axisIdx,
+  axis,
+  onSetAxis,
+  onResetAxis,
+}: {
+  tableId: number;
+  axisIdx: number;
+  axis: GridTableModel["axes"][number];
+  onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
+  onResetAxis: (tableId: number, axisIdx: number) => void;
+}): React.ReactElement {
+  return (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
+          {axis.label} ({axis.unit})
+        </span>
+        {axis.disabled ? (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "var(--mobile-text-muted)",
+              fontVariantNumeric: "tabular-nums",
+              background: "var(--mobile-surface-elevated)",
+              border: "1px solid var(--mobile-border)",
+              borderRadius: 12,
+              padding: "1px 8px",
+            }}
+          >
+            fixed {mobileFmtSlider(axis.value)} {axis.unit}
+          </span>
+        ) : (
+          <span style={{ fontSize: 15, fontWeight: 700, color: MOBILE_ACCENT, fontVariantNumeric: "tabular-nums" }}>
+            {mobileFmtSlider(axis.value)}
+            <span style={{ color: "var(--mobile-text-muted)", fontWeight: 600, fontSize: 11 }}> {axis.unit}</span>
+          </span>
+        )}
+      </div>
+      <input
+        type="range"
+        min={axis.min}
+        max={axis.max}
+        step={axis.step}
+        value={axis.value}
+        disabled={axis.disabled}
+        onChange={(e) => onSetAxis(tableId, axisIdx, Number(e.target.value))}
+        aria-label={`${axis.label} (${axis.unit})`}
+        style={{
+          width: "100%",
+          accentColor: MOBILE_ACCENT,
+          height: 28,
+          opacity: axis.disabled ? 0.5 : 1,
+        }}
+      />
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums" }}>
+        <span>{mobileFmtSlider(axis.min)}</span>
+        <span style={{ color: axis.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)", fontWeight: 600 }}>
+          {axis.liveValue != null ? `live ${mobileFmtSlider(axis.liveValue)}` : "live —"}
+        </span>
+        <span>{mobileFmtSlider(axis.max)}</span>
+      </div>
+      {axis.overridden && (
+        <button
+          type="button"
+          onClick={() => onResetAxis(tableId, axisIdx)}
+          style={{
+            marginTop: 8,
+            padding: "6px 13px",
+            borderRadius: 16,
+            minHeight: 34,
+            border: `1px solid ${MOBILE_ACCENT}`,
+            background: "rgba(255,80,0,0.08)",
+            color: MOBILE_ACCENT,
+            fontSize: 12,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          Reset to live
+        </button>
+      )}
+    </div>
+  );
+}
+
 function MobileGridPanel({
   table,
   model,
-  onSetBrent,
-  onReset,
+  onSetAxis,
+  onResetAxis,
+  onResetAll,
   quotesLoading,
 }: {
   table: SensitivityTable;
   model: GridTableModel;
-  onSetBrent: (tableId: number, value: number) => void;
-  onReset: (tableId: number) => void;
+  onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
+  onResetAxis: (tableId: number, axisIdx: number) => void;
+  onResetAll: (tableId: number) => void;
   quotesLoading: boolean;
 }): React.ReactElement {
-  const s = model.slider;
-  const atLive = s.liveValue != null && Math.abs(s.value - s.liveValue) < s.step / 2;
-
   return (
     <div style={{ marginBottom: 22 }}>
       {/* Title + grid badge */}
@@ -759,56 +849,41 @@ function MobileGridPanel({
         </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12, lineHeight: 1.4 }}>
-        Drag Brent to interpolate live. The marker shows today&rsquo;s Brent.
+        Drag the assumptions to interpolate live across our scenario mesh. Markers
+        show today&rsquo;s values.
       </div>
 
-      {/* Brent slider */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
-          <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
-            {s.label} ({s.unit})
-          </span>
-          <span style={{ fontSize: 15, fontWeight: 700, color: MOBILE_ACCENT, fontVariantNumeric: "tabular-nums" }}>
-            {mobileFmtSlider(s.value)}
-            <span style={{ color: "var(--mobile-text-muted)", fontWeight: 600, fontSize: 11 }}> {s.unit}</span>
-          </span>
-        </div>
-        <input
-          type="range"
-          min={s.min}
-          max={s.max}
-          step={s.step}
-          value={s.value}
-          onChange={(e) => onSetBrent(table.id, Number(e.target.value))}
-          aria-label={`${s.label} (${s.unit})`}
-          style={{ width: "100%", accentColor: MOBILE_ACCENT, height: 28 }}
-        />
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10, color: "var(--mobile-text-faint)", fontVariantNumeric: "tabular-nums" }}>
-          <span>{mobileFmtSlider(s.min)}</span>
-          <span style={{ color: s.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)", fontWeight: 600 }}>
-            {s.liveValue != null ? `live ${mobileFmtSlider(s.liveValue)}` : "live —"}
-          </span>
-          <span>{mobileFmtSlider(s.max)}</span>
-        </div>
-        {s.liveValue != null && !atLive && (
+      {/* Axis sliders (1..3, stacked) */}
+      <div style={{ marginBottom: 12 }}>
+        {model.axes.map((axis, i) => (
+          <MobileAxisSlider
+            key={`${axis.key}-${i}`}
+            tableId={table.id}
+            axisIdx={i}
+            axis={axis}
+            onSetAxis={onSetAxis}
+            onResetAxis={onResetAxis}
+          />
+        ))}
+        {model.anyOverridden && (
           <button
             type="button"
-            onClick={() => onReset(table.id)}
+            onClick={() => onResetAll(table.id)}
             style={{
-              marginTop: 12,
+              marginTop: 2,
               padding: "6px 13px",
               borderRadius: 16,
               minHeight: 34,
               border: `1px solid ${MOBILE_ACCENT}`,
-              background: "rgba(255,80,0,0.08)",
-              color: MOBILE_ACCENT,
+              background: MOBILE_ACCENT,
+              color: "#fff",
               fontSize: 12.5,
               fontWeight: 700,
               cursor: "pointer",
               fontFamily: "inherit",
             }}
           >
-            Reset to live Brent
+            Reset all to live
           </button>
         )}
       </div>
@@ -896,8 +971,9 @@ function MobileSensitivity({
   isGridTable,
   getGridModel,
   gridLoading,
-  onSetGridBrent,
-  onResetGridBrent,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
   quotesLoading,
 }: {
   tables: SensitivityTable[];
@@ -911,8 +987,9 @@ function MobileSensitivity({
   isGridTable: UseStockGuideData["isGridTable"];
   getGridModel: UseStockGuideData["getGridModel"];
   gridLoading: boolean;
-  onSetGridBrent: UseStockGuideData["setGridBrent"];
-  onResetGridBrent: UseStockGuideData["resetGridBrent"];
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
@@ -947,8 +1024,9 @@ function MobileSensitivity({
                 key={t.id}
                 table={t}
                 model={model}
-                onSetBrent={onSetGridBrent}
-                onReset={onResetGridBrent}
+                onSetAxis={onSetGridAxis}
+                onResetAxis={onResetGridAxis}
+                onResetAll={onResetGridAll}
                 quotesLoading={quotesLoading}
               />
             );
@@ -1010,8 +1088,9 @@ export default function MobileView(): React.ReactElement {
     isGridTable,
     getGridModel,
     gridLoading,
-    setGridBrent,
-    resetGridBrent,
+    setGridAxisValue,
+    resetGridAxis,
+    resetGridAll,
   } = useStockGuideData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1247,8 +1326,9 @@ export default function MobileView(): React.ReactElement {
           isGridTable={isGridTable}
           getGridModel={getGridModel}
           gridLoading={gridLoading}
-          onSetGridBrent={setGridBrent}
-          onResetGridBrent={resetGridBrent}
+          onSetGridAxis={setGridAxisValue}
+          onResetGridAxis={resetGridAxis}
+          onResetGridAll={resetGridAll}
           quotesLoading={quotesLoading}
         />
       </BottomSheet>

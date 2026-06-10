@@ -63,8 +63,10 @@ import {
   computeSensitivityCellValue,
   formatSensitivityValue,
   unitForValueMode,
-  interpolateGrid,
-  type GridPoint,
+  buildGridMesh,
+  interpolateMesh,
+  type GridMesh,
+  type MeshPoint,
 } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideCompany,
@@ -74,6 +76,7 @@ import type {
   StockGuideDriver,
   SensitivityAxis,
   SensitivityTable,
+  ScenarioGridPoint,
 } from "@/types/stockGuide";
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -170,28 +173,32 @@ export interface UseStockGuideData {
    */
   resolveDriverAxis: (axis: SensitivityAxis) => ResolvedDriverAxis;
 
-  // ── Scenario-grid (1-D Brent interpolation) sensitivity ─────────────────────
+  // ── Scenario-grid (multi-axis Brent mesh) sensitivity ───────────────────────
   /**
    * True when a table is a SCENARIO GRID (has `definition.grid`). Views switch to
-   * the Brent-slider interpolation panel for these and keep the static matrix for
+   * the multi-slider interpolation panel for these and keep the static matrix for
    * the rest. Pure.
    */
   isGridTable: (table: SensitivityTable) => boolean;
   /**
-   * Resolve the FULL live grid model for a table: the Brent slider (domain from
-   * the uploaded mesh + the live "today" marker) and one interpolated Target
-   * price / Upside row per visible ticker that has points. Returns null for a
-   * non-grid table or while the mesh is still loading / empty. The slider value
-   * lives in SHARED per-table state, so both Views drag the same slider. The mesh
-   * is fetched lazily on first selection and cached by table id. Stable id.
+   * Resolve the FULL live grid model for a table: one slider PER AXIS (1..3,
+   * domain from the uploaded mesh + the live "today" marker) and one MULTILINEARLY
+   * interpolated Target price / Upside row per visible ticker that has points.
+   * Returns null for a non-grid table or while the mesh is still loading / empty.
+   * The per-axis values live in SHARED per-table state, so both Views drag the
+   * same sliders. The mesh is fetched lazily on first selection, and each
+   * ticker's `GridMesh` is built ONCE per fetch (memoized in `gridIndexById`),
+   * never per drag. Stable id.
    */
   getGridModel: (table: SensitivityTable) => GridTableModel | null;
   /** True while a selected grid table's mesh is being fetched. */
   gridLoading: boolean;
-  /** Set the Brent slider value for a grid table (re-interpolates live). */
-  setGridBrent: (tableId: number, value: number) => void;
-  /** Reset the Brent slider back to the live "today" value for a grid table. */
-  resetGridBrent: (tableId: number) => void;
+  /** Set the value of ONE axis slider of a grid table (re-interpolates live). */
+  setGridAxisValue: (tableId: number, axisIdx: number, value: number) => void;
+  /** Reset ONE axis slider back to its live "today" value. */
+  resetGridAxis: (tableId: number, axisIdx: number) => void;
+  /** Reset ALL axis sliders of a grid table back to their live "today" values. */
+  resetGridAll: (tableId: number) => void;
 
   // Desktop-only export — hook owns the busy state.
   exportExcel: () => Promise<void>;
@@ -226,32 +233,36 @@ export interface ResolvedDriverAxis {
   currentValue: number | null;
 }
 
-// ─── Scenario-grid (1-D Brent interpolation) — shared types for the panel ──────
+// ─── Scenario-grid (multi-axis Brent mesh) — shared types for the panel ────────
 
-/** The single Brent slider of a scenario-grid table. */
-export interface GridSlider {
-  /** Catalog driver key driving the X position (e.g. `avg_brent_2026`). */
+/** One axis slider of a scenario-grid table (1..3 of these per table). */
+export interface GridAxisModel {
+  /** Catalog driver key driving this axis (e.g. `avg_brent_2026`). */
   key: string;
-  /** Axis label (from `definition.grid.x_label`, fallback the catalog/driver name). */
+  /** Axis label (from `definition.grid.axes[i].label`, fallback the catalog name). */
   label: string;
   /** Axis unit (e.g. "USD/bbl"). */
   unit: string;
-  /** Current slider value (state) — the Brent level we interpolate at. */
+  /** Current slider value (state) — the level we interpolate at on this axis. */
   value: number;
-  /** Live "today" Brent value (the marker), or null if the market data is missing. */
+  /** Live "today" value (the marker), or null if the market data is missing. */
   liveValue: number | null;
-  /** Slider domain = span of the uploaded mesh (min/max x across all tickers). */
+  /** Slider domain = union of this axis's distinct levels across all tickers. */
   min: number;
   max: number;
   /** Suggested step (≈ span/100 rounded to a tidy 1/2/5×10ⁿ). */
   step: number;
+  /** True when the axis has a single level (the slider is fixed / disabled). */
+  disabled: boolean;
+  /** True when the user has dragged this axis away from its live value. */
+  overridden: boolean;
 }
 
 /** One interpolated output row of a scenario-grid table (per visible ticker with points). */
 export interface GridCompanyRow {
   ticker: string;
   companyName: string;
-  /** Interpolated target price at the current Brent value (BRL/share). */
+  /** Multilinearly interpolated target price at the current axis values (BRL/share). */
   targetPrice: number | null;
   /** `targetPrice / livePrice − 1` (ratio). Null unless livePrice > 0. */
   upside: number | null;
@@ -259,14 +270,16 @@ export interface GridCompanyRow {
   livePrice: number | null;
 }
 
-/** The whole resolved scenario-grid model for one table (slider + interpolated rows). */
+/** The whole resolved scenario-grid model for one table (sliders + interpolated rows). */
 export interface GridTableModel {
-  /** The single Brent slider (domain from the mesh, marker at the live value). */
-  slider: GridSlider;
+  /** One slider per axis (1..3), in storage order (x, y, z). */
+  axes: GridAxisModel[];
   /** Interpolated rows for every visible ticker that has points in the mesh. */
   rows: GridCompanyRow[];
   /** The output label (e.g. "Target price"). */
   outputLabel: string;
+  /** True when ANY axis has been dragged away from its live value (drives "Reset all"). */
+  anyOverridden: boolean;
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -827,13 +840,15 @@ export function useStockGuideData(): UseStockGuideData {
     [liveByTicker],
   );
 
-  // ── f. Scenario-grid (1-D Brent interpolation) — shared slider state ───────
+  // ── f. Scenario-grid (multi-axis Brent mesh) — shared slider state ─────────
   //
-  // A SCENARIO-GRID table (definition.grid) holds, per company, a dense mesh of
-  // (Brent → target price) points (the SENSITIVE values live in the relational
-  // `stock_guide_scenario_grid`, fetched on demand via the hide-aware RPC). The
-  // dashboard interpolates that mesh live against ONE Brent slider whose value
-  // lives in the hook so BOTH Views drag the same slider.
+  // A SCENARIO-GRID table (definition.grid) holds, per company, a REGULAR mesh of
+  // (axis levels → target price) points over 1..3 driver axes (the SENSITIVE
+  // values live in the relational `stock_guide_scenario_grid`, fetched on demand
+  // via the hide-aware RPC). The dashboard interpolates that mesh MULTILINEARLY
+  // against ONE slider per axis, whose values live in the hook so BOTH Views drag
+  // the same sliders. The per-ticker `GridMesh` index is built ONCE per fetch
+  // (memoized in `gridIndexById`), never per drag.
 
   const isGridTable = useCallback(
     (table: SensitivityTable) => tableIsGrid(table),
@@ -841,16 +856,19 @@ export function useStockGuideData(): UseStockGuideData {
   );
 
   // Lazy per-table mesh cache: tableId → ScenarioGridPoint[] (ordered by ticker,
-  // x_value). Fetched once on first selection of a grid table, then memoized.
+  // then coordinate axes). Fetched once on first selection of a grid table.
   const [gridMeshById, setGridMeshById] = useState<
-    Record<number, { ticker: string; x: number; y: number }[]>
+    Record<number, ScenarioGridPoint[]>
   >({});
   const gridFetchedRef = useRef<Set<number>>(new Set());
   const [gridLoading, setGridLoading] = useState(false);
 
-  // tableId → the user's Brent slider value (absent until the user drags; until
-  // then the model uses the live "today" value).
-  const [gridBrentById, setGridBrentById] = useState<Record<number, number>>({});
+  // tableId → per-axis user overrides. The array is indexed by axis position;
+  // `null` means "follow the live value" (LAZY: we never eager-init from market
+  // values, which arrive async — a fresh entry stays all-null until a drag).
+  const [gridAxisValuesById, setGridAxisValuesById] = useState<
+    Record<number, (number | null)[]>
+  >({});
 
   // Fetch the mesh for the selected grid tables (lazy, cached by id).
   useEffect(() => {
@@ -865,18 +883,12 @@ export function useStockGuideData(): UseStockGuideData {
       toFetch.map((t) =>
         rpcGetStockGuideScenarioGrid(supabase, t.id)
           .then((points) => ({ id: t.id, points }))
-          .catch(() => ({ id: t.id, points: [] })),
+          .catch(() => ({ id: t.id, points: [] as ScenarioGridPoint[] })),
       ),
     ).then((results) => {
       setGridMeshById((prev) => {
         const next = { ...prev };
-        for (const { id, points } of results) {
-          next[id] = points.map((p) => ({
-            ticker: p.ticker,
-            x: p.x_value,
-            y: p.primary_value,
-          }));
-        }
+        for (const { id, points } of results) next[id] = points;
         return next;
       });
       setGridLoading(false);
@@ -885,12 +897,30 @@ export function useStockGuideData(): UseStockGuideData {
     // fetched-set ref guard re-fetch, so neither needs to be a dep.
   }, [supabase, selectedTables]);
 
-  const setGridBrent = useCallback((tableId: number, value: number) => {
-    setGridBrentById((prev) => ({ ...prev, [tableId]: value }));
+  const setGridAxisValue = useCallback(
+    (tableId: number, axisIdx: number, value: number) => {
+      setGridAxisValuesById((prev) => {
+        const cur = prev[tableId] ? [...prev[tableId]] : [];
+        while (cur.length <= axisIdx) cur.push(null);
+        cur[axisIdx] = value;
+        return { ...prev, [tableId]: cur };
+      });
+    },
+    [],
+  );
+
+  const resetGridAxis = useCallback((tableId: number, axisIdx: number) => {
+    setGridAxisValuesById((prev) => {
+      const arr = prev[tableId];
+      if (!arr || arr[axisIdx] == null) return prev;
+      const cur = [...arr];
+      cur[axisIdx] = null;
+      return { ...prev, [tableId]: cur };
+    });
   }, []);
 
-  const resetGridBrent = useCallback((tableId: number) => {
-    setGridBrentById((prev) => {
+  const resetGridAll = useCallback((tableId: number) => {
+    setGridAxisValuesById((prev) => {
       if (!(tableId in prev)) return prev;
       const next = { ...prev };
       delete next[tableId];
@@ -898,89 +928,109 @@ export function useStockGuideData(): UseStockGuideData {
     });
   }, []);
 
-  // Per-ticker ascending series for a table's mesh (interpolation input).
-  const gridSeriesByTicker = useCallback(
-    (tableId: number): Map<string, GridPoint[]> => {
-      const mesh = gridMeshById[tableId] ?? [];
-      const m = new Map<string, GridPoint[]>();
+  // Per-table, per-ticker mesh INDEX — built ONCE per fetch (NOT per drag). Maps
+  // tableId → (ticker → GridMesh), dimensioned by the table's axis count. The
+  // dimension comes from `definition.grid.axes.length`, so a degenerate axis (a
+  // single level) is still a real axis (its slider just renders disabled).
+  const gridIndexById = useMemo(() => {
+    const out: Record<number, Map<string, GridMesh>> = {};
+    for (const table of sensitivityTables) {
+      const grid = table.definition.grid;
+      if (grid == null) continue;
+      const mesh = gridMeshById[table.id];
+      if (!mesh || mesh.length === 0) continue;
+      const dim = Math.min(Math.max(grid.axes.length, 1), 3);
+      // Bucket the flat point cloud by ticker, projecting to `dim` coords.
+      const byTicker = new Map<string, MeshPoint[]>();
       for (const p of mesh) {
-        const arr = m.get(p.ticker) ?? [];
-        arr.push({ x: p.x, y: p.y });
-        m.set(p.ticker, arr);
+        const coords = [p.x_value, p.y_value, p.z_value].slice(0, dim);
+        const arr = byTicker.get(p.ticker);
+        if (arr) arr.push({ coords, value: p.primary_value });
+        else byTicker.set(p.ticker, [{ coords, value: p.primary_value }]);
       }
-      // The RPC already orders by ticker, x_value; re-sort defensively.
-      for (const arr of m.values()) arr.sort((a, b) => a.x - b.x);
-      return m;
-    },
-    [gridMeshById],
-  );
+      const meshes = new Map<string, GridMesh>();
+      for (const [ticker, points] of byTicker.entries()) {
+        const built = buildGridMesh(points, dim);
+        if (built) meshes.set(ticker, built);
+      }
+      if (meshes.size > 0) out[table.id] = meshes;
+    }
+    return out;
+  }, [sensitivityTables, gridMeshById]);
 
   const getGridModel = useCallback(
     (table: SensitivityTable): GridTableModel | null => {
       const grid = table.definition.grid;
       if (grid == null) return null;
 
-      const series = gridSeriesByTicker(table.id);
-      if (series.size === 0) return null; // mesh not loaded / empty → caller shows loading/empty
+      const meshes = gridIndexById[table.id];
+      if (!meshes || meshes.size === 0) return null; // not loaded / empty
 
-      // Slider domain = span of every x across all tickers in the mesh.
-      let min = Infinity;
-      let max = -Infinity;
-      for (const arr of series.values()) {
-        for (const p of arr) {
-          if (p.x < min) min = p.x;
-          if (p.x > max) max = p.x;
+      const dim = Math.min(Math.max(grid.axes.length, 1), 3);
+      const overrides = gridAxisValuesById[table.id] ?? [];
+
+      // Per-axis: union of distinct levels across all tickers → domain + value.
+      const axes: GridAxisModel[] = [];
+      const atValues: number[] = []; // the interpolation query, one per axis
+      for (let a = 0; a < dim; a++) {
+        const levelSet = new Set<number>();
+        for (const m of meshes.values()) {
+          for (const lvl of m.levels[a] ?? []) levelSet.add(lvl);
         }
+        const sorted = Array.from(levelSet).sort((x, y) => x - y);
+        if (sorted.length === 0) continue;
+        const min = sorted[0];
+        const max = sorted[sorted.length - 1];
+        const disabled = sorted.length === 1; // single level → fixed axis
+        const step = gridSliderStep(min, max);
+
+        const axisDef = grid.axes[a];
+        const key = axisDef?.driver_key ?? "";
+        const rawLive = key ? marketValues[key] : undefined;
+        const liveValue =
+          rawLive != null && Number.isFinite(rawLive) ? rawLive : null;
+
+        // value: override ?? clamp(live) ?? midpoint. (Degenerate axis → its
+        // single level.) Live values arrive async, so a fresh axis follows live.
+        const override = overrides[a];
+        const value = disabled
+          ? min
+          : override != null && Number.isFinite(override)
+            ? clampTo(override, min, max)
+            : liveValue != null
+              ? clampTo(liveValue, min, max)
+              : (min + max) / 2;
+
+        const label =
+          axisDef?.label ||
+          (key ? MARKET_DRIVER_CATALOG_BY_KEY[key]?.label : "") ||
+          "Brent";
+        const unit =
+          axisDef?.unit ||
+          (key ? MARKET_DRIVER_CATALOG_BY_KEY[key]?.unit : "") ||
+          "USD/bbl";
+
+        axes.push({
+          key,
+          label,
+          unit,
+          value,
+          liveValue,
+          min,
+          max,
+          step,
+          disabled,
+          overridden: !disabled && override != null,
+        });
+        atValues.push(value);
       }
-      if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
-      if (min === max) {
-        // single x across the whole mesh → open a tiny window so the slider works
-        const pad = Math.max(Math.abs(min) * 0.1, 1);
-        min -= pad;
-        max += pad;
-      }
-      const step = gridSliderStep(min, max);
+      if (axes.length === 0) return null;
 
-      // Live "today" Brent value for the X driver (dynamic catalog metric).
-      const rawLive = marketValues[grid.x_driver_key];
-      const liveValue =
-        rawLive != null && Number.isFinite(rawLive) ? rawLive : null;
-
-      // Slider value: the user's drag, else the live value (clamped to domain),
-      // else the domain midpoint when there's no market data yet.
-      const dragged = gridBrentById[table.id];
-      const value =
-        dragged != null && Number.isFinite(dragged)
-          ? clampTo(dragged, min, max)
-          : liveValue != null
-            ? clampTo(liveValue, min, max)
-            : (min + max) / 2;
-
-      const label =
-        grid.x_label ||
-        MARKET_DRIVER_CATALOG_BY_KEY[grid.x_driver_key]?.label ||
-        "Brent";
-      const unit =
-        grid.x_unit ||
-        MARKET_DRIVER_CATALOG_BY_KEY[grid.x_driver_key]?.unit ||
-        "USD/bbl";
-
-      const slider: GridSlider = {
-        key: grid.x_driver_key,
-        label,
-        unit,
-        value,
-        liveValue,
-        min,
-        max,
-        step,
-      };
-
-      // One interpolated row per VISIBLE ticker that has points (hide-strip: the
-      // RPC only returns visible tickers, so every mesh ticker is renderable).
+      // One MULTILINEARLY interpolated row per VISIBLE ticker that has a mesh
+      // (the RPC only returns visible tickers, so every mesh ticker is renderable).
       const rows: GridCompanyRow[] = [];
-      for (const [ticker, points] of series.entries()) {
-        const targetPrice = interpolateGrid(points, value);
+      for (const [ticker, mesh] of meshes.entries()) {
+        const targetPrice = interpolateMesh(mesh, atValues);
         const live = liveByTicker.get(ticker);
         const livePrice = live?.livePrice ?? null;
         const upside =
@@ -1006,11 +1056,16 @@ export function useStockGuideData(): UseStockGuideData {
           ? "Target price"
           : grid.output;
 
-      return { slider, rows, outputLabel };
+      return {
+        axes,
+        rows,
+        outputLabel,
+        anyOverridden: axes.some((ax) => ax.overridden),
+      };
     },
     [
-      gridSeriesByTicker,
-      gridBrentById,
+      gridIndexById,
+      gridAxisValuesById,
       marketValues,
       liveByTicker,
       companyNameByTicker,
@@ -1132,8 +1187,9 @@ export function useStockGuideData(): UseStockGuideData {
     isGridTable,
     getGridModel,
     gridLoading,
-    setGridBrent,
-    resetGridBrent,
+    setGridAxisValue,
+    resetGridAxis,
+    resetGridAll,
     exportExcel,
     exportCsv,
     excelLoading,

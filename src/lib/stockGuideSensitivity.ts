@@ -188,63 +188,184 @@ export function baseInputMeta(
   }
 }
 
-// ─── Scenario-grid 1-D interpolation ───────────────────────────────────────────
+// ─── Scenario-grid multilinear interpolation (1..3 axes) ───────────────────────
 //
-// A SCENARIO-GRID sensitivity table is a 1-D interpolation mesh: the analyst
-// uploads, per company, a dense series of `(x → output)` points along a single
-// driver axis (Brent). The dashboard reads that per-company series and, as the
-// analyst drags ONE Brent slider, INTERPOLATES the output live with a binary
-// search for the bracketing nodes + a linear blend between them.
+// A SCENARIO-GRID sensitivity table is a REGULAR mesh over 1..3 driver axes
+// (e.g. Avg Brent 2026 / 2027 / 2028+). The analyst runs their model over the
+// FULL Cartesian product of per-axis levels and uploads, per company, the output
+// (target price) at every mesh node. The dashboard reads that per-company point
+// cloud and, as the analyst drags ONE slider per axis, INTERPOLATES the output
+// live MULTILINEARLY (a 2^d corner blend — linear in 1-D, bilinear in 2-D,
+// trilinear in 3-D).
 //
-// This REPLACES the linear `compose` elastic layer (removed 2026-06-12): instead
-// of a first-order slope model the analyst supplies the full non-linear curve and
-// the frontend reads it off directly.
+// This REPLACES the 1-D `interpolateGrid`/`GridPoint` shape (the single ambiguous
+// "Brent" axis), which itself replaced the linear `compose` elastic layer.
 //
 // Pure + testable, reused by BOTH the /stock-guide dashboard brain and (for the
 // point-count read-out) the admin builder.
 
-/** One node of a per-ticker grid series: `x` = Brent level, `y` = output value. */
-export interface GridPoint {
-  x: number;
-  y: number;
+/** One node of a per-ticker grid mesh: `coords` = the per-axis levels, `value` = output. */
+export interface MeshPoint {
+  /** Coordinate per axis (length === dim). */
+  coords: number[];
+  /** Output value at that node (e.g. target price BRL/share). */
+  value: number;
 }
 
 /**
- * Interpolate a per-ticker scenario-grid series at the Brent level `x`.
- *
- * `sortedPoints` MUST be sorted ascending by `x` (the caller builds it from the
- * RPC, which already orders by x_value). The function:
- *   • returns `null` for an empty series;
- *   • CLAMPS at the borders — `x ≤ min` → the first node's `y`, `x ≥ max` → the
- *     last node's `y` (the analyst's mesh doesn't extrapolate);
- *   • otherwise BINARY-SEARCHES for the bracketing pair `[lo, hi]` and returns the
- *     LINEAR blend `lo.y + (hi.y − lo.y) × (x − lo.x) / (hi.x − lo.x)`.
- *
- * Degenerate spans (`hi.x === lo.x`) return `lo.y` (no divide-by-zero). The
- * result is `null` only for an empty series — never `NaN`.
+ * A per-ticker regular mesh ready for multilinear interpolation.
+ *   • `dim`    — number of axes (1..3).
+ *   • `levels[axis]` — the DISTINCT, ascending levels seen along that axis.
+ *   • `values` — node lookup keyed by the tuple of per-axis INDICES
+ *     (`"i"` for 1-D, `"i,j"` for 2-D, `"i,j,k"` for 3-D) → output value.
  */
-export function interpolateGrid(
-  sortedPoints: GridPoint[],
-  x: number,
-): number | null {
-  const n = sortedPoints.length;
-  if (n === 0) return null;
-  // Border clamps (and the trivial single-node case).
-  if (x <= sortedPoints[0].x) return sortedPoints[0].y;
-  if (x >= sortedPoints[n - 1].x) return sortedPoints[n - 1].y;
+export interface GridMesh {
+  dim: number;
+  levels: number[][];
+  values: Map<string, number>;
+}
 
-  // Binary search for the last node whose x is <= x → that's the lower bracket.
+/** Index-tuple key for a node at the given per-axis index positions. */
+function meshKey(indices: number[]): string {
+  return indices.join(",");
+}
+
+/**
+ * Build a regular `GridMesh` from a point cloud. The points are assumed to form
+ * a (possibly sparse) regular Cartesian mesh; this:
+ *   • collects the DISTINCT ascending levels per axis (exact equality — both the
+ *     stored coordinates and the live slider value flow from the same numeric
+ *     column, so float identity holds; the upload script rounds to 6 decimals);
+ *   • maps each point's coords → a tuple of per-axis indices into those levels;
+ *   • on a duplicate coordinate tuple, LAST write wins.
+ *
+ * Returns `null` for an empty point cloud (the caller then shows the empty/loading
+ * card). `dim` is taken from the caller (the number of `definition.grid.axes`),
+ * not inferred, so a degenerate axis (a single level) is still a real axis.
+ */
+export function buildGridMesh(
+  points: MeshPoint[],
+  dim: number,
+): GridMesh | null {
+  if (points.length === 0 || dim < 1) return null;
+
+  // Distinct ascending levels per axis.
+  const levelSets: Set<number>[] = Array.from({ length: dim }, () => new Set<number>());
+  for (const p of points) {
+    for (let a = 0; a < dim; a++) {
+      levelSets[a].add(p.coords[a] ?? 0);
+    }
+  }
+  const levels = levelSets.map((s) => Array.from(s).sort((x, y) => x - y));
+
+  // Index maps per axis (level value → its index) for fast tuple keys.
+  const indexOf: Map<number, number>[] = levels.map((arr) => {
+    const m = new Map<number, number>();
+    arr.forEach((v, i) => m.set(v, i));
+    return m;
+  });
+
+  const values = new Map<string, number>();
+  for (const p of points) {
+    const indices: number[] = [];
+    let ok = true;
+    for (let a = 0; a < dim; a++) {
+      const idx = indexOf[a].get(p.coords[a] ?? 0);
+      if (idx == null) {
+        ok = false;
+        break;
+      }
+      indices.push(idx);
+    }
+    if (!ok) continue;
+    values.set(meshKey(indices), p.value); // last write wins
+  }
+
+  return { dim, levels, values };
+}
+
+/** Per-axis bracket: the lower/upper level INDICES + the interpolation fraction. */
+interface Bracket {
+  lo: number;
+  hi: number;
+  /** 0..1 weight toward `hi`; 0 collapses the axis (no upper corner enumerated). */
+  frac: number;
+}
+
+/**
+ * Bracket a query value `v` against the ascending `levels` of one axis:
+ *   • a non-finite `v` is treated as the axis minimum (clamp);
+ *   • a single level OR `v ≤ first` → `(0, 0, 0)` (collapsed at the lower edge);
+ *   • `v ≥ last` → `(last, last, 0)` (collapsed at the upper edge);
+ *   • otherwise binary-search for the cell `[lo, hi]` and
+ *     `frac = (v − levels[lo]) / (levels[hi] − levels[lo])` (a zero span → 0).
+ *
+ * A `frac` of exactly 0 (an on-node hit or a clamped edge) signals the caller to
+ * COLLAPSE this axis — it then enumerates only the lower corner. That is what
+ * lets a border-clamped query against a COMPLETE mesh never demand a corner
+ * outside the active cell.
+ */
+function bracketAxis(levels: number[], v: number): Bracket {
+  const n = levels.length;
+  const x = Number.isFinite(v) ? v : levels[0];
+  if (n <= 1 || x <= levels[0]) return { lo: 0, hi: 0, frac: 0 };
+  if (x >= levels[n - 1]) return { lo: n - 1, hi: n - 1, frac: 0 };
+
   let lo = 0;
   let hi = n - 1;
   while (hi - lo > 1) {
     const mid = (lo + hi) >> 1;
-    if (sortedPoints[mid].x <= x) lo = mid;
+    if (levels[mid] <= x) lo = mid;
     else hi = mid;
   }
-  const a = sortedPoints[lo];
-  const b = sortedPoints[hi];
-  const span = b.x - a.x;
-  if (span === 0) return a.y; // coincident nodes → no blend
-  const frac = (x - a.x) / span;
-  return a.y + (b.y - a.y) * frac;
+  const span = levels[hi] - levels[lo];
+  const frac = span === 0 ? 0 : (x - levels[lo]) / span;
+  return { lo, hi, frac };
+}
+
+/**
+ * Multilinearly interpolate a `GridMesh` at the query `at` (one coordinate per
+ * axis). Per axis it brackets + clamps; axes whose bracket collapses (a single
+ * level, an on-node hit, or a border clamp — `frac === 0` or `lo === hi`) are NOT
+ * enumerated, so only the active cell's corners are visited (≤ 2^k, k ≤ 3). The
+ * result is the weighted sum `Σ weight · value` with `weight = Π (frac | 1−frac)`.
+ *
+ * Returns `null` (never `NaN`) when the mesh is empty/zero-dim OR when a corner the
+ * active cell REQUIRES is missing from the mesh (a sparse hole inside a live cell).
+ * A corner outside the active cell is never requested, so a border clamp on a
+ * complete mesh always resolves.
+ */
+export function interpolateMesh(mesh: GridMesh, at: number[]): number | null {
+  const { dim, levels, values } = mesh;
+  if (dim < 1 || values.size === 0) return null;
+
+  const brackets: Bracket[] = [];
+  const activeAxes: number[] = []; // axes that contribute an upper corner
+  for (let a = 0; a < dim; a++) {
+    const b = bracketAxis(levels[a], at[a] ?? NaN);
+    brackets.push(b);
+    if (b.lo !== b.hi && b.frac !== 0) activeAxes.push(a);
+  }
+
+  const k = activeAxes.length;
+  let acc = 0;
+  // Enumerate the 2^k corners of the active cell (collapsed axes pinned to `lo`).
+  for (let mask = 0; mask < 1 << k; mask++) {
+    const indices = brackets.map((b) => b.lo);
+    let weight = 1;
+    for (let bit = 0; bit < k; bit++) {
+      const axis = activeAxes[bit];
+      const upper = (mask & (1 << bit)) !== 0;
+      if (upper) {
+        indices[axis] = brackets[axis].hi;
+        weight *= brackets[axis].frac;
+      } else {
+        weight *= 1 - brackets[axis].frac;
+      }
+    }
+    const v = values.get(meshKey(indices));
+    if (v == null) return null; // a required corner is missing → null, never NaN
+    acc += weight * v;
+  }
+  return acc;
 }

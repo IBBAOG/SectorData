@@ -277,7 +277,10 @@ export default function DesktopView(): React.ReactElement | null {
     handleChangeSgTableCellSecondary,
     sgGridDriverCatalog,
     handleToggleSgGrid,
-    handleChangeSgGridField,
+    handleChangeSgGridOutput,
+    handleAddSgGridAxis,
+    handleRemoveSgGridAxis,
+    handleChangeSgGridAxisField,
     handleToggleSgGridCompany,
     sgGridPointCount,
     sgGridPointCountLoading,
@@ -2544,7 +2547,10 @@ export default function DesktopView(): React.ReactElement | null {
                   onChangeCellSecondary={handleChangeSgTableCellSecondary}
                   gridDriverCatalog={sgGridDriverCatalog}
                   onToggleGrid={handleToggleSgGrid}
-                  onChangeGridField={handleChangeSgGridField}
+                  onChangeGridOutput={handleChangeSgGridOutput}
+                  onAddGridAxis={handleAddSgGridAxis}
+                  onRemoveGridAxis={handleRemoveSgGridAxis}
+                  onChangeGridAxisField={handleChangeSgGridAxisField}
                   onToggleGridCompany={handleToggleSgGridCompany}
                   gridPointCount={sgGridPointCount}
                   gridPointCountLoading={sgGridPointCountLoading}
@@ -2622,8 +2628,12 @@ interface SensitivityBuilderProps {
   // ── Scenario-grid builder ───────────────────────────────────────────────────
   gridDriverCatalog: DriverCatalogEntry[];
   onToggleGrid: (on: boolean) => void;
-  onChangeGridField: (
-    field: "xDriverKey" | "xLabel" | "xUnit" | "output",
+  onChangeGridOutput: (value: string) => void;
+  onAddGridAxis: () => void;
+  onRemoveGridAxis: (axisIdx: number) => void;
+  onChangeGridAxisField: (
+    axisIdx: number,
+    field: "driverKey" | "label" | "unit",
     value: string,
   ) => void;
   onToggleGridCompany: (ticker: string) => void;
@@ -2645,7 +2655,8 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
     onChangeCellSecondary,
-    gridDriverCatalog, onToggleGrid, onChangeGridField, onToggleGridCompany,
+    gridDriverCatalog, onToggleGrid, onChangeGridOutput, onAddGridAxis,
+    onRemoveGridAxis, onChangeGridAxisField, onToggleGridCompany,
     gridPointCount, gridPointCountLoading,
     onSave, onDelete, onConfirmDelete, onCancelDelete,
   } = props;
@@ -2912,53 +2923,117 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
           <span style={{ fontSize: 12, lineHeight: 1.5, color: "#7a3300", fontWeight: 600 }}>
             Grid points are uploaded via the Brent-grid Excel (Local Data), not typed
             here. The dashboard interpolates the per-company mesh live as the analyst
-            drags ONE Brent slider.
+            drags up to three sliders (one per axis). Changing the axes requires
+            re-uploading the grid Excel.
           </span>
         </div>
 
-        {/* X driver + output */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 16 }}>
-          <label style={{ display: "block" }}>
-            <span style={labelSpan}>X driver (live slider axis)</span>
-            <select
-              value={g.xDriverKey}
-              onChange={(e) => onChangeGridField("xDriverKey", e.target.value)}
-              style={{ ...inputStyle, cursor: "pointer" }}
-            >
-              {gridDriverCatalog.map((e) => (
-                <option key={e.key} value={e.key}>{e.label}</option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: "block" }}>
+        {/* Axes (ordered, 1..3) */}
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={labelSpan}>Axes (drag one slider per axis on the dashboard)</span>
+            {g.axes.length < 3 && (
+              <button
+                type="button"
+                onClick={onAddGridAxis}
+                style={{
+                  padding: "4px 10px", borderRadius: 7, border: `1px solid ${ORANGE}`,
+                  background: "rgba(255,80,0,0.08)", color: ORANGE, fontSize: 12,
+                  fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
+                }}
+              >
+                + Add axis
+              </button>
+            )}
+          </div>
+          {g.axes.map((axis, i) => {
+            // Drivers already used by SIBLING axes are excluded from this select.
+            const usedBySiblings = new Set(
+              g.axes.filter((_, j) => j !== i).map((a) => a.driverKey),
+            );
+            const options = gridDriverCatalog.filter(
+              (e) => e.key === axis.driverKey || !usedBySiblings.has(e.key),
+            );
+            return (
+              <div
+                key={i}
+                style={{
+                  border: "1px solid #ececec", borderRadius: 8, padding: 12,
+                  marginBottom: 10, background: "#fcfcfc",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <span style={{
+                    display: "inline-block", padding: "2px 9px", borderRadius: 12,
+                    background: "rgba(255,80,0,0.10)", color: ORANGE, fontSize: 11,
+                    fontWeight: 700, letterSpacing: "0.03em",
+                  }}>
+                    Axis {i + 1}
+                  </span>
+                  {g.axes.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => onRemoveGridAxis(i)}
+                      style={{
+                        padding: "3px 9px", borderRadius: 7, border: "1px solid #e0e0e0",
+                        background: "#fff", color: "#b91c1c", fontSize: 11.5,
+                        fontWeight: 700, cursor: "pointer", fontFamily: "Arial, sans-serif",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Driver</span>
+                    <select
+                      value={axis.driverKey}
+                      onChange={(e) => onChangeGridAxisField(i, "driverKey", e.target.value)}
+                      style={{ ...inputStyle, cursor: "pointer" }}
+                    >
+                      {options.map((e) => (
+                        <option key={e.key} value={e.key}>{e.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Axis label</span>
+                    <input
+                      type="text"
+                      value={axis.label}
+                      onChange={(e) => onChangeGridAxisField(i, "label", e.target.value)}
+                      placeholder="e.g. Brent (avg 2026)"
+                      style={{ ...inputStyle }}
+                    />
+                  </label>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Axis unit</span>
+                    <input
+                      type="text"
+                      value={axis.unit}
+                      onChange={(e) => onChangeGridAxisField(i, "unit", e.target.value)}
+                      placeholder="e.g. USD/bbl"
+                      style={{ ...inputStyle }}
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Output */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", maxWidth: 320 }}>
             <span style={labelSpan}>Output (what the uploaded value is)</span>
             <select
               value={g.output}
-              onChange={(e) => onChangeGridField("output", e.target.value)}
+              onChange={(e) => onChangeGridOutput(e.target.value)}
               style={{ ...inputStyle, cursor: "pointer" }}
             >
               <option value="target_price">Target price (BRL/share)</option>
             </select>
-          </label>
-          <label style={{ display: "block" }}>
-            <span style={labelSpan}>Axis label</span>
-            <input
-              type="text"
-              value={g.xLabel}
-              onChange={(e) => onChangeGridField("xLabel", e.target.value)}
-              placeholder="e.g. Brent (avg 2026)"
-              style={{ ...inputStyle }}
-            />
-          </label>
-          <label style={{ display: "block" }}>
-            <span style={labelSpan}>Axis unit</span>
-            <input
-              type="text"
-              value={g.xUnit}
-              onChange={(e) => onChangeGridField("xUnit", e.target.value)}
-              placeholder="e.g. USD/bbl"
-              style={{ ...inputStyle }}
-            />
           </label>
         </div>
 

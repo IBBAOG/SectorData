@@ -208,33 +208,50 @@ export interface SensitivityAxis {
 }
 
 /**
+ * One axis of a SCENARIO-GRID mesh — a catalog driver whose LIVE value drives one
+ * slider. A grid has 1..3 of these (the storage order maps to the
+ * `x_value` / `y_value` / `z_value` coordinate columns). Pure axis METADATA — it
+ * names no company, so it carries no hide-strip.
+ */
+export interface SensitivityGridAxis {
+  /** Catalog driver key whose LIVE value is this axis position (e.g. `avg_brent_2026`). */
+  driver_key: string;
+  /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
+  label: string;
+  /** Axis unit (e.g. "USD/bbl"). */
+  unit: string;
+}
+
+/**
  * SCENARIO-GRID block — the optional `definition.grid` that marks a sensitivity
- * table as a 1-D interpolation mesh. The analyst runs thousands of scenarios in
- * their own model and uploads, PER COMPANY, a dense series of `(x_value →
- * target price)` points along a SINGLE driver axis (Brent). The dashboard reads
- * that mesh (`stock_guide_scenario_grid` → `get_stock_guide_scenario_grid`) and
- * INTERPOLATES it live (binary-search + linear) as the analyst drags one Brent
- * slider — see `interpolateGrid` in `src/lib/stockGuideSensitivity.ts`.
+ * table as a multilinear interpolation mesh. The analyst runs the model over the
+ * FULL Cartesian product of 1..3 driver levels (e.g. Avg Brent 2026 × 2027 ×
+ * 2028+) and uploads, PER COMPANY, the target price at every mesh node. The
+ * dashboard reads that mesh (`stock_guide_scenario_grid` →
+ * `get_stock_guide_scenario_grid`, 5 columns: x/y/z coords + primary_value) and
+ * INTERPOLATES it MULTILINEARLY (2^d corner blend) as the analyst drags one
+ * slider PER AXIS — see `buildGridMesh` / `interpolateMesh` in
+ * `src/lib/stockGuideSensitivity.ts`.
  *
- * This block is METADATA only (the axis driver/label/unit + what the output is)
- * — it names NO company, so it is NOT sensitive and carries no hide-strip. The
- * SENSITIVE per-company points live in the relational `stock_guide_scenario_grid`
- * table, read through the hide-aware `get_stock_guide_scenario_grid` RPC.
+ * This block is METADATA only (the per-axis driver/label/unit + what the output
+ * is) — it names NO company, so it is NOT sensitive and carries no hide-strip.
+ * The SENSITIVE per-company points live in the relational
+ * `stock_guide_scenario_grid` table, read through the hide-aware
+ * `get_stock_guide_scenario_grid` RPC.
+ *
+ * `axes` is ordered: `axes[0]` → the `x_value` coordinate, `axes[1]` → `y_value`,
+ * `axes[2]` → `z_value`. An unused axis means that coordinate column is always 0.
  *
  * The upsert RPC (`admin_upsert_stock_guide_sensitivity_table`) stores this
  * object VERBATIM inside `definition.grid`. Points are NOT typed in the admin —
  * they arrive via the Brent-grid Excel upload (Local Data).
  *
- * REPLACES the linear `compose` elastic layer (removed 2026-06-12): the analyst
- * chose an interpolated scenario mesh over a first-order Taylor slope model.
+ * REPLACES the 1-D single-axis shape (`x_driver_key`/`x_label`/`x_unit`, removed
+ * 2026-06-18) which itself replaced the linear `compose` elastic layer.
  */
 export interface SensitivityGridBlock {
-  /** Catalog driver key whose LIVE value is the X position (e.g. `avg_brent_2026`). */
-  x_driver_key: string;
-  /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
-  x_label: string;
-  /** Axis unit (e.g. "USD/bbl"). */
-  x_unit: string;
+  /** 1..3 driver axes, ordered (x, y, z). One live slider per axis. */
+  axes: SensitivityGridAxis[];
   /** What `primary_value` represents — currently `'target_price'` (BRL/share). */
   output: string;
 }
@@ -272,10 +289,11 @@ export interface SensitivityTable {
     cells_secondary?: (number | null)[][];
     /**
      * Present ONLY for SCENARIO-GRID tables. Its presence marks the table as a
-     * 1-D interpolation mesh: the dashboard renders ONE Brent slider and a
-     * Target price / Upside table that interpolates the uploaded per-company
-     * points live (the row/col axes + cells are ignored for a grid table). See
-     * `SensitivityGridBlock` + `interpolateGrid` + `get_stock_guide_scenario_grid`.
+     * multilinear interpolation mesh: the dashboard renders ONE slider PER AXIS
+     * (1..3) and a Target price / Upside table that interpolates the uploaded
+     * per-company points live (the row/col axes + cells are ignored for a grid
+     * table). See `SensitivityGridBlock` + `buildGridMesh` / `interpolateMesh` +
+     * `get_stock_guide_scenario_grid`.
      */
     grid?: SensitivityGridBlock;
   };
@@ -283,15 +301,19 @@ export interface SensitivityTable {
 }
 
 /**
- * One point of a scenario-grid mesh — `(ticker, x_value, primary_value)` from
- * `get_stock_guide_scenario_grid(p_sensitivity_id)`, ordered by ticker, x_value.
- * `x_value` is the Brent level; `primary_value` is the target price (BRL/share)
- * at that Brent. Hide-aware: a non-admin only receives visible tickers. Numerics
- * already coerced to `number` by the rpc.ts wrapper.
+ * One point of a scenario-grid mesh — `(ticker, x_value, y_value, z_value,
+ * primary_value)` from `get_stock_guide_scenario_grid(p_sensitivity_id)`, ordered
+ * by ticker then by the coordinate axes. `x/y/z_value` are the driver levels
+ * (one per `definition.grid.axes` entry; an unused axis is always 0);
+ * `primary_value` is the target price (BRL/share) at that mesh node. Hide-aware:
+ * a non-admin only receives visible tickers. Numerics already coerced to `number`
+ * by the rpc.ts wrapper (rows with any non-finite coordinate/value dropped).
  */
 export interface ScenarioGridPoint {
   ticker: string;
   x_value: number;
+  y_value: number;
+  z_value: number;
   primary_value: number;
 }
 

@@ -4243,6 +4243,7 @@ import type {
   SensitivityTable,
   SensitivityTableAdmin,
   SensitivityGridBlock,
+  SensitivityGridAxis,
   ScenarioGridPoint,
 } from "../types/stockGuide";
 
@@ -4577,20 +4578,41 @@ function mapSensitivityAxis(raw: unknown): SensitivityAxis {
  * Coerce the SCENARIO-GRID `definition.grid` jsonb into a typed
  * `SensitivityGridBlock`. Returns null when absent / malformed. The block is
  * axis METADATA only (no numerics, no company keys) — stored verbatim by the
- * upsert RPC — so we just normalize the string fields.
+ * upsert RPC — so we just normalize the per-axis string fields.
+ *
+ * `axes` must be a 1..3-entry array of `{driver_key, label, unit}`:
+ *   • each axis needs a non-empty `driver_key`; `label`/`unit` are coerced to
+ *     strings;
+ *   • a duplicate `driver_key` keeps only its FIRST occurrence;
+ *   • more than 3 valid axes → the excess is dropped (keep the first 3);
+ *   • zero valid axes → null (the table then falls back to the static matrix).
+ *
+ * The legacy 1-D shape (`x_driver_key`) no longer exists in the DB; if one ever
+ * surfaces, the migration's data-fix has already converted it to `axes`, so this
+ * mapper only honors `axes`.
  */
 function mapGridBlock(raw: unknown): SensitivityGridBlock | null {
   if (!raw || typeof raw !== "object") return null;
   const g = raw as Record<string, unknown>;
-  const xDriverKey = g.x_driver_key != null ? String(g.x_driver_key) : "";
-  // A grid block is only meaningful if it names the live X driver.
-  if (!xDriverKey) return null;
-  return {
-    x_driver_key: xDriverKey,
-    x_label: String(g.x_label ?? ""),
-    x_unit: String(g.x_unit ?? ""),
-    output: String(g.output ?? "target_price"),
-  };
+  if (!Array.isArray(g.axes)) return null;
+  const axes: SensitivityGridAxis[] = [];
+  const seen = new Set<string>();
+  for (const item of g.axes as unknown[]) {
+    if (!item || typeof item !== "object") continue;
+    const a = item as Record<string, unknown>;
+    const driverKey = a.driver_key != null ? String(a.driver_key).trim() : "";
+    if (!driverKey) continue; // an axis is only meaningful if it names a driver
+    if (seen.has(driverKey)) continue; // duplicate → keep the first
+    seen.add(driverKey);
+    axes.push({
+      driver_key: driverKey,
+      label: String(a.label ?? ""),
+      unit: String(a.unit ?? ""),
+    });
+    if (axes.length === 3) break; // cap at 3 axes (x, y, z)
+  }
+  if (axes.length === 0) return null;
+  return { axes, output: String(g.output ?? "target_price") };
 }
 
 const SENSITIVITY_VALUE_MODES = [
@@ -4683,13 +4705,15 @@ export async function rpcGetStockGuideSensitivityTables(
 }
 
 /**
- * The 1-D scenario-grid mesh for ONE scenario-grid sensitivity table: every
- * `(ticker, x_value, primary_value)` point, ordered by ticker then x_value.
- * `x_value` is the Brent level; `primary_value` is the target price (BRL/share)
- * at that Brent. HIDE-AWARE — a non-admin only receives points for VISIBLE
- * tickers (a restricted company's per-Brent target prices never reach the
- * browser). Both numerics are coerced; rows with a non-finite x/y are dropped so
- * the interpolator never sees `NaN`.
+ * The multi-axis scenario-grid mesh for ONE scenario-grid sensitivity table:
+ * every `(ticker, x_value, y_value, z_value, primary_value)` point, ordered by
+ * ticker then by the coordinate axes. `x/y/z_value` are the driver levels (one
+ * per `definition.grid.axes` entry; an unused axis is always 0); `primary_value`
+ * is the target price (BRL/share) at that mesh node. HIDE-AWARE — a non-admin
+ * only receives points for VISIBLE tickers (a restricted company's per-scenario
+ * target prices never reach the browser). All four numerics are coerced; any row
+ * with a non-finite coordinate or value is dropped so the interpolator never
+ * sees `NaN`.
  *
  * Lazy / on-demand: the dashboard calls this only when the user selects a
  * scenario-grid table (and caches by `sensitivityId`).
@@ -4709,9 +4733,17 @@ export async function rpcGetStockGuideScenarioGrid(
   const out: ScenarioGridPoint[] = [];
   for (const r of rows) {
     const x = toNumOrNull(r.x_value);
-    const y = toNumOrNull(r.primary_value);
-    if (x == null || y == null) continue;
-    out.push({ ticker: String(r.ticker), x_value: x, primary_value: y });
+    const y = toNumOrNull(r.y_value);
+    const z = toNumOrNull(r.z_value);
+    const v = toNumOrNull(r.primary_value);
+    if (x == null || y == null || z == null || v == null) continue;
+    out.push({
+      ticker: String(r.ticker),
+      x_value: x,
+      y_value: y,
+      z_value: z,
+      primary_value: v,
+    });
   }
   return out;
 }

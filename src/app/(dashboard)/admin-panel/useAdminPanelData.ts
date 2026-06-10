@@ -262,18 +262,28 @@ export interface SgAxisDraft {
 }
 
 /**
+ * Editable mirror of ONE axis of the SCENARIO-GRID `definition.grid` block — a
+ * catalog driver + its slider label + unit. Picking a driver auto-fills both the
+ * label and the unit from the catalog (still editable).
+ */
+export interface SgGridAxisDraft {
+  /** Catalog driver key whose LIVE value drives this axis (e.g. 'avg_brent_2026'). */
+  driverKey: string;
+  /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
+  label: string;
+  /** Axis unit (e.g. "USD/bbl"). */
+  unit: string;
+}
+
+/**
  * Editable mirror of the SCENARIO-GRID `definition.grid` block — the CASE only
- * (axis driver + labels + output). The per-company points are NOT typed here:
- * they arrive via the Brent-grid Excel upload (Local Data). Serialized verbatim
- * into `definition.grid`. Replaces the removed `SgComposeDraft` (linear compose).
+ * (1..3 driver axes + output). The per-company points are NOT typed here: they
+ * arrive via the Brent-grid Excel upload (Local Data). Serialized verbatim into
+ * `definition.grid` as `{ axes: [{driver_key,label,unit}], output }`.
  */
 export interface SgGridDraft {
-  /** Catalog driver key whose LIVE value is the X position (e.g. 'avg_brent_2026'). */
-  xDriverKey: string;
-  /** Axis label for the slider (e.g. "Brent (avg 2026)"). */
-  xLabel: string;
-  /** Axis unit (e.g. "USD/bbl"). */
-  xUnit: string;
+  /** 1..3 ordered driver axes (storage order maps to x/y/z coordinates). */
+  axes: SgGridAxisDraft[];
   /** What the uploaded primary_value is — currently 'target_price' (BRL/share). */
   output: string;
 }
@@ -328,12 +338,10 @@ function blankAxisDraft(): SgAxisDraft {
   return { kind: "company", driverId: "", scenarios: [], companies: [], years: [] };
 }
 
-/** A pristine SCENARIO-GRID draft (target-price output, Brent 2026 default key). */
+/** A pristine SCENARIO-GRID draft (target-price output, one Brent 2026 axis). */
 function blankGridDraft(): SgGridDraft {
   return {
-    xDriverKey: "avg_brent_2026",
-    xLabel: "Brent (avg 2026)",
-    xUnit: "USD/bbl",
+    axes: [{ driverKey: "avg_brent_2026", label: "Brent (avg 2026)", unit: "USD/bbl" }],
     output: "target_price",
   };
 }
@@ -362,10 +370,16 @@ function blankTableDraft(): SgTableDraft {
 function gridToDraft(
   g: NonNullable<SensitivityTableAdmin["definition"]["grid"]>,
 ): SgGridDraft {
+  const axes = (g.axes ?? [])
+    .filter((a) => (a.driver_key ?? "").trim())
+    .slice(0, 3)
+    .map((a) => ({
+      driverKey: a.driver_key,
+      label: a.label || "",
+      unit: a.unit || "",
+    }));
   return {
-    xDriverKey: g.x_driver_key || "",
-    xLabel: g.x_label || "",
-    xUnit: g.x_unit || "",
+    axes: axes.length > 0 ? axes : blankGridDraft().axes,
     output: g.output || "target_price",
   };
 }
@@ -838,13 +852,20 @@ export interface UseAdminPanelData {
   handleChangeSgTableValueMode: (mode: SgValueMode) => void;
 
   // ── Scenario-grid table builder ─────────────────────────────────────────────
-  /** The market-driver catalog (Brent/FX 2026-2028) for the X-driver picker. */
+  /** The market-driver catalog (Brent/FX 2026-2028) for the axis-driver pickers. */
   sgGridDriverCatalog: DriverCatalogEntry[];
   /** Toggle SCENARIO-GRID mode for the current draft. */
   handleToggleSgGrid: (on: boolean) => void;
-  /** Set one grid-shell field (x driver key / label / unit / output). */
-  handleChangeSgGridField: (
-    field: "xDriverKey" | "xLabel" | "xUnit" | "output",
+  /** Set the grid output (target_price for now). */
+  handleChangeSgGridOutput: (value: string) => void;
+  /** Add a new axis to the grid (capped at 3). */
+  handleAddSgGridAxis: () => void;
+  /** Remove an axis from the grid (floor 1). */
+  handleRemoveSgGridAxis: (axisIdx: number) => void;
+  /** Set one field of one axis (driver auto-fills label + unit). */
+  handleChangeSgGridAxisField: (
+    axisIdx: number,
+    field: "driverKey" | "label" | "unit",
     value: string,
   ) => void;
   /** Add/remove a ticker from the grid table's membership (points uploaded per company). */
@@ -2206,17 +2227,56 @@ export function useAdminPanelData(): UseAdminPanelData {
     });
   }, []);
 
-  const handleChangeSgGridField = useCallback(
-    (field: "xDriverKey" | "xLabel" | "xUnit" | "output", value: string) => {
+  /** Change the grid output (target_price for now). */
+  const handleChangeSgGridOutput = useCallback((value: string) => {
+    setSgTableDraft((d) => (d ? { ...d, gridDef: { ...d.gridDef, output: value } } : d));
+  }, []);
+
+  /** Add a new axis (capped at 3). The default driver = first catalog key not
+   *  already used by a sibling axis (else the first catalog key). */
+  const handleAddSgGridAxis = useCallback(() => {
+    setSgTableDraft((d) => {
+      if (!d || d.gridDef.axes.length >= 3) return d;
+      const used = new Set(d.gridDef.axes.map((a) => a.driverKey));
+      const pick =
+        MARKET_DRIVER_CATALOG.find((e) => !used.has(e.key)) ?? MARKET_DRIVER_CATALOG[0];
+      const axis: SgGridAxisDraft = {
+        driverKey: pick.key,
+        label: pick.label,
+        unit: pick.unit,
+      };
+      return { ...d, gridDef: { ...d.gridDef, axes: [...d.gridDef.axes, axis] } };
+    });
+  }, []);
+
+  /** Remove an axis (floor 1). */
+  const handleRemoveSgGridAxis = useCallback((axisIdx: number) => {
+    setSgTableDraft((d) => {
+      if (!d || d.gridDef.axes.length <= 1) return d;
+      const axes = d.gridDef.axes.filter((_, i) => i !== axisIdx);
+      return { ...d, gridDef: { ...d.gridDef, axes } };
+    });
+  }, []);
+
+  /** Change one field of one axis. Picking a driver auto-fills BOTH label + unit
+   *  from the catalog (still editable afterward). */
+  const handleChangeSgGridAxisField = useCallback(
+    (axisIdx: number, field: "driverKey" | "label" | "unit", value: string) => {
       setSgTableDraft((d) => {
         if (!d) return d;
-        const gridDef = { ...d.gridDef, [field]: value };
-        // Picking an X driver auto-fills the unit from the catalog (admin can override).
-        if (field === "xDriverKey") {
-          const cat = MARKET_DRIVER_CATALOG_BY_KEY[value];
-          if (cat) gridDef.xUnit = cat.unit;
-        }
-        return { ...d, gridDef };
+        const axes = d.gridDef.axes.map((a, i) => {
+          if (i !== axisIdx) return a;
+          const next = { ...a, [field]: value };
+          if (field === "driverKey") {
+            const cat = MARKET_DRIVER_CATALOG_BY_KEY[value];
+            if (cat) {
+              next.label = cat.label;
+              next.unit = cat.unit;
+            }
+          }
+          return next;
+        });
+        return { ...d, gridDef: { ...d.gridDef, axes } };
       });
     },
     [],
@@ -2389,8 +2449,12 @@ export function useAdminPanelData(): UseAdminPanelData {
     // ── SCENARIO-GRID validation ──────────────────────────────────────────────
     if (d.grid) {
       const g = d.gridDef;
-      if (!g.xDriverKey.trim())
-        return "Select the X driver (e.g. Brent 2026) for the scenario grid.";
+      if (g.axes.length < 1) return "The scenario grid needs at least one axis.";
+      if (g.axes.some((a) => !a.driverKey.trim()))
+        return "Every axis must select a driver (e.g. Brent 2026).";
+      const keys = g.axes.map((a) => a.driverKey.trim());
+      if (new Set(keys).size !== keys.length)
+        return "Each axis must use a different driver.";
       if (!g.output.trim()) return "Set the grid output (e.g. target_price).";
       if (d.gridCompanies.length === 0)
         return "Select at least one company for the scenario grid.";
@@ -2582,9 +2646,11 @@ export function useAdminPanelData(): UseAdminPanelData {
         // the row is structurally a valid sensitivity def.
         const g = d.gridDef;
         const grid: Record<string, unknown> = {
-          x_driver_key: g.xDriverKey.trim(),
-          x_label: g.xLabel.trim(),
-          x_unit: g.xUnit.trim(),
+          axes: g.axes.map((a) => ({
+            driver_key: a.driverKey.trim(),
+            label: a.label.trim(),
+            unit: a.unit.trim(),
+          })),
           output: (g.output || "target_price").trim(),
         };
         definition = {
@@ -2846,7 +2912,10 @@ export function useAdminPanelData(): UseAdminPanelData {
     // scenario grid
     sgGridDriverCatalog: MARKET_DRIVER_CATALOG,
     handleToggleSgGrid,
-    handleChangeSgGridField,
+    handleChangeSgGridOutput,
+    handleAddSgGridAxis,
+    handleRemoveSgGridAxis,
+    handleChangeSgGridAxisField,
     handleToggleSgGridCompany,
     sgGridPointCount,
     sgGridPointCountLoading,

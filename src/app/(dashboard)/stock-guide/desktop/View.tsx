@@ -874,33 +874,141 @@ function SensitivityTableView({
   );
 }
 
-// ─── Scenario-grid (1-D Brent interpolation) panel ─────────────────────────────
+// ─── Scenario-grid (multi-axis Brent mesh) panel ───────────────────────────────
 //
-// Renders when a table has `definition.grid`: ONE Brent slider (domain = span of
-// the uploaded mesh, marker at the live "today" Brent) + a Target price / Upside
-// table that interpolates the per-company mesh live as the analyst drags. Replaces
-// the static matrix for that table.
+// Renders when a table has `definition.grid`: ONE slider per axis (1..3, domain =
+// the union of the uploaded mesh's levels, marker at the live "today" value) + a
+// Target price / Upside table that interpolates the per-company mesh MULTILINEARLY
+// as the analyst drags. Replaces the static matrix for that table.
 
 function fmtSlider(v: number): string {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+/** One axis slider row inside the GridPanel. */
+function AxisSlider({
+  tableId,
+  axisIdx,
+  axis,
+  onSetAxis,
+  onResetAxis,
+}: {
+  tableId: number;
+  axisIdx: number;
+  axis: GridTableModel["axes"][number];
+  onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
+  onResetAxis: (tableId: number, axisIdx: number) => void;
+}): React.ReactElement {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 8,
+          fontFamily: "Arial, Helvetica, sans-serif",
+          marginBottom: 6,
+        }}
+      >
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1f2937" }}>
+          {axis.label} ({axis.unit})
+        </span>
+        {axis.disabled ? (
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              color: "#9ca3af",
+              fontVariantNumeric: "tabular-nums",
+              background: "#f3f4f6",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: "1px 9px",
+            }}
+          >
+            fixed {fmtSlider(axis.value)} {axis.unit}
+          </span>
+        ) : (
+          <span style={{ fontSize: 15, fontWeight: 700, color: BRAND_ORANGE, fontVariantNumeric: "tabular-nums" }}>
+            {fmtSlider(axis.value)}
+            <span style={{ color: "#9ca3af", fontWeight: 600, fontSize: 11 }}> {axis.unit}</span>
+          </span>
+        )}
+      </div>
+      <input
+        type="range"
+        min={axis.min}
+        max={axis.max}
+        step={axis.step}
+        value={axis.value}
+        disabled={axis.disabled}
+        onChange={(e) => onSetAxis(tableId, axisIdx, Number(e.target.value))}
+        aria-label={`${axis.label} (${axis.unit})`}
+        style={{
+          width: "100%",
+          accentColor: BRAND_ORANGE,
+          cursor: axis.disabled ? "not-allowed" : "pointer",
+          opacity: axis.disabled ? 0.5 : 1,
+        }}
+      />
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 10,
+          color: "#9ca3af",
+          fontVariantNumeric: "tabular-nums",
+          marginTop: 2,
+        }}
+      >
+        <span>{fmtSlider(axis.min)}</span>
+        <span style={{ color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af", fontWeight: 600 }}>
+          {axis.liveValue != null ? `live ${fmtSlider(axis.liveValue)}` : "live —"}
+        </span>
+        <span>{fmtSlider(axis.max)}</span>
+      </div>
+      {axis.overridden && (
+        <button
+          type="button"
+          onClick={() => onResetAxis(tableId, axisIdx)}
+          style={{
+            marginTop: 8,
+            padding: "3px 10px",
+            borderRadius: 12,
+            cursor: "pointer",
+            border: `1px solid ${BRAND_ORANGE}`,
+            background: "rgba(255,80,0,0.08)",
+            color: BRAND_ORANGE,
+            fontSize: 11,
+            fontWeight: 700,
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          Reset to live
+        </button>
+      )}
+    </div>
+  );
+}
+
 function GridPanel({
   table,
   model,
-  onSetBrent,
-  onReset,
+  onSetAxis,
+  onResetAxis,
+  onResetAll,
   quotesLoading,
 }: {
   table: SensitivityTable;
   model: GridTableModel;
-  onSetBrent: (tableId: number, value: number) => void;
-  onReset: (tableId: number) => void;
+  onSetAxis: (tableId: number, axisIdx: number, value: number) => void;
+  onResetAxis: (tableId: number, axisIdx: number) => void;
+  onResetAll: (tableId: number) => void;
   quotesLoading: boolean;
 }): React.ReactElement {
-  const s = model.slider;
-  const atLive = s.liveValue != null && Math.abs(s.value - s.liveValue) < s.step / 2;
-
   return (
     <div style={{ marginBottom: 28 }}>
       {/* Title + grid badge */}
@@ -933,8 +1041,8 @@ function GridPanel({
           marginBottom: 14,
         }}
       >
-        Drag Brent to interpolate live across our scenario mesh. The marker shows
-        today&rsquo;s Brent.
+        Drag the assumptions to interpolate live across our scenario mesh. Markers
+        show today&rsquo;s values.
       </div>
 
       <div
@@ -945,7 +1053,7 @@ function GridPanel({
           alignItems: "start",
         }}
       >
-        {/* ── Brent slider ──────────────────────────────────────────────────── */}
+        {/* ── Axis sliders (1..3, stacked) ──────────────────────────────────── */}
         <div
           style={{
             border: "1px solid #e6e6e6",
@@ -955,69 +1063,34 @@ function GridPanel({
             boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              alignItems: "baseline",
-              justifyContent: "space-between",
-              gap: 8,
-              fontFamily: "Arial, Helvetica, sans-serif",
-              marginBottom: 8,
-            }}
-          >
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#1f2937" }}>
-              {s.label} ({s.unit})
-            </span>
-            <span style={{ fontSize: 15, fontWeight: 700, color: BRAND_ORANGE, fontVariantNumeric: "tabular-nums" }}>
-              {fmtSlider(s.value)}
-              <span style={{ color: "#9ca3af", fontWeight: 600, fontSize: 11 }}> {s.unit}</span>
-            </span>
-          </div>
-          <input
-            type="range"
-            min={s.min}
-            max={s.max}
-            step={s.step}
-            value={s.value}
-            onChange={(e) => onSetBrent(table.id, Number(e.target.value))}
-            aria-label={`${s.label} (${s.unit})`}
-            style={{ width: "100%", accentColor: BRAND_ORANGE, cursor: "pointer" }}
-          />
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontSize: 10,
-              color: "#9ca3af",
-              fontVariantNumeric: "tabular-nums",
-              marginTop: 2,
-            }}
-          >
-            <span>{fmtSlider(s.min)}</span>
-            <span style={{ color: s.liveValue != null ? BRAND_ORANGE : "#9ca3af", fontWeight: 600 }}>
-              {s.liveValue != null ? `live ${fmtSlider(s.liveValue)}` : "live —"}
-            </span>
-            <span>{fmtSlider(s.max)}</span>
-          </div>
-          {s.liveValue != null && !atLive && (
+          {model.axes.map((axis, i) => (
+            <AxisSlider
+              key={`${axis.key}-${i}`}
+              tableId={table.id}
+              axisIdx={i}
+              axis={axis}
+              onSetAxis={onSetAxis}
+              onResetAxis={onResetAxis}
+            />
+          ))}
+          {model.anyOverridden && (
             <button
               type="button"
-              onClick={() => onReset(table.id)}
+              onClick={() => onResetAll(table.id)}
               style={{
-                marginTop: 12,
+                marginTop: 4,
                 padding: "5px 12px",
                 borderRadius: 14,
                 cursor: "pointer",
                 border: `1px solid ${BRAND_ORANGE}`,
-                background: "rgba(255,80,0,0.08)",
-                color: BRAND_ORANGE,
+                background: BRAND_ORANGE,
+                color: "#fff",
                 fontSize: 12,
                 fontWeight: 700,
                 fontFamily: "Arial, Helvetica, sans-serif",
               }}
             >
-              Reset to live Brent
+              Reset all to live
             </button>
           )}
         </div>
@@ -1095,8 +1168,9 @@ function SensitivitySection({
   isGridTable,
   getGridModel,
   gridLoading,
-  onSetGridBrent,
-  onResetGridBrent,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
   quotesLoading,
 }: {
   tables: SensitivityTable[];
@@ -1110,8 +1184,9 @@ function SensitivitySection({
   isGridTable: UseStockGuideData["isGridTable"];
   getGridModel: UseStockGuideData["getGridModel"];
   gridLoading: boolean;
-  onSetGridBrent: UseStockGuideData["setGridBrent"];
-  onResetGridBrent: UseStockGuideData["resetGridBrent"];
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
   if (loading) {
@@ -1160,8 +1235,9 @@ function SensitivitySection({
                 key={t.id}
                 table={t}
                 model={model}
-                onSetBrent={onSetGridBrent}
-                onReset={onResetGridBrent}
+                onSetAxis={onSetGridAxis}
+                onResetAxis={onResetGridAxis}
+                onResetAll={onResetGridAll}
                 quotesLoading={quotesLoading}
               />
             );
@@ -1258,8 +1334,9 @@ export default function DesktopView(): React.ReactElement {
     isGridTable,
     getGridModel,
     gridLoading,
-    setGridBrent,
-    resetGridBrent,
+    setGridAxisValue,
+    resetGridAxis,
+    resetGridAll,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -1394,8 +1471,9 @@ export default function DesktopView(): React.ReactElement {
                   isGridTable={isGridTable}
                   getGridModel={getGridModel}
                   gridLoading={gridLoading}
-                  onSetGridBrent={setGridBrent}
-                  onResetGridBrent={resetGridBrent}
+                  onSetGridAxis={setGridAxisValue}
+                  onResetGridAxis={resetGridAxis}
+                  onResetGridAll={resetGridAll}
                   quotesLoading={quotesLoading}
                 />
               </div>
