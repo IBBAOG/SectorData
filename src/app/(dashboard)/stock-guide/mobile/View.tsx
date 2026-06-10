@@ -1233,7 +1233,6 @@ export default function MobileView(): React.ReactElement {
     sectorsPresent,
     restrictedNames,
     unitMarginNote,
-    mcapAdjNote,
     filters,
     setFilters,
     quotesLoading,
@@ -1451,9 +1450,6 @@ export default function MobileView(): React.ReactElement {
             </div>
             {unitMarginNote && (
               <div style={{ marginTop: 4 }}>{unitMarginNote}</div>
-            )}
-            {mcapAdjNote && (
-              <div style={{ marginTop: 4 }}>{mcapAdjNote}</div>
             )}
             {restrictedNames.length > 0 && (
               <div style={{ marginTop: 6 }}>

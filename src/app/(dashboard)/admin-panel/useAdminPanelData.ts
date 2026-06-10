@@ -188,12 +188,6 @@ export interface SgEditorRow {
   net_income_y1: string;
   net_income_y2: string;
   /**
-   * Optional per-year tax-credit NPV (BRL mn) subtracted from the live market cap
-   * before the 4 multiples + the upside-adjusted price. Empty = no adjustment.
-   */
-  mcap_adj_y1: string;
-  mcap_adj_y2: string;
-  /**
    * Optional NPV of recognized tax credits (BRL mn). When > 0, the comps table
    * renders an extra "{Company} ex-tax credit" companion row whose market cap is
    * the live market cap MINUS this NPV. Empty = no companion row.
@@ -239,8 +233,6 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     ebitda_y2: numToStr(c.ebitda_y2),
     net_income_y1: numToStr(c.net_income_y1),
     net_income_y2: numToStr(c.net_income_y2),
-    mcap_adj_y1: numToStr(c.mcap_adj_y1),
-    mcap_adj_y2: numToStr(c.mcap_adj_y2),
     npv_tax_credit: numToStr(c.npv_tax_credit),
     fcfe_y1: numToStr(c.fcfe_y1),
     fcfe_y2: numToStr(c.fcfe_y2),
@@ -2059,8 +2051,6 @@ export function useAdminPanelData(): UseAdminPanelData {
         ebitda_y2: strToNum(r.ebitda_y2),
         net_income_y1: strToNum(r.net_income_y1),
         net_income_y2: strToNum(r.net_income_y2),
-        mcap_adj_y1: strToNum(r.mcap_adj_y1),
-        mcap_adj_y2: strToNum(r.mcap_adj_y2),
         npv_tax_credit: strToNum(r.npv_tax_credit),
         fcfe_y1: strToNum(r.fcfe_y1),
         fcfe_y2: strToNum(r.fcfe_y2),

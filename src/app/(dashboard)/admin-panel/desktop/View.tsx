@@ -323,7 +323,7 @@ export default function DesktopView(): React.ReactElement | null {
     | "shares_outstanding" | "target_price" | "display_order"
     | "net_debt_y1" | "net_debt_y2"
     | "ebitda_y1" | "ebitda_y2" | "net_income_y1" | "net_income_y2"
-    | "mcap_adj_y1" | "mcap_adj_y2" | "npv_tax_credit"
+    | "npv_tax_credit"
     | "fcfe_y1" | "fcfe_y2" | "dividends_y1" | "dividends_y2"
     | "volumes_y1" | "volumes_y2";
   const renderSgNumField = (
@@ -2147,27 +2147,6 @@ export default function DesktopView(): React.ReactElement | null {
                         </div>
 
                         {/* Market-cap adjustment — tax-credit NPV (optional; subtracted from the live market cap) */}
-                        <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
-                          <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 }}>
-                            Market cap adjustment — tax-credit NPV (optional)
-                          </div>
-                          <div style={{ fontSize: 11, color: "#aaa", marginBottom: 12, lineHeight: 1.5 }}>
-                            Subtracted from the live market cap before computing EV/EBITDA,
-                            P/E, FCFE Yield, Div Yield and the Upside-adjusted price. Use for
-                            non-operating assets such as the NPV of recognized tax credits
-                            (e.g. Vibra, Ultrapar). Leave empty for no adjustment. The Net
-                            Income column and the P/E numerator always use reported earnings.
-                          </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
-                            {renderSgNumField("mcap_adj_y1", `Tax-credit NPV ${sgConfigDraft.y1_label || "Y1"} (BRL mn)`, {
-                              placeholder: "empty = no adjustment",
-                            })}
-                            {renderSgNumField("mcap_adj_y2", `Tax-credit NPV ${sgConfigDraft.y2_label || "Y2"} (BRL mn)`, {
-                              placeholder: "empty = no adjustment",
-                            })}
-                          </div>
-                        </div>
-
                         {/* NPV of tax credits — ex-tax-credit companion row (optional) */}
                         <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid #ececec" }}>
                           <div style={{ fontSize: 12, fontWeight: 700, color: "#555", marginBottom: 4 }}>

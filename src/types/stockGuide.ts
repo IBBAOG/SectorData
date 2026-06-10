@@ -65,25 +65,15 @@ export interface StockGuideCompany {
   net_income_y1: number | null;
   net_income_y2: number | null;
   /**
-   * Optional MARKET-CAP ADJUSTMENT in BRL million, PER FORWARD YEAR — the NPV of
-   * a non-operating asset (e.g. the recognized tax credits of Vibra / Ultrapar)
-   * that is SUBTRACTED from the live market cap before computing the four
-   * multiples (EV/EBITDA, P/E, FCFE Yield, Div Yield) and the Upside-adjusted
-   * price. NULL/undefined → no adjustment (subtract 0). The Net Income column and
-   * the P/E numerator always use REPORTED earnings — this only shrinks the
-   * equity value, never the earnings.
-   */
-  mcap_adj_y1: number | null;
-  mcap_adj_y2: number | null;
-  /**
    * Optional NPV (BRL million) of recognized tax credits for this company. When
    * present and > 0, the comps table renders an EXTRA "{Company} ex-tax credit"
    * companion row right below the company, whose market cap is the LIVE market
    * cap MINUS this NPV (`mktcap_ex = marketCapBrlMn − npv_tax_credit`); every
    * mcap-derived figure (EV/EBITDA, P/E, FCFE Yield, Div Yield) is recomputed on
    * that ex-credit basis. NULL/undefined/≤0 → no companion row. Analyst-locked
-   * formula; independent of the per-year `mcap_adj_y1/y2` mechanism (see the hook
-   * for the interaction note). Persisted via `admin_upsert_stock_guide_company`.
+   * formula — this is the SOLE tax-credit mechanism (the per-year in-place
+   * `mcap_adj_y1/y2` market-cap adjustment was retired 2026-06-21). Persisted via
+   * `admin_upsert_stock_guide_company`.
    */
   npv_tax_credit: number | null;
   /** Forward FCFE in BRL million (the VALUE, not a yield). Drives FCFE yield. */
@@ -123,20 +113,15 @@ export interface StockGuideComputedRow extends StockGuideCompany {
   /** `shares_outstanding × livePrice / 1e6` (BRL million). Null if either input missing. */
   marketCapBrlMn: number | null;
   /**
-   * Market cap MINUS the per-year tax-credit NPV (`mcap_adj_y1`, treated as 0 when
-   * null) — `marketCapBrlMn − (mcap_adj_y1 ?? 0)`. This adjusted basis feeds the
-   * year-1 EV, P/E, FCFE yield and div yield. Null when `marketCapBrlMn` is null.
+   * The equity-value basis that feeds the four multiples for THIS row, year 1.
+   * For a normal company row it equals the RAW `marketCapBrlMn`; for the
+   * ex-tax-credit companion row it is `marketCapBrlMn − npv_tax_credit`. Null when
+   * `marketCapBrlMn` is null.
    */
   adjMcapY1: number | null;
-  /** Year-2 adjusted market cap — `marketCapBrlMn − (mcap_adj_y2 ?? 0)`. */
+  /** Year-2 equity-value basis — same value as `adjMcapY1` (mcap is a single current value). */
   adjMcapY2: number | null;
-  /**
-   * Upside computed against the NPV-ADJUSTED price (the year-1 NPV per share is
-   * subtracted from the live price; the target price is NOT adjusted) —
-   * `target_price / (livePrice − npvPerShareY1) − 1`. Coherent with `adjMcapY1`,
-   * which equals `shares × adjustedPrice / 1e6`. When `mcap_adj_y1` is null the
-   * adjusted price = the live price, so this matches the unadjusted upside.
-   */
+  /** `target_price / livePrice − 1`. Null unless `livePrice > 0` and TP present. */
   upsidePct: number | null;
   /** `adjMcapY1 + net_debt_y1` (BRL million). Null if either input is null. */
   evBrlMnY1: number | null;

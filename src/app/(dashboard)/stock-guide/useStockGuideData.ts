@@ -121,14 +121,6 @@ export interface UseStockGuideData {
    */
   unitMarginNote: string | null;
 
-  /**
-   * Footnote flagging the companies whose live market cap is ADJUSTED by the NPV
-   * of recognized tax credits / non-operating assets (e.g. Vibra, Ultrapar)
-   * before computing the multiples and the upside-adjusted price, or null when
-   * none. Rendered in both Views next to the live-derivation note.
-   */
-  mcapAdjNote: string | null;
-
   /** Live-quote state for the batched fetch. */
   quotesLoading: boolean;
   quotesError: string | null;
@@ -576,22 +568,6 @@ export function useStockGuideData(): UseStockGuideData {
     return `Assumed unit margin (EBITDA ÷ volumes): ${parts.join("; ")}.`;
   }, [rows, config.y1_label, config.y2_label]);
 
-  // Footnote: which visible companies' market cap is adjusted by the NPV of
-  // recognized tax credits before computing the multiples + upside (data-driven).
-  const mcapAdjNote = useMemo<string | null>(() => {
-    const names = rows
-      .filter(
-        (r) =>
-          r.is_visible && (r.mcap_adj_y1 != null || r.mcap_adj_y2 != null),
-      )
-      .sort((a, b) => a.display_order - b.display_order)
-      .map((r) => r.company_name);
-    if (names.length === 0) return null;
-    return `For ${names.join(
-      ", ",
-    )} the market cap is adjusted (the NPV of recognized tax credits is subtracted as a non-operating asset) before computing EV/EBITDA, P/E, FCFE Yield, Div Yield and the upside-adjusted price.`;
-  }, [rows]);
-
   // ── c. Live quotes — ONE batched fetch of visible rows' symbols ───────────
   // Quote symbol = yahoo_symbol (fallback ticker). Hidden rows have a null
   // yahoo_symbol AND are excluded here, so restricted tickers never leave the
@@ -647,11 +623,12 @@ export function useStockGuideData(): UseStockGuideData {
       : visibleRows;
 
     // Derive the four mcap-driven multiples + the per-year EV from a given pair
-    // of adjusted market-cap bases (year-1 / year-2). Pure; null-safe; every
-    // denominator guarded. Shared by the NORMAL row (basis = mcap − mcap_adj_yN)
-    // and the EX-TAX-CREDIT companion row (basis = mcap − npv_tax_credit, same
-    // value both years). Net income / EBITDA / dividends / FCFE are the company's
-    // own fundamentals in both cases — only the equity-value basis differs.
+    // of market-cap bases (year-1 / year-2). Pure; null-safe; every denominator
+    // guarded. Shared by the NORMAL row (basis = the RAW live market cap, same
+    // value both years) and the EX-TAX-CREDIT companion row (basis = mcap −
+    // npv_tax_credit, same value both years). Net income / EBITDA / dividends /
+    // FCFE are the company's own fundamentals in both cases — only the
+    // equity-value basis differs.
     const deriveMultiples = (
       r: StockGuideCompany,
       basisY1: number | null,
@@ -720,38 +697,16 @@ export function useStockGuideData(): UseStockGuideData {
           ? (r.shares_outstanding * livePrice) / 1e6
           : null;
 
-      // ── Tax-credit NPV adjustment (per forward year) ──────────────────────
-      // The NPV of recognized tax credits / non-operating assets (e.g. Vibra,
-      // Ultrapar) is SUBTRACTED from the market cap before computing the four
-      // multiples + the upside-adjusted price. NULL → subtract 0 (no
-      // adjustment), preserving the prior behaviour. The adjustment is per year.
-      const adjMcapY1 =
-        marketCapBrlMn != null ? marketCapBrlMn - (r.mcap_adj_y1 ?? 0) : null;
-      const adjMcapY2 =
-        marketCapBrlMn != null ? marketCapBrlMn - (r.mcap_adj_y2 ?? 0) : null;
-
-      // ── Upside vs the NPV-ADJUSTED price ──────────────────────────────────
-      // CTO decision (2026-06-10): the upside subtracts the YEAR-1 (short-term)
-      // NPV per share from the LIVE price; the target price is NOT adjusted. This
-      // keeps the upside coherent with the year-1 multiples column, since
-      // `adjMcapY1 = shares × adjustedPrice / 1e6`. When `mcap_adj_y1` is null the
-      // NPV per share is 0 → adjustedPrice = livePrice → unadjusted behaviour.
-      // (If the analyst later wants the year-2 NPV or an adjusted target, it is a
-      // small tweak.)
-      const npvPerShareY1 =
-        r.mcap_adj_y1 != null &&
-        r.shares_outstanding != null &&
-        r.shares_outstanding > 0
-          ? (r.mcap_adj_y1 * 1e6) / r.shares_outstanding
-          : 0;
-      const adjustedPrice = livePrice != null ? livePrice - npvPerShareY1 : null;
+      // Upside vs the RAW live price: `target_price / livePrice − 1` (guard
+      // livePrice > 0). The normal row uses the unadjusted market cap throughout;
+      // the only tax-credit mechanism is the EX-TAX-CREDIT companion row below.
       const upsidePct =
-        r.target_price != null && adjustedPrice != null && adjustedPrice > 0
-          ? r.target_price / adjustedPrice - 1
+        r.target_price != null && livePrice != null && livePrice > 0
+          ? r.target_price / livePrice - 1
           : null;
 
-      // ── Live derivation of the 4 price-sensitive multiples (normal basis) ──
-      const m = deriveMultiples(r, adjMcapY1, adjMcapY2);
+      // ── Live derivation of the 4 price-sensitive multiples (raw market cap) ──
+      const m = deriveMultiples(r, marketCapBrlMn, marketCapBrlMn);
 
       out.push({
         ...r,
@@ -759,8 +714,8 @@ export function useStockGuideData(): UseStockGuideData {
         displayName: r.company_name,
         livePrice,
         marketCapBrlMn,
-        adjMcapY1,
-        adjMcapY2,
+        adjMcapY1: marketCapBrlMn,
+        adjMcapY2: marketCapBrlMn,
         upsidePct,
         ...m,
       });
@@ -768,8 +723,8 @@ export function useStockGuideData(): UseStockGuideData {
       // ── EX-TAX-CREDIT companion row ───────────────────────────────────────
       // Analyst-locked: when npv_tax_credit > 0, render an extra row right below
       // this company whose equity basis is the LIVE market cap MINUS the NPV
-      // (`mktcap_ex`, SAME value both years — this is NOT the per-year mcap_adj
-      // basis). Every mcap-derived figure recomputes on `mktcap_ex`; the Market
+      // (`mktcap_ex`, SAME value both years). Every mcap-derived figure
+      // recomputes on `mktcap_ex`; the Market
       // cap column shows `mktcap_ex`. TP / recommendation / upside / current
       // price + the fundamentals (EBITDA, Net income, Volumes) REPEAT the
       // parent's values verbatim (explicit analyst decision).
@@ -1303,7 +1258,6 @@ export function useStockGuideData(): UseStockGuideData {
     sectorsPresent,
     restrictedNames,
     unitMarginNote,
-    mcapAdjNote,
     quotesLoading,
     quotesError,
     refreshQuotes,
