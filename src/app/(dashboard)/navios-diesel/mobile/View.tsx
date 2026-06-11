@@ -37,7 +37,7 @@ import { useNaviosDieselData } from "../useNaviosDieselData";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const BRAND_ORANGE = "#ff5000";
-const DISCHARGED_COLOR = "#000000";
+const DISCHARGED_COLOR = "#000512";
 const PENDING_COLOR = BRAND_ORANGE;
 const INDETERMINATE_COLOR = "#73C6A1";
 

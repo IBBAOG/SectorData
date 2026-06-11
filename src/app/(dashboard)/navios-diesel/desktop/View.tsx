@@ -443,7 +443,7 @@ export default function DesktopView(): React.ReactElement {
         textposition: "inside",
         textfont: { family: "Arial", size: 10, color: "#ffffff" },
         marker: {
-          color: "#000000",
+          color: "#000512",
           opacity: 0.85,
         },
         customdata: hoverSuffix,
