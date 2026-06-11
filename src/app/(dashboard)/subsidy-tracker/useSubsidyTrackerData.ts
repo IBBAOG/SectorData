@@ -39,11 +39,21 @@ import { COMMON_LAYOUT, AXIS_LINE, emptyPlot } from "@/lib/plotlyDefaults";
 export type { SubsidyTrackerRow };
 
 // ─── Colors (locked by sub-PRD — do not change without coordination) ──────────
-
-export const COLOR_IPP   = "#111111"; // black  — IPP / IPP_adjusted
-export const COLOR_REF   = "#F59E0B"; // orange — ANP Reference
-export const COLOR_COMM  = "#B91C1C"; // dark red — ANP Commercialization
-export const COLOR_PETRO = "#0F766E"; // teal   — Petrobras / Petrobras_adjusted
+//
+// 2026-06-10 official-brand re-pin (THIS is the coordinated change the lock note
+// refers to — palette-migration wave). Remapped from the off-palette
+// black/amber/dark-red/teal set to the closed official palette in
+// src/lib/plotlyDefaults.ts (see .claude/skills/design-standards). All four are
+// official series colors; #FF5000 is NOT pinned to any of these entities.
+// Within each 4-trace chart the visible colors stay distinct:
+//   Importador: IPP #000512 / Reference #094DFF / Commercialization #BF3F00
+//   Produtor:   Petrobras #000512 (canonical) / Reference #094DFF / Comm. #BF3F00
+// IPP and Petrobras both use #000512 but live in separate charts (never
+// co-render) — IPP is the import-parity primary line, Petrobras is canonical.
+export const COLOR_IPP   = "#000512"; // Very Dark Blue — IPP / IPP_adjusted (import-parity primary)
+export const COLOR_REF   = "#094DFF"; // Blue          — ANP Reference
+export const COLOR_COMM  = "#BF3F00"; // Brown         — ANP Commercialization
+export const COLOR_PETRO = "#000512"; // Very Dark Blue — Petrobras / Petrobras_adjusted (canonical Petrobras)
 
 // ─── Series definitions (shared between both Views) ──────────────────────────
 

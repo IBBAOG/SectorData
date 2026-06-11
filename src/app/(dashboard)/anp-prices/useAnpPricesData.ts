@@ -49,23 +49,19 @@ export type Fonte = "producer" | "distribution" | "retail";
 /**
  * 3 fixed colours for the 3 supply-chain links. Never invent.
  *
- * 2026-05-28 chart palette audit: producer moved from brand-orange (#FF5000)
- * to navy (#1D4080). Brand orange is reserved for highlight only (active UI
- * states, leader-trace highlight). "Producer" is a stable recurring entity
- * across every chart render in this dashboard.
- *
- * Canonical source for the segment palette: `SEGMENT_COLORS` in
- * src/lib/plotlyDefaults.ts (Producer = navy, Distribution = teal,
- * Retail = mint). Local values here keep the existing indigo/teal pair for
- * Distribution/Retail to preserve recognition between releases — only the
- * brand-orange offender was swapped.
+ * 2026-06-10 official-brand re-pin: realigned to the canonical `SEGMENT_COLORS`
+ * subset (the closed 12-color rotation in src/lib/plotlyDefaults.ts — see
+ * .claude/skills/design-standards/references/colors.md). The off-palette
+ * navy/bronze/teal trio (#1D4080 / #A16207 / #009688) is retired. Brand orange
+ * (#FF5000) stays reserved for highlight only; these segments are stable
+ * recurring entities so they keep canonical pins:
+ *   Producer = Blue (#094DFF), Distribution = Green (#73C6A1),
+ *   Retail = Light Orange (#FFAE66). All three are distinct within the chart.
  */
 export const FONTE_COLORS: Record<Fonte, string> = {
-  producer:     "#1D4080",   // navy        — wholesale (was brand orange)
-  distribution: "#A16207",   // bronze      — B2B distribution (was #3F51B5 indigo,
-                              //               swapped to avoid blue-on-blue clash
-                              //               with the new navy producer)
-  retail:       "#009688",   // deep teal   — pump
+  producer:     "#094DFF",   // Blue          — wholesale (SEGMENT_COLORS Producer)
+  distribution: "#73C6A1",   // Green         — B2B distribution (SEGMENT_COLORS Distribution)
+  retail:       "#FFAE66",   // Light Orange  — pump (SEGMENT_COLORS Retail)
 };
 
 export const FONTE_LABEL: Record<Fonte, string> = {

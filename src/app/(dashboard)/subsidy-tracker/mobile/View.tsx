@@ -41,10 +41,19 @@ import {
   fmtDateLabel,
   SERIES_IMPORTADOR,
   SERIES_PRODUTOR,
+  COLOR_IPP,
+  COLOR_PETRO,
+  COLOR_REF,
+  COLOR_COMM,
   type SeriesField,
   type SeriesDef,
   type SubsidyTrackerRow,
 } from "../useSubsidyTrackerData";
+
+// Reimbursement series color — official Purple (#7030A0). Not in the hook
+// because the reimbursement columns are mobile-table-only; pinned here to a
+// palette member, distinct from the four chart-series colors above.
+const COLOR_REIMB = "#7030A0"; // Purple — Reimbursement (Imp. / Prod.)
 
 // ─── Period chip helpers ──────────────────────────────────────────────────────
 
@@ -164,12 +173,12 @@ interface FilterToggle {
 }
 
 const FILTER_TOGGLES: FilterToggle[] = [
-  { field: "ipp",                              label: "IPP",                   color: "#111111" },
-  { field: "ipp_adjusted",                     label: "IPP (adjusted)",        color: "#111111", dash: "dash" },
-  { field: "petrobras",                        label: "Petrobras",             color: "#0F766E" },
-  { field: "petrobras_adjusted",               label: "Petrobras (adjusted)",  color: "#0F766E", dash: "dash" },
-  { field: "anp_reference_importador",         label: "ANP Reference",         color: "#F59E0B" },
-  { field: "anp_commercialization_importador", label: "ANP Commercialization", color: "#B91C1C" },
+  { field: "ipp",                              label: "IPP",                   color: COLOR_IPP },
+  { field: "ipp_adjusted",                     label: "IPP (adjusted)",        color: COLOR_IPP,   dash: "dash" },
+  { field: "petrobras",                        label: "Petrobras",             color: COLOR_PETRO },
+  { field: "petrobras_adjusted",               label: "Petrobras (adjusted)",  color: COLOR_PETRO, dash: "dash" },
+  { field: "anp_reference_importador",         label: "ANP Reference",         color: COLOR_REF },
+  { field: "anp_commercialization_importador", label: "ANP Commercialization", color: COLOR_COMM },
 ];
 
 // ─── 11-column horizontal-scroll data table ───────────────────────────────────
@@ -233,16 +242,16 @@ interface ColDef {
 }
 
 const TABLE_COLS: ColDef[] = [
-  { header: "IPP",            key: "ipp",                              color: "#111111" },
-  { header: "IPP adj.",       key: "ipp_adjusted",                     color: "#111111" },
-  { header: "Petrobras",      key: "petrobras",                        color: "#0F766E" },
-  { header: "PB adj.",        key: "petrobras_adjusted",               color: "#0F766E" },
-  { header: "Ref. (Imp.)",    key: "anp_reference_importador",         color: "#F59E0B" },
-  { header: "Ref. (Prod.)",   key: "anp_reference_produtor",           color: "#F59E0B" },
-  { header: "Comm. (Imp.)",   key: "anp_commercialization_importador", color: "#B91C1C" },
-  { header: "Comm. (Prod.)",  key: "anp_commercialization_produtor",   color: "#B91C1C" },
-  { header: "Reimb. (Imp.)",  key: "reimb_importador",                 color: "#6D28D9" },
-  { header: "Reimb. (Prod.)", key: "reimb_produtor",                   color: "#6D28D9" },
+  { header: "IPP",            key: "ipp",                              color: COLOR_IPP },
+  { header: "IPP adj.",       key: "ipp_adjusted",                     color: COLOR_IPP },
+  { header: "Petrobras",      key: "petrobras",                        color: COLOR_PETRO },
+  { header: "PB adj.",        key: "petrobras_adjusted",               color: COLOR_PETRO },
+  { header: "Ref. (Imp.)",    key: "anp_reference_importador",         color: COLOR_REF },
+  { header: "Ref. (Prod.)",   key: "anp_reference_produtor",           color: COLOR_REF },
+  { header: "Comm. (Imp.)",   key: "anp_commercialization_importador", color: COLOR_COMM },
+  { header: "Comm. (Prod.)",  key: "anp_commercialization_produtor",   color: COLOR_COMM },
+  { header: "Reimb. (Imp.)",  key: "reimb_importador",                 color: COLOR_REIMB },
+  { header: "Reimb. (Prod.)", key: "reimb_produtor",                   color: COLOR_REIMB },
 ];
 
 const CELL_WIDTH = 84; // px per data column

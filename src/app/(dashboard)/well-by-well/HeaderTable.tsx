@@ -96,7 +96,7 @@ function shiftAnchor(anchor: string, delta: number): string {
 // ─── Styling tokens ─────────────────────────────────────────────────────────
 
 const COLORS = {
-  sectionBg:        "#1a2030",        // dark navy
+  sectionBg:        "#000512",        // Very Dark Blue — official table section header (matches Excel export header in src/lib/export/core/style.ts)
   sectionFg:        "#ffffff",
   categoryBg:       "#e2e2e6",        // light gray
   categoryFg:       "#1a1a1a",

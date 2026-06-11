@@ -1,36 +1,40 @@
 /**
  * Canonical color palette for /well-by-well dashboard charts.
  *
- * Sourced from the monthly Itaú BBA "Well-by-Well" PDF report. Eduardo's
- * report convention is the source of truth for visual identity in this
- * dashboard. Other dashboards may use different palettes per their own
- * conventions — these tokens are scoped to /well-by-well.
+ * Originally sourced from the monthly Itaú BBA "Well-by-Well" PDF report.
+ * Re-pinned 2026-06-10 to the official brand palette (the closed 12-color
+ * series rotation in src/lib/plotlyDefaults.ts — see
+ * .claude/skills/design-standards/SKILL.md). The old PDF navy/mint values
+ * (#1f2937 / #9bd9a9) are retired; tokens below map onto palette members.
+ * These tokens stay scoped to /well-by-well.
  */
 
 export const WBW_COLORS = {
   /** Ambiente segments in stacked bars (Aggregate chart). PDF p2 reference. */
   ambiente: {
-    PreSal: "#1f2937",   // dark navy
-    PosSal: "#ff5000",   // brand orange
-    Terra:  "#9bd9a9",   // mint green (Onshore)
+    PreSal: "#000512",   // Very Dark Blue — official series leader
+    PosSal: "#ff5000",   // Standard Orange — positional 2nd
+    Terra:  "#73C6A1",   // Green (Onshore) — official PALETTE pos 5
   } as const,
 
   /** Single-color "Oil" bar (when not stacked). PDF p4. */
-  oil: "#1f2937",
+  oil: "#000512",        // Very Dark Blue — official series leader
 
   /** "Water" bar shown alongside Oil. PDF p4 (Petrobras Búzios sample). */
-  water: "#ff5000",
+  water: "#ff5000",      // Standard Orange — positional 2nd
 
   /** Operating hours rate line (on dual-axis). PDF p11+ field detail charts.
-   *  Light green (#73C6A1 mint — PALETTE pos 7) so the line does not blend
-   *  with the Water bars which also use brand orange (#ff5000). */
+   *  Green (#73C6A1 — official PALETTE pos 5) so the line stays distinct from
+   *  Oil (#000512) and Water (#ff5000) in that chart. Terra also uses #73C6A1
+   *  but renders in a DIFFERENT chart (the ambiente stacked bar) — the two
+   *  never co-render, so no in-chart collision. */
   hoursRate: "#73C6A1",
 
   /** Current month bar in current-vs-prior comparison. PDF p3. */
-  currentMonth: "#ff5000",
+  currentMonth: "#ff5000",   // Standard Orange — positional 2nd
 
   /** Prior month bar in current-vs-prior comparison. PDF p3. */
-  priorMonth: "#1f2937",
+  priorMonth: "#000512",     // Very Dark Blue — official series leader
 } as const;
 
 /** Looks up the color for a raw ambiente DB value ('PreSal'/'PosSal'/'Terra'). */

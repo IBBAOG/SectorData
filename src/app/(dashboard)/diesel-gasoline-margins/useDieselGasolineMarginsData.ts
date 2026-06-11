@@ -34,28 +34,40 @@ export type { DgMarginsRow };
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
+// 2026-06-10 official-brand re-pin: every stack component sits on the closed
+// official palette (src/lib/plotlyDefaults.ts — see .claude/skills/design-
+// standards). Semantic mapping kept sensible:
+//   base_fuel        → #000512 Very Dark Blue (bottom of stack = positional 1st)
+//   biofuel_component → #73C6A1 Green          (biofuel reads green — unchanged)
+//   federal_tax      → #A6A6A6 Grey            (tax-like neutrals in grey)
+//   state_tax        → #BFBFBF Light Grey      (tax-like neutrals in grey)
+//   distribution_and_resale_margin → #FF5000   (deliberate highlight — the
+//        Dist. & Resale Margin is the headline metric this dashboard tracks)
+// All five distinct within the stacked chart.
 export const STACK_COLORS: Record<string, string> = {
-  base_fuel:                       "#1a1a1a",
+  base_fuel:                       "#000512",
   biofuel_component:               "#73C6A1",
-  federal_tax:                     "#9A9A9A",
-  state_tax:                       "#C8C8C8",
+  federal_tax:                     "#A6A6A6",
+  state_tax:                       "#BFBFBF",
   distribution_and_resale_margin:  "#FF5000",
 };
 
+// Annotation text colors mirror STACK_COLORS exactly so each series reads the
+// same in the bar and in its end-of-line label.
 export const ANNOT_COLORS: Record<string, string> = {
-  base_fuel:                       "#1a1a1a",
-  biofuel_component:               "#3d8a6e",
-  federal_tax:                     "#555555",
-  state_tax:                       "#888888",
+  base_fuel:                       "#000512",
+  biofuel_component:               "#73C6A1",
+  federal_tax:                     "#A6A6A6",
+  state_tax:                       "#BFBFBF",
   distribution_and_resale_margin:  "#FF5000",
 };
 
-// Diesel B line uses brand orange #FF5000 for the Distribution & Resale Margin
-// comparison chart. Gasoline C stays at #1a1a1a (dark/black) so the two lines
-// remain clearly distinguishable without relying on saturation alone.
+// Margin-comparison chart (2 lines). Canonical 2-series pairing: Gasoline C is
+// the leader #000512 Very Dark Blue, Diesel B is the positional-2nd / highlight
+// #FF5000 Standard Orange — clearly distinguishable, both on palette.
 export const MARGIN_LINE_COLORS: Record<string, string> = {
   "Diesel B":   "#FF5000",
-  "Gasoline C": "#1a1a1a",
+  "Gasoline C": "#000512",
 };
 
 /** Stacked chart order: bottom → top */
