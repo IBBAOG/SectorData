@@ -20,16 +20,15 @@
 //
 // Pagination. PostgREST's `db-max-rows` cap (now raised to 50000 server-side
 // by worker_supabase, up from the default 1000) bounds every SETOF response.
-// We loop in chunks of PAGE_SIZE (50000, matching the cap) and stop ONLY on
-// an empty chunk — a partial chunk is NOT a reliable end-of-data signal,
-// because exactly-PAGE_SIZE rows remaining would still come back as a "full"
-// page and the next call would be the one that returns empty. Trusting
-// `chunk.length < PAGE_SIZE` (the old heuristic) misfired catastrophically
-// while the server cap was 1000: every chunk was capped at 1000, so the
-// short-chunk check tripped after page 1 and the export shipped with only
-// 1000 rows per sheet. A hard offset safety cap (MAX_OFFSET_SAFETY) prevents
-// an infinite loop in case the RPC ever misbehaves and returns full pages
-// forever.
+// We page in chunks of PAGE_SIZE (50000) via the shared cap-safe pager
+// `paginateRpc` (src/lib/paginateRpc.ts), which appends the RAW page, advances
+// by the number of rows actually received, and stops ONLY on an empty page.
+// The full rationale — including why the old `chunk.length < PAGE_SIZE` short-
+// page heuristic misfired catastrophically when the server cap (1000) was below
+// the client page size (50000), shipping only 1000 rows per sheet — now lives in
+// `paginateRpc`'s JSDoc; this loop just supplies the per-page fetch. The shared
+// pager's `maxOffset` runaway guard (default 5_000_000) replaces the local
+// MAX_OFFSET_SAFETY.
 //
 // Resilience. Each sheet's rowsAsync is wrapped in try/catch so a single
 // sheet failure (e.g. one company RPC errors out) does not blank the entire
@@ -43,6 +42,7 @@
 
 import type { ExportSpec, ColumnDef, SheetSpec } from "@/lib/export";
 import { getSupabaseClient } from "@/lib/supabaseClient";
+import { paginateRpc } from "@/lib/paginateRpc";
 import {
   type ProductionWellFullHistoryRow,
   rpcGetProductionBrazilWellCount,
@@ -64,12 +64,11 @@ const COMPANY_VIEWS = ["Petrobras", "PRIO", "PetroReconcavo", "Brava Energia"] a
 // server will still truncate to the cap silently. Going below leaves perf on
 // the table (more round-trips than necessary). With ~2.2M Brasil rows this
 // is ~45 round-trips at ~500ms each ≈ ~22s for a full-history Brasil export,
-// which is acceptable for a Tier 2 modal-gated download.
-// MAX_OFFSET_SAFETY guards against runaway loops — at 5_000_000 rows the
-// largest sheet (Brasil) would still finish in ~100 round-trips, well past
-// any realistic dataset size.
+// which is acceptable for a Tier 2 modal-gated download. The runaway guard is
+// `paginateRpc`'s default `maxOffset` (5_000_000) — at that many rows the
+// largest sheet (Brasil) would still finish in ~100 round-trips, well past any
+// realistic dataset size.
 const PAGE_SIZE = 50000;
-const MAX_OFFSET_SAFETY = 5_000_000;
 
 // ── Column definitions ──────────────────────────────────────────────────────
 // Shared base columns. The company sheets append `stake_pct`; the Brasil sheet
@@ -109,48 +108,38 @@ const COMPANY_COLUMNS: ColumnDef[] = [...BASE_COLUMNS, COMPANY_STAKE_COLUMN];
 async function fetchAllPagesBrasil(): Promise<Record<string, unknown>[]> {
   const sb = getSupabaseClient();
   if (!sb) return [];
-  const all: ProductionWellFullHistoryRow[] = [];
-  let offset = 0;
-  for (;;) {
-    let chunk: ProductionWellFullHistoryRow[] = [];
-    try {
-      chunk = await rpcGetProductionBrazilWellFullHistory(sb, offset, PAGE_SIZE);
-    } catch (e) {
-      console.error("[wellByWell] Brasil page failed at offset", offset, e);
-      break;
-    }
-    if (chunk.length === 0) break; // end-of-data — partial chunks are NOT a reliable signal
-    all.push(...chunk);
-    offset += PAGE_SIZE;
-    if (offset > MAX_OFFSET_SAFETY) {
-      console.warn("[wellByWell] Brasil offset cap reached", offset);
-      break;
-    }
-  }
+  // Per-page try/catch: a mid-stream page failure stops paging and ships what
+  // was already collected (rather than blanking the sheet). paginateRpc treats
+  // the empty array we return as end-of-data and stops cleanly.
+  const all = await paginateRpc<ProductionWellFullHistoryRow>(
+    async (limit, offset) => {
+      try {
+        return await rpcGetProductionBrazilWellFullHistory(sb, offset, limit);
+      } catch (e) {
+        console.error("[wellByWell] Brasil page failed at offset", offset, e);
+        return [];
+      }
+    },
+    { pageSize: PAGE_SIZE },
+  );
   return all as unknown as Record<string, unknown>[];
 }
 
 async function fetchAllPagesCompany(empresa: string): Promise<Record<string, unknown>[]> {
   const sb = getSupabaseClient();
   if (!sb) return [];
-  const all: ProductionWellFullHistoryRow[] = [];
-  let offset = 0;
-  for (;;) {
-    let chunk: ProductionWellFullHistoryRow[] = [];
-    try {
-      chunk = await rpcGetProductionWellFullHistory(sb, empresa, offset, PAGE_SIZE);
-    } catch (e) {
-      console.error(`[wellByWell] Company '${empresa}' page failed at offset`, offset, e);
-      break;
-    }
-    if (chunk.length === 0) break; // end-of-data — partial chunks are NOT a reliable signal
-    all.push(...chunk);
-    offset += PAGE_SIZE;
-    if (offset > MAX_OFFSET_SAFETY) {
-      console.warn(`[wellByWell] Company '${empresa}' offset cap reached`, offset);
-      break;
-    }
-  }
+  // Per-page try/catch — see fetchAllPagesBrasil.
+  const all = await paginateRpc<ProductionWellFullHistoryRow>(
+    async (limit, offset) => {
+      try {
+        return await rpcGetProductionWellFullHistory(sb, empresa, offset, limit);
+      } catch (e) {
+        console.error(`[wellByWell] Company '${empresa}' page failed at offset`, offset, e);
+        return [];
+      }
+    },
+    { pageSize: PAGE_SIZE },
+  );
   return all as unknown as Record<string, unknown>[];
 }
 
