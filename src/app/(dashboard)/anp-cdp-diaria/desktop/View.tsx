@@ -39,9 +39,10 @@ import { bblDiaToKbpd } from "../../../../lib/units";
 import { ExportButton } from "@/lib/export";
 import { anpCdpDiariaExport } from "@/lib/export/dashboards/anpCdpDiaria";
 
-// TEMPORARY — P-78 daily-panel coverage banner. Remove when ANP registers
-// FPSO P-78 in the daily panel (the cdp_roster_canary ops email is the
-// trigger; the ETL auto-backfills the history). See P78CoverageNotice.tsx.
+// TEMPORARY — P-78 daily-panel coverage banner, Petrobras tab ONLY (user
+// decision 2026-06-10). Remove when ANP registers FPSO P-78 in the daily
+// panel (the cdp_roster_canary ops email is the trigger; the ETL
+// auto-backfills the history). See P78CoverageNotice.tsx.
 import P78CoverageNotice from "../P78CoverageNotice";
 
 import type { Layout, PlotData } from "plotly.js";
@@ -53,6 +54,7 @@ import {
   BRAND_ORANGE,
   OTHERS_COLOR,
   FIXED_COMPANIES,
+  PETROBRAS,
   type Granularity,
   type CompanyDailyOilMatrix,
   type CompanyFieldNoData,
@@ -137,12 +139,6 @@ export default function DesktopView(): React.ReactElement | null {
                 rightSlot={<ExportButton spec={anpCdpDiariaExport} />}
               />
 
-              {/* TEMPORARY P-78 coverage banner — above the tab bar so the
-                  company tabs AND the Explore surface all see it. */}
-              <div style={{ marginBottom: 14 }}>
-                <P78CoverageNotice variant="desktop" />
-              </div>
-
               {/* Primary tab bar: [PRIO] [Petrobras] [Explore raw data] */}
               <PrimaryTabBar
                 companies={FIXED_COMPANIES as readonly string[]}
@@ -155,15 +151,26 @@ export default function DesktopView(): React.ReactElement | null {
               {loading ? (
                 <BarrelLoading />
               ) : isCompany ? (
-                <CompanyContent
-                  selectedEmpresa={selectedEmpresa}
-                  serieLoading={serieLoading}
-                  companySerieRows={companySerieRows}
-                  companyDailyOilMatrix={companyDailyOilMatrix}
-                  companyFieldsNoData={companyFieldsNoData}
-                  companyPetroleoChart={companyPetroleoChart}
-                  companyMonthlyOilChart={companyMonthlyOilChart}
-                />
+                <>
+                  {/* TEMPORARY P-78 coverage banner — Petrobras tab ONLY
+                      (user decision 2026-06-10): P-78 is a Petrobras/Búzios
+                      asset, so the understatement only affects this tab.
+                      Below the tab bar, above the charts. */}
+                  {selectedEmpresa === PETROBRAS && (
+                    <div style={{ marginBottom: 14 }}>
+                      <P78CoverageNotice variant="desktop" />
+                    </div>
+                  )}
+                  <CompanyContent
+                    selectedEmpresa={selectedEmpresa}
+                    serieLoading={serieLoading}
+                    companySerieRows={companySerieRows}
+                    companyDailyOilMatrix={companyDailyOilMatrix}
+                    companyFieldsNoData={companyFieldsNoData}
+                    companyPetroleoChart={companyPetroleoChart}
+                    companyMonthlyOilChart={companyMonthlyOilChart}
+                  />
+                </>
               ) : (
                 <ExploreSurface
                   granularity={granularity}
