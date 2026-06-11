@@ -32,7 +32,7 @@
 // Binding sync rule: any new filter / KPI / column added here must also land in
 // desktop/View.tsx in the same commit, or declare [mobile-only] with reason.
 
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useEffect, Fragment, type CSSProperties } from "react";
 
 import {
   FilterDrawer,
@@ -56,10 +56,9 @@ import type {
   UseStockGuideData,
   GridTableModel,
   SensitivityPanel,
-  SensitivityPanelGroup,
+  SensitivityDriverTable,
 } from "../useStockGuideData";
 import { useInViewOnce } from "../useInViewOnce";
-import { unitForValueMode } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideComputedRow,
   StockGuideSector,
@@ -679,12 +678,15 @@ function MobileSensitivityTable({
   );
 }
 
-// ─── Consolidated sensitivity block (merged single-row static tables) ──────────
+// ─── Consolidated sensitivity block (one table per driver, stacked) ────────────
 //
-// Same analysis as desktop: a "brent"/"margin" panel renders as ONE merged table
-// per scenario-signature group — a shared scenario header + one row per underlying
-// single-row static table. [mobile-only] simplification: the PER-ROW current-value
-// marker highlights the NEARER bracketing scenario cell (no interpolation triangle).
+// Same analysis as desktop: a "brent"/"margin" panel renders ONE TABLE PER DRIVER
+// (stacked). Each driver table has a shared scenario header + a SINGLE column-axis
+// marker (every row shares the same driver). Inside, each underlying tagged table
+// is a gray band (its metric label) followed by one indented row per company.
+// [mobile-only] simplification: the current-value marker highlights the NEARER
+// bracketing scenario CELL (no interpolation triangle); 11 columns scroll
+// horizontally as the other mobile tables do.
 
 const MOBILE_PANEL_TITLE: Record<SensitivityPanelKey, string> = {
   brent: "Brent sensitivity",
@@ -694,140 +696,194 @@ const MOBILE_PANEL_TITLE: Record<SensitivityPanelKey, string> = {
 const MOBILE_PANEL_PLACEHOLDER =
   "No tables configured yet — tag a sensitivity table to this panel in the Admin Panel.";
 
-/** Unit suffix beside a panel row label, by the table's value_mode. */
-function mobileRowUnitSuffix(table: SensitivityTable): string {
-  const unit = unitForValueMode(table.value_mode, table.unit);
-  return unit ? ` (${unit})` : "";
-}
-
 function mobileFmtScenarioHeader(v: number, unit: string): string {
   const n = Number.isInteger(v) ? String(v) : v.toFixed(1);
   return unit ? `${n} ${unit}` : n;
 }
 
-/** One merged scenario-signature group inside a consolidated panel (mobile). */
-function MobilePanelGroup({
-  group,
-  resolveDriverAxis,
+/**
+ * One driver table inside a consolidated panel (mobile): a shared scenario header
+ * with the nearer-cell marker, and per band a gray subheader row + one indented
+ * company row each.
+ */
+function MobileDriverSensitivityTable({
+  driverTable,
   computeSensitivityCell,
   quotesLoading,
 }: {
-  group: SensitivityPanelGroup;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  driverTable: SensitivityDriverTable;
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  const firstColAxis = group.rows[0]?.table.definition.col_axis;
-  const headerUnit = firstColAxis
-    ? (resolveDriverAxis(firstColAxis).driver?.unit ?? "")
-    : "";
-  const scenarios = group.colScenarios;
+  const scenarios = driverTable.colScenarios;
+  // SINGLE column-axis marker for the whole driver table (nearer cell on mobile).
+  const marker = mobileDriverMarker(scenarios, driverTable.currentValue);
+  const nCols = 1 + scenarios.length;
 
   return (
-    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginBottom: 10 }}>
-      <table
-        style={{
-          borderCollapse: "collapse",
-          fontSize: 11.5,
-          fontFamily: "Arial, Helvetica, sans-serif",
-          border: "1px solid var(--mobile-border)",
-          borderRadius: "var(--mobile-radius-md, 12px)",
-          overflow: "hidden",
-          minWidth: "100%",
-        }}
-      >
-        <thead>
-          <tr>
-            <th
-              style={{
-                textAlign: "left",
-                padding: "7px 11px",
-                background: "var(--mobile-surface-elevated)",
-                color: "var(--mobile-text)",
-                fontWeight: 700,
-                fontSize: 10,
-                whiteSpace: "nowrap",
-                borderRight: "1px solid var(--mobile-border)",
-                borderBottom: "1px solid var(--mobile-border)",
-              }}
-            >
-              Estimate
-            </th>
-            {scenarios.map((s, ci) => (
+    <div style={{ marginBottom: 16 }}>
+      {/* Driver title — "Avg. Brent 2026 (USD/bbl)" */}
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 6 }}>
+        {driverTable.driverLabel}
+        {driverTable.driverUnit ? ` (${driverTable.driverUnit})` : ""}
+      </div>
+
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <table
+          style={{
+            borderCollapse: "collapse",
+            fontSize: 11.5,
+            fontFamily: "Arial, Helvetica, sans-serif",
+            border: "1px solid var(--mobile-border)",
+            borderRadius: "var(--mobile-radius-md, 12px)",
+            overflow: "hidden",
+            minWidth: "100%",
+          }}
+        >
+          <thead>
+            <tr>
+              {/* No label on the first column. */}
               <th
-                key={ci}
                 style={{
-                  textAlign: "right",
+                  textAlign: "left",
                   padding: "7px 11px",
-                  color: "var(--mobile-text-muted)",
+                  background: "var(--mobile-surface-elevated)",
+                  color: "var(--mobile-text)",
                   fontWeight: 700,
                   fontSize: 10,
                   whiteSpace: "nowrap",
-                  background: "var(--mobile-surface-elevated)",
-                  borderRight: "1px solid var(--mobile-divider)",
+                  borderRight: "1px solid var(--mobile-border)",
                   borderBottom: "1px solid var(--mobile-border)",
+                  minWidth: 96,
                 }}
-              >
-                {mobileFmtScenarioHeader(s, headerUnit)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {group.rows.map((row, ri) => {
-            const table = row.table;
-            const isLive = table.value_mode !== "absolute";
-            const { currentValue } = resolveDriverAxis(table.definition.col_axis);
-            const marker = mobileDriverMarker(scenarios, currentValue);
-            return (
-              <tr key={table.id}>
-                <th
-                  scope="row"
-                  style={{
-                    textAlign: "left",
-                    padding: "7px 11px",
-                    fontWeight: 700,
-                    color: "var(--mobile-text)",
-                    whiteSpace: "nowrap",
-                    background: "var(--mobile-surface-elevated)",
-                    borderRight: "1px solid var(--mobile-border)",
-                    borderBottom: "1px solid var(--mobile-divider)",
-                  }}
-                >
-                  {row.rowLabel}
-                  <span style={{ color: "var(--mobile-text-faint)", fontWeight: 400 }}>
-                    {mobileRowUnitSuffix(table)}
-                  </span>
-                </th>
-                {scenarios.map((_, ci) => {
-                  const hit = marker.highlightIdx === ci;
-                  const { value, unit } = computeSensitivityCell(table, 0, ci);
-                  const text =
-                    isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+              />
+              {scenarios.map((s, ci) => {
+                const hit = marker.highlightIdx === ci;
+                return (
+                  <th
+                    key={ci}
+                    style={{
+                      textAlign: "right",
+                      padding: "7px 11px",
+                      color: hit ? MOBILE_ACCENT : "var(--mobile-text-muted)",
+                      fontWeight: 700,
+                      fontSize: 10,
+                      whiteSpace: "nowrap",
+                      background: hit ? "rgba(255,80,0,0.10)" : "var(--mobile-surface-elevated)",
+                      borderRight: "1px solid var(--mobile-divider)",
+                      borderBottom: "1px solid var(--mobile-border)",
+                    }}
+                  >
+                    {mobileFmtScenarioHeader(s, driverTable.driverUnit)}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {driverTable.bands.map((band) => (
+              <Fragment key={`band-${band.table.id}`}>
+                {/* Gray band subheader spanning all columns = the metric label. */}
+                <tr>
+                  <th
+                    scope="colgroup"
+                    colSpan={nCols}
+                    style={{
+                      textAlign: "left",
+                      padding: "6px 11px",
+                      fontWeight: 700,
+                      fontSize: 10.5,
+                      color: "var(--mobile-text)",
+                      whiteSpace: "nowrap",
+                      background: "var(--mobile-surface-elevated)",
+                      borderTop: "1px solid var(--mobile-border)",
+                      borderBottom: "1px solid var(--mobile-border)",
+                    }}
+                  >
+                    {band.bandLabel}
+                  </th>
+                </tr>
+                {band.rows.map((r, ri) => {
+                  const isLive = band.table.value_mode !== "absolute";
                   return (
-                    <td
-                      key={ci}
-                      style={{
-                        textAlign: "right",
-                        padding: "7px 11px",
-                        fontVariantNumeric: "tabular-nums",
-                        color: hit ? MOBILE_ACCENT : "var(--mobile-text)",
-                        fontWeight: hit ? 700 : 400,
-                        background: hit ? "rgba(255,80,0,0.10)" : "var(--mobile-surface)",
-                        borderRight: "1px solid var(--mobile-divider)",
-                        borderBottom: "1px solid var(--mobile-divider)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {text}
-                    </td>
+                    <tr key={`${band.table.id}-${r.ticker}`}>
+                      <th
+                        scope="row"
+                        style={{
+                          textAlign: "left",
+                          padding: "7px 11px 7px 20px",
+                          fontWeight: 600,
+                          fontSize: 11,
+                          color: "var(--mobile-text)",
+                          whiteSpace: "nowrap",
+                          background:
+                            ri % 2 === 0 ? "var(--mobile-surface)" : "var(--mobile-surface-elevated)",
+                          borderRight: "1px solid var(--mobile-border)",
+                          borderBottom: "1px solid var(--mobile-divider)",
+                        }}
+                      >
+                        {r.companyName}
+                      </th>
+                      {scenarios.map((_, ci) => {
+                        const hit = marker.highlightIdx === ci;
+                        const { value, unit } = computeSensitivityCell(
+                          band.table,
+                          r.rowIdx,
+                          ci,
+                        );
+                        // BLANK when there's no typed primary value (not-yet-filled
+                        // rows); "—" only when a typed value can't compute (live
+                        // mode while quotes load).
+                        const primary =
+                          band.table.definition.cells?.[r.rowIdx]?.[ci] ?? null;
+                        const text =
+                          primary == null
+                            ? ""
+                            : isLive && quotesLoading
+                              ? "—"
+                              : formatSensitivityCell(value, unit);
+                        return (
+                          <td
+                            key={ci}
+                            style={{
+                              textAlign: "right",
+                              padding: "7px 11px",
+                              fontVariantNumeric: "tabular-nums",
+                              color: hit ? MOBILE_ACCENT : "var(--mobile-text)",
+                              fontWeight: hit ? 700 : 400,
+                              background: hit
+                                ? "rgba(255,80,0,0.08)"
+                                : ri % 2 === 0
+                                  ? "var(--mobile-surface)"
+                                  : "var(--mobile-surface-elevated)",
+                              borderRight: "1px solid var(--mobile-divider)",
+                              borderBottom: "1px solid var(--mobile-divider)",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {text}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   );
                 })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Per-driver-table caption — live current value. */}
+      {driverTable.currentValue != null && (
+        <div style={{ marginTop: 6, fontSize: 10.5, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
+          Current: {driverTable.driverLabel} ={" "}
+          {Number.isInteger(driverTable.currentValue)
+            ? String(driverTable.currentValue)
+            : driverTable.currentValue.toFixed(1)}
+          {driverTable.driverUnit ? ` ${driverTable.driverUnit}` : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -836,37 +892,14 @@ function MobilePanelGroup({
 function MobileConsolidatedBlock({
   panelKey,
   panel,
-  resolveDriverAxis,
   computeSensitivityCell,
   quotesLoading,
 }: {
   panelKey: SensitivityPanelKey;
   panel: SensitivityPanel | undefined;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  // De-duped caption: one "Avg. Brent 2026 = 89.5 USD/bbl" per distinct driver.
-  const captionParts: string[] = [];
-  if (panel) {
-    const seen = new Set<number>();
-    for (const group of panel.groups) {
-      for (const row of group.rows) {
-        const { driver, currentValue } = resolveDriverAxis(
-          row.table.definition.col_axis,
-        );
-        if (driver == null || currentValue == null || seen.has(driver.id)) continue;
-        seen.add(driver.id);
-        const n = Number.isInteger(currentValue)
-          ? String(currentValue)
-          : currentValue.toFixed(1);
-        captionParts.push(
-          `${driver.name} = ${n}${driver.unit ? ` ${driver.unit}` : ""}`,
-        );
-      }
-    }
-  }
-
   return (
     <div style={{ marginBottom: 22 }}>
       <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 10 }}>
@@ -887,22 +920,14 @@ function MobileConsolidatedBlock({
           {MOBILE_PANEL_PLACEHOLDER}
         </div>
       ) : (
-        <>
-          {panel.groups.map((group, gi) => (
-            <MobilePanelGroup
-              key={gi}
-              group={group}
-              resolveDriverAxis={resolveDriverAxis}
-              computeSensitivityCell={computeSensitivityCell}
-              quotesLoading={quotesLoading}
-            />
-          ))}
-          {captionParts.length > 0 && (
-            <div style={{ fontSize: 10.5, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
-              Current: {captionParts.join(" · ")}
-            </div>
-          )}
-        </>
+        panel.driverTables.map((dt) => (
+          <MobileDriverSensitivityTable
+            key={dt.driverId}
+            driverTable={dt}
+            computeSensitivityCell={computeSensitivityCell}
+            quotesLoading={quotesLoading}
+          />
+        ))
       )}
     </div>
   );
@@ -1385,14 +1410,12 @@ function MobileSensitivity({
       <MobileConsolidatedBlock
         panelKey="brent"
         panel={panelByKey.brent}
-        resolveDriverAxis={resolveDriverAxis}
         computeSensitivityCell={computeSensitivityCell}
         quotesLoading={quotesLoading}
       />
       <MobileConsolidatedBlock
         panelKey="margin"
         panel={panelByKey.margin}
-        resolveDriverAxis={resolveDriverAxis}
         computeSensitivityCell={computeSensitivityCell}
         quotesLoading={quotesLoading}
       />

@@ -148,10 +148,12 @@ export interface UseStockGuideData {
 
   // ── Consolidated sensitivity (always-visible, selection-independent) ────────
   /**
-   * The two consolidated panels ("brent" then "margin"), each built from the
-   * single-row static tables tagged `definition.panel`. ONLY non-empty panels
-   * are returned — the Views own the fixed two-block scaffold + the placeholder
-   * for a missing/empty panel. Look one up via `panelByKey`.
+   * The two consolidated panels ("brent" then "margin"). Each panel renders ONE
+   * TABLE PER DRIVER (`driverTables`); inside a driver table each underlying
+   * tagged static table is a gray band followed by one row per company in its
+   * row_axis. ONLY non-empty panels are returned — the Views own the fixed
+   * two-block scaffold + the placeholder for a missing/empty panel. Look one up
+   * via `panelByKey`.
    */
   panels: SensitivityPanel[];
   /** Convenience index: panel key → its `SensitivityPanel` (absent if empty). */
@@ -329,34 +331,60 @@ export interface GridTableModel {
   anyOverridden: boolean;
 }
 
-// ─── Consolidated sensitivity panels (merged single-row static tables) ─────────
+// ─── Consolidated sensitivity panels (per-driver tables, stacked) ──────────────
+//
+// REWORK (iteration 2): a panel renders ONE TABLE PER DRIVER, stacked. Each
+// driver table has a shared scenario column header (all its rows share the same
+// driver + scenarios) and a SINGLE column-axis interpolation marker. Inside the
+// driver table, each underlying tagged STATIC table contributes a gray "band"
+// subheader row (the metric label) followed by ONE BODY ROW PER COMPANY in that
+// table's row_axis (multi-company tables are now the canonical shape).
 
-/** One underlying single-row static table merged as a row in a consolidated panel. */
-export interface SensitivityPanelRow {
-  /** The source table (single-company × driver-scenario, value_mode-aware). */
+/** One company body row under a band (a row of the table's row_axis). */
+export interface SensitivityBandRow {
+  /** Index into the source table's row_axis (companies[rowIdx]) → computeSensitivityCell. */
+  rowIdx: number;
+  /** The company ticker for this row (row_axis.companies[rowIdx]). */
+  ticker: string;
+  /** Display name from the comps data; falls back to the ticker. */
+  companyName: string;
+}
+
+/** One band (= one underlying tagged static table) inside a driver table. */
+export interface SensitivityBand {
+  /** The source single-driver × company table (value_mode-aware). */
   table: SensitivityTable;
-  /** Display label for the row (`definition.row_label` ?? `table.title`). */
-  rowLabel: string;
+  /** The band's metric label (`definition.row_label` ?? `table.title`). */
+  bandLabel: string;
+  /** One body row per company in the table's row_axis (empty bands are dropped). */
+  rows: SensitivityBandRow[];
 }
 
 /**
- * A group of panel rows sharing the SAME column-scenario signature (so they can
- * share ONE scenario column header). The happy path is a single group; rows whose
- * driver axis has a different scenario list form separate groups (each with its
- * own header band).
+ * One driver table inside a consolidated panel — all its bands share the SAME
+ * driver (and scenario signature), so a single scenario column header + a single
+ * column-axis interpolation marker cover the whole table.
  */
-export interface SensitivityPanelGroup {
-  /** The shared column-axis scenario values (e.g. [60,70,…,140]). */
+export interface SensitivityDriverTable {
+  /** The bound driver id (col_axis.driver_id). */
+  driverId: number;
+  /** Title-ready driver label, e.g. "Avg. Brent 2026" (the driver's stored name). */
+  driverLabel: string;
+  /** Driver unit, e.g. "USD/bbl" (may be empty). */
+  driverUnit: string;
+  /** The shared column-axis scenario values (e.g. [50,60,…,150]). */
   colScenarios: number[];
-  /** The rows that share this scenario signature, in display_order. */
-  rows: SensitivityPanelRow[];
+  /** Live "today" value of the driver (for the marker + caption); null if unknown. */
+  currentValue: number | null;
+  /** The bands (underlying tables), in display_order; each has ≥1 company row. */
+  bands: SensitivityBand[];
 }
 
 /** One consolidated, always-visible sensitivity block ("brent" / "margin"). */
 export interface SensitivityPanel {
   key: SensitivityPanelKey;
-  /** Scenario-signature groups (≥1 — non-empty panels only). */
-  groups: SensitivityPanelGroup[];
+  /** One table per driver (≥1 — non-empty panels only), in display_order. */
+  driverTables: SensitivityDriverTable[];
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -845,99 +873,6 @@ export function useStockGuideData(): UseStockGuideData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleRows, priceByKey]);
 
-  // ── e. Consolidated sensitivity (always-visible, selection-independent) ─────
-  //
-  // The section no longer drills down per selected company. Instead the tagged
-  // single-row static tables are merged into two fixed blocks (brent / margin),
-  // untagged static tables fall to a generic full-width list, and grid tables
-  // render always-visible below (mesh fetched lazily on scroll-into-view).
-
-  // A table qualifies for a CONSOLIDATED panel when it is a tagged, NON-grid,
-  // SINGLE-ROW static table: row axis kind "company" with exactly one company.
-  // (The driver scenarios live on the column axis.) Anything failing this guard
-  // — multi-row, wrong axis, or an unknown panel value — falls to the fallback.
-  const isSingleRowPanelTable = useCallback(
-    (t: SensitivityTable): boolean => {
-      if (tableIsGrid(t)) return false;
-      const rowAxis = t.definition.row_axis;
-      return (
-        rowAxis.kind === "company" &&
-        Array.isArray(rowAxis.companies) &&
-        rowAxis.companies.length === 1
-      );
-    },
-    [],
-  );
-
-  // Build the two panels + the fallback + grid lists from sensitivityTables, all
-  // in display_order. A table tagged "brent"/"margin" that passes the single-row
-  // guard joins that panel (grouped by its column-scenario signature); everything
-  // else static goes to `unpanneledTables`; grids go to `gridTables`.
-  const { panels, panelByKey, unpanneledTables, gridTables } = useMemo(() => {
-    const ordered = [...sensitivityTables].sort(
-      (a, b) => a.display_order - b.display_order,
-    );
-
-    const panelRows: Record<SensitivityPanelKey, SensitivityPanelRow[]> = {
-      brent: [],
-      margin: [],
-    };
-    const fallback: SensitivityTable[] = [];
-    const grids: SensitivityTable[] = [];
-
-    for (const t of ordered) {
-      if (tableIsGrid(t)) {
-        grids.push(t);
-        continue;
-      }
-      const panel = t.definition.panel;
-      if ((panel === "brent" || panel === "margin") && isSingleRowPanelTable(t)) {
-        panelRows[panel].push({
-          table: t,
-          rowLabel: t.definition.row_label?.trim() || t.title,
-        });
-      } else {
-        fallback.push(t);
-      }
-    }
-
-    // Group a panel's rows by their column-scenario signature so rows sharing the
-    // same scenarios share one header band (happy path = a single group).
-    const buildGroups = (rows: SensitivityPanelRow[]): SensitivityPanelGroup[] => {
-      const groups: SensitivityPanelGroup[] = [];
-      const bySig = new Map<string, SensitivityPanelGroup>();
-      for (const row of rows) {
-        const scenarios = row.table.definition.col_axis.scenarios ?? [];
-        const sig = scenarios.join(",");
-        let g = bySig.get(sig);
-        if (!g) {
-          g = { colScenarios: scenarios, rows: [] };
-          bySig.set(sig, g);
-          groups.push(g);
-        }
-        g.rows.push(row);
-      }
-      return groups;
-    };
-
-    const built: SensitivityPanel[] = [];
-    const byKey: Partial<Record<SensitivityPanelKey, SensitivityPanel>> = {};
-    for (const key of ["brent", "margin"] as SensitivityPanelKey[]) {
-      const rows = panelRows[key];
-      if (rows.length === 0) continue; // empty panels omitted — Views own the scaffold
-      const panel: SensitivityPanel = { key, groups: buildGroups(rows) };
-      built.push(panel);
-      byKey[key] = panel;
-    }
-
-    return {
-      panels: built,
-      panelByKey: byKey,
-      unpanneledTables: fallback,
-      gridTables: grids,
-    };
-  }, [sensitivityTables, isSingleRowPanelTable]);
-
   // Driver index for resolveDriverAxis (by id).
   const driversById = useMemo(() => {
     const m = new Map<number, StockGuideDriver>();
@@ -950,6 +885,7 @@ export function useStockGuideData(): UseStockGuideData {
   // dynamic driver (its `source` is a catalog key), else the static
   // `current_value` — via `resolveDriverValue`. Views highlight/interpolate on
   // this, never on `driver.current_value`, so dynamic drivers track the market.
+  // Defined BEFORE the panels memo (which folds in the driver label/value).
   const resolveDriverAxis = useCallback(
     (axis: SensitivityAxis): ResolvedDriverAxis => {
       const driver =
@@ -962,6 +898,131 @@ export function useStockGuideData(): UseStockGuideData {
     },
     [driversById, marketValues],
   );
+
+  // ── e. Consolidated sensitivity (always-visible, selection-independent) ─────
+  //
+  // The section no longer drills down per selected company. Instead the tagged
+  // company × driver static tables are grouped per driver into ONE table each
+  // inside two fixed blocks (brent / margin); untagged static tables fall to a
+  // generic full-width list, and grid tables render always-visible below (mesh
+  // fetched lazily on scroll-into-view).
+
+  // A table qualifies for a CONSOLIDATED panel when it is a tagged, NON-grid
+  // static table whose ROW axis is a COMPANY axis (of ANY length — multi-company
+  // is now canonical) and whose COLUMN axis is a DRIVER axis (the scenarios live
+  // there). Anything failing this guard — wrong axis kinds, or an unknown panel
+  // value — falls to the generic full-width fallback.
+  const isPanelTable = useCallback((t: SensitivityTable): boolean => {
+    if (tableIsGrid(t)) return false;
+    const rowAxis = t.definition.row_axis;
+    const colAxis = t.definition.col_axis;
+    return (
+      rowAxis.kind === "company" &&
+      Array.isArray(rowAxis.companies) &&
+      rowAxis.companies.length >= 1 &&
+      colAxis.kind === "driver" &&
+      colAxis.driver_id != null
+    );
+  }, []);
+
+  // Build the two panels + the fallback + grid lists from sensitivityTables, all
+  // in display_order. A tagged "brent"/"margin" table that passes the guard joins
+  // that panel; within a panel the tables are grouped by (driver_id + scenario
+  // signature) into ONE rendered driver table each. Every other static table goes
+  // to `unpanneledTables`; grids go to `gridTables`.
+  const { panels, panelByKey, unpanneledTables, gridTables } = useMemo(() => {
+    const ordered = [...sensitivityTables].sort(
+      (a, b) => a.display_order - b.display_order,
+    );
+
+    const panelTables: Record<SensitivityPanelKey, SensitivityTable[]> = {
+      brent: [],
+      margin: [],
+    };
+    const fallback: SensitivityTable[] = [];
+    const grids: SensitivityTable[] = [];
+
+    for (const t of ordered) {
+      if (tableIsGrid(t)) {
+        grids.push(t);
+        continue;
+      }
+      const panel = t.definition.panel;
+      if ((panel === "brent" || panel === "margin") && isPanelTable(t)) {
+        panelTables[panel].push(t);
+      } else {
+        fallback.push(t);
+      }
+    }
+
+    // Group a panel's tables by (driver_id + scenario signature) into one rendered
+    // driver table each (display order = the first table's order). Each band's
+    // company rows come from its own row_axis; empty bands / driver tables are
+    // dropped (e.g. all companies hidden server-side).
+    const buildDriverTables = (
+      tables: SensitivityTable[],
+    ): SensitivityDriverTable[] => {
+      const out: SensitivityDriverTable[] = [];
+      const byKey = new Map<string, SensitivityDriverTable>();
+      for (const t of tables) {
+        const colAxis = t.definition.col_axis;
+        const driverId = colAxis.driver_id;
+        if (driverId == null) continue; // guarded above, but be safe
+        const scenarios = colAxis.scenarios ?? [];
+        const key = `${driverId}|${scenarios.join(",")}`;
+
+        // Build this table's band: one company row per row_axis entry.
+        const companies = t.definition.row_axis.companies ?? [];
+        const bandRows: SensitivityBandRow[] = companies.map((ticker, rowIdx) => ({
+          rowIdx,
+          ticker,
+          companyName: companyNameByTicker.get(ticker) ?? ticker,
+        }));
+        if (bandRows.length === 0) continue; // empty band → skip
+
+        let dt = byKey.get(key);
+        if (!dt) {
+          const { driver, currentValue } = resolveDriverAxis(colAxis);
+          dt = {
+            driverId,
+            driverLabel: driver?.name ?? "",
+            driverUnit: driver?.unit ?? "",
+            colScenarios: scenarios,
+            currentValue,
+            bands: [],
+          };
+          byKey.set(key, dt);
+          out.push(dt);
+        }
+        dt.bands.push({
+          table: t,
+          bandLabel: t.definition.row_label?.trim() || t.title,
+          rows: bandRows,
+        });
+      }
+      // Drop any driver table that ended up with no bands.
+      return out.filter((dt) => dt.bands.length > 0);
+    };
+
+    const built: SensitivityPanel[] = [];
+    const byKey: Partial<Record<SensitivityPanelKey, SensitivityPanel>> = {};
+    for (const key of ["brent", "margin"] as SensitivityPanelKey[]) {
+      const tables = panelTables[key];
+      if (tables.length === 0) continue; // empty panels omitted — Views own the scaffold
+      const driverTables = buildDriverTables(tables);
+      if (driverTables.length === 0) continue;
+      const panel: SensitivityPanel = { key, driverTables };
+      built.push(panel);
+      byKey[key] = panel;
+    }
+
+    return {
+      panels: built,
+      panelByKey: byKey,
+      unpanneledTables: fallback,
+      gridTables: grids,
+    };
+  }, [sensitivityTables, isPanelTable, companyNameByTicker, resolveDriverAxis]);
 
   // Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx).
   const computeSensitivityCell = useCallback(

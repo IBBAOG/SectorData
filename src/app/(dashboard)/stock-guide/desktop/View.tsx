@@ -21,7 +21,7 @@
 // Binding sync rule: any new filter / column / KPI added here must also land in
 // mobile/View.tsx in the same commit, or declare [desktop-only] with reason.
 
-import { useState, useEffect, type CSSProperties } from "react";
+import { useState, useEffect, Fragment, type CSSProperties } from "react";
 import NavBar from "../../../../components/NavBar";
 import DashboardHeader from "../../../../components/dashboard/DashboardHeader";
 import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
@@ -44,11 +44,10 @@ import type {
   UseStockGuideData,
   GridTableModel,
   SensitivityPanel,
-  SensitivityPanelGroup,
+  SensitivityDriverTable,
 } from "../useStockGuideData";
 import { fmtSignedPct } from "../useStockGuideData";
 import { useInViewOnce } from "../useInViewOnce";
-import { unitForValueMode } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideComputedRow,
   SensitivityTable,
@@ -838,14 +837,14 @@ function SensitivityTableView({
   );
 }
 
-// ─── Consolidated sensitivity block (merged single-row static tables) ──────────
+// ─── Consolidated sensitivity block (one table per driver, stacked) ────────────
 //
-// A "brent" / "margin" panel renders as ONE merged table per scenario-signature
-// group: a shared scenario column header (formatted with the driver unit) + one
-// body row per underlying single-row static table. Because the rows may reference
-// DIFFERENT drivers (Brent 2026 live ≈ 89.5 vs Brent 2027 ≈ 81.7), the
-// orange current-value marker is PER ROW — anchored inside that row's bracketing
-// cell(s) — not a thead-spanning interpolation line.
+// A "brent" / "margin" panel renders ONE TABLE PER DRIVER, stacked. Each driver
+// table shows a shared dark scenario header (no top-left label) + a SINGLE
+// column-axis interpolation marker (every row in the table shares the same
+// driver). Inside, each underlying tagged static table is a gray band row (its
+// metric label) followed by ONE ROW PER COMPANY in that table's row_axis
+// (indented). Cells via computeSensitivityCell(table, rowIdx, colIdx).
 
 const PANEL_TITLE: Record<SensitivityPanelKey, string> = {
   brent: "Brent sensitivity",
@@ -855,38 +854,30 @@ const PANEL_TITLE: Record<SensitivityPanelKey, string> = {
 const PANEL_PLACEHOLDER =
   "No tables configured yet — tag a sensitivity table to this panel in the Admin Panel.";
 
-/** Unit suffix shown beside a panel row label, by the table's value_mode. */
-function rowUnitSuffix(table: SensitivityTable): string {
-  const unit = unitForValueMode(table.value_mode, table.unit);
-  return unit ? ` (${unit})` : "";
-}
-
 /** Format a scenario header value (integers as-is, else 1 decimal). */
 function fmtScenarioHeader(v: number, unit: string): string {
   const n = Number.isInteger(v) ? String(v) : v.toFixed(1);
   return unit ? `${n} ${unit}` : n;
 }
 
-/** One merged scenario-signature group inside a consolidated panel. */
-function PanelGroup({
-  group,
-  resolveDriverAxis,
+/**
+ * One driver table inside a consolidated panel: a shared scenario header (one
+ * column-axis interpolation marker), and per band a gray subheader row + one
+ * indented company row each.
+ */
+function DriverSensitivityTable({
+  driverTable,
   computeSensitivityCell,
   quotesLoading,
 }: {
-  group: SensitivityPanelGroup;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  driverTable: SensitivityDriverTable;
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  // Resolve the shared driver unit from the FIRST row's column axis (all rows in
-  // a group share the same scenarios; the unit is stable within a Brent/margin
-  // panel). Used only for the column header label.
-  const firstColAxis = group.rows[0]?.table.definition.col_axis;
-  const headerUnit = firstColAxis
-    ? (resolveDriverAxis(firstColAxis).driver?.unit ?? "")
-    : "";
-  const scenarios = group.colScenarios;
+  const scenarios = driverTable.colScenarios;
+  // SINGLE column-axis marker for the whole driver table (all rows share it).
+  const marker = driverMarker(scenarios, driverTable.currentValue);
+  const nCols = 1 + scenarios.length;
 
   const cellBase: React.CSSProperties = {
     ...TD_BASE,
@@ -899,109 +890,189 @@ function PanelGroup({
   };
 
   return (
-    <div
-      style={{
-        overflowX: "auto",
-        border: "1px solid #e0e0e0",
-        borderRadius: 12,
-        background: "#fff",
-        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-        marginBottom: 12,
-      }}
-    >
-      <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
-        <thead>
-          <tr>
-            <th
-              style={{
-                ...TH_BASE,
-                textAlign: "left",
-                verticalAlign: "bottom",
-                background: HEADER_BG,
-                color: HEADER_FG,
-                borderRight: "1px solid rgba(255,255,255,0.18)",
-                borderBottom: "1px solid rgba(255,255,255,0.18)",
-                whiteSpace: "nowrap",
-              }}
-            >
-              Estimate
-            </th>
-            {scenarios.map((s, ci) => (
+    <div style={{ marginBottom: 18 }}>
+      {/* Driver title — "Avg. Brent 2026 (USD/bbl)" */}
+      <div
+        style={{
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: "#1a1a1a",
+          marginBottom: 6,
+        }}
+      >
+        {driverTable.driverLabel}
+        {driverTable.driverUnit ? ` (${driverTable.driverUnit})` : ""}
+      </div>
+
+      <div
+        style={{
+          overflowX: "auto",
+          border: "1px solid #e0e0e0",
+          borderRadius: 12,
+          background: "#fff",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+        }}
+      >
+        <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
+          <thead>
+            <tr>
+              {/* No label on the first column — just the scenario header. */}
               <th
-                key={ci}
                 style={{
                   ...TH_BASE,
-                  textAlign: "right",
+                  textAlign: "left",
                   background: HEADER_BG,
                   color: HEADER_FG,
-                  borderRight: "1px solid rgba(255,255,255,0.12)",
+                  borderRight: "1px solid rgba(255,255,255,0.18)",
                   borderBottom: "1px solid rgba(255,255,255,0.18)",
+                  whiteSpace: "nowrap",
+                  minWidth: 150,
                 }}
-              >
-                {fmtScenarioHeader(s, headerUnit)}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {group.rows.map((row, ri) => {
-            const table = row.table;
-            const isLive = table.value_mode !== "absolute";
-            const { currentValue } = resolveDriverAxis(table.definition.col_axis);
-            // PER-ROW marker: exact hit or interpolated position between two
-            // adjacent scenarios (anchored to the right boundary of cell afterIdx).
-            const marker = driverMarker(scenarios, currentValue);
-            return (
-              <tr key={table.id} style={{ background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}>
-                <th
-                  scope="row"
-                  style={{
-                    ...TD_BASE,
-                    textAlign: "left",
-                    fontWeight: 700,
-                    color: "#374151",
-                    background: ri % 2 === 0 ? "#f5f5f5" : "#f1f1f1",
-                    borderRight: "1px solid #d6d6d6",
-                    borderBottom: "1px solid #ededed",
-                    padding: "8px 14px",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {row.rowLabel}
-                  <span style={{ color: "#9ca3af", fontWeight: 400 }}>
-                    {rowUnitSuffix(table)}
-                  </span>
-                </th>
-                {scenarios.map((_, ci) => {
-                  const hit = marker.highlightIdx === ci;
-                  const interpLeft =
-                    marker.interp != null && marker.interp.afterIdx + 1 === ci;
-                  const highlighted = hit || interpLeft;
-                  const { value, unit } = computeSensitivityCell(table, 0, ci);
-                  const text =
-                    isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+              />
+              {scenarios.map((s, ci) => {
+                const hit = marker.highlightIdx === ci;
+                const interpLeft =
+                  marker.interp != null && marker.interp.afterIdx + 1 === ci;
+                return (
+                  <th
+                    key={ci}
+                    style={{
+                      ...TH_BASE,
+                      textAlign: "right",
+                      background: hit ? "#2a1206" : HEADER_BG,
+                      color: hit ? BRAND_ORANGE : HEADER_FG,
+                      borderRight: "1px solid rgba(255,255,255,0.12)",
+                      borderBottom: "1px solid rgba(255,255,255,0.18)",
+                      position: "relative",
+                    }}
+                  >
+                    {interpLeft && marker.interp && (
+                      <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
+                    )}
+                    {fmtScenarioHeader(s, driverTable.driverUnit)}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {driverTable.bands.map((band) => (
+              <Fragment key={`band-${band.table.id}`}>
+                {/* Gray band subheader spanning all columns = the metric label. */}
+                <tr>
+                  <th
+                    scope="colgroup"
+                    colSpan={nCols}
+                    style={{
+                      ...TD_BASE,
+                      textAlign: "left",
+                      fontWeight: 700,
+                      fontSize: 11.5,
+                      color: "#374151",
+                      background: "#eef0f2",
+                      borderBottom: "1px solid #dcdcdc",
+                      borderTop: "1px solid #dcdcdc",
+                      padding: "6px 14px",
+                      whiteSpace: "nowrap",
+                      letterSpacing: "0.01em",
+                    }}
+                  >
+                    {band.bandLabel}
+                  </th>
+                </tr>
+                {band.rows.map((r, ri) => {
+                  const isLive = band.table.value_mode !== "absolute";
                   return (
-                    <td
-                      key={ci}
-                      style={{
-                        ...cellBase,
-                        background: highlighted ? "rgba(255,80,0,0.10)" : "transparent",
-                        color: hit ? BRAND_ORANGE : "#1f2937",
-                        fontWeight: highlighted ? 700 : 400,
-                      }}
+                    <tr
+                      key={`${band.table.id}-${r.ticker}`}
+                      style={{ background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}
                     >
-                      {interpLeft && marker.interp && (
-                        <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
-                      )}
-                      {text}
-                    </td>
+                      <th
+                        scope="row"
+                        style={{
+                          ...TD_BASE,
+                          textAlign: "left",
+                          fontWeight: 600,
+                          color: "#374151",
+                          background: ri % 2 === 0 ? "#fafafa" : "#f5f5f5",
+                          borderRight: "1px solid #e0e0e0",
+                          borderBottom: "1px solid #ededed",
+                          padding: "7px 14px 7px 26px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {r.companyName}
+                      </th>
+                      {scenarios.map((_, ci) => {
+                        const hit = marker.highlightIdx === ci;
+                        const interpLeft =
+                          marker.interp != null && marker.interp.afterIdx + 1 === ci;
+                        const highlighted = hit || interpLeft;
+                        const { value, unit } = computeSensitivityCell(
+                          band.table,
+                          r.rowIdx,
+                          ci,
+                        );
+                        // A cell with NO typed primary value renders BLANK (the
+                        // not-yet-filled rows); a typed-but-uncomputable cell (live
+                        // mode while quotes load) shows "—".
+                        const primary =
+                          band.table.definition.cells?.[r.rowIdx]?.[ci] ?? null;
+                        const text =
+                          primary == null
+                            ? ""
+                            : isLive && quotesLoading
+                              ? "—"
+                              : formatSensitivityCell(value, unit);
+                        return (
+                          <td
+                            key={ci}
+                            style={{
+                              ...cellBase,
+                              background: highlighted
+                                ? "rgba(255,80,0,0.08)"
+                                : ri % 2 === 0
+                                  ? "#fff"
+                                  : "#fbfbfb",
+                              color: hit ? BRAND_ORANGE : "#1f2937",
+                              fontWeight: highlighted ? 700 : 400,
+                            }}
+                          >
+                            {interpLeft && marker.interp && (
+                              <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
+                            )}
+                            {text}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   );
                 })}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+              </Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Per-driver-table caption — live current value. */}
+      {driverTable.currentValue != null && (
+        <div
+          style={{
+            marginTop: 6,
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 11,
+            color: "#9095a0",
+            lineHeight: 1.5,
+          }}
+        >
+          Current: {driverTable.driverLabel} ={" "}
+          {Number.isInteger(driverTable.currentValue)
+            ? String(driverTable.currentValue)
+            : driverTable.currentValue.toFixed(1)}
+          {driverTable.driverUnit ? ` ${driverTable.driverUnit}` : ""}
+        </div>
+      )}
     </div>
   );
 }
@@ -1010,38 +1081,14 @@ function PanelGroup({
 function ConsolidatedSensitivityBlock({
   panelKey,
   panel,
-  resolveDriverAxis,
   computeSensitivityCell,
   quotesLoading,
 }: {
   panelKey: SensitivityPanelKey;
   panel: SensitivityPanel | undefined;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  // De-duped caption: one entry per distinct driver id across the panel's rows,
-  // each "Avg. Brent 2026 = 89.5 USD/bbl", joined by " · ".
-  const captionParts: string[] = [];
-  if (panel) {
-    const seen = new Set<number>();
-    for (const group of panel.groups) {
-      for (const row of group.rows) {
-        const { driver, currentValue } = resolveDriverAxis(
-          row.table.definition.col_axis,
-        );
-        if (driver == null || currentValue == null || seen.has(driver.id)) continue;
-        seen.add(driver.id);
-        const n = Number.isInteger(currentValue)
-          ? String(currentValue)
-          : currentValue.toFixed(1);
-        captionParts.push(
-          `${driver.name} = ${n}${driver.unit ? ` ${driver.unit}` : ""}`,
-        );
-      }
-    }
-  }
-
   return (
     <div style={{ minWidth: 0 }}>
       <div
@@ -1071,30 +1118,14 @@ function ConsolidatedSensitivityBlock({
           {PANEL_PLACEHOLDER}
         </div>
       ) : (
-        <>
-          {panel.groups.map((group, gi) => (
-            <PanelGroup
-              key={gi}
-              group={group}
-              resolveDriverAxis={resolveDriverAxis}
-              computeSensitivityCell={computeSensitivityCell}
-              quotesLoading={quotesLoading}
-            />
-          ))}
-          {captionParts.length > 0 && (
-            <div
-              style={{
-                marginTop: 2,
-                fontFamily: "Arial, Helvetica, sans-serif",
-                fontSize: 11,
-                color: "#9095a0",
-                lineHeight: 1.5,
-              }}
-            >
-              Current: {captionParts.join(" · ")}
-            </div>
-          )}
-        </>
+        panel.driverTables.map((dt) => (
+          <DriverSensitivityTable
+            key={dt.driverId}
+            driverTable={dt}
+            computeSensitivityCell={computeSensitivityCell}
+            quotesLoading={quotesLoading}
+          />
+        ))
       )}
     </div>
   );
@@ -1622,14 +1653,12 @@ function SensitivitySection({
         <ConsolidatedSensitivityBlock
           panelKey="brent"
           panel={panelByKey.brent}
-          resolveDriverAxis={resolveDriverAxis}
           computeSensitivityCell={computeSensitivityCell}
           quotesLoading={quotesLoading}
         />
         <ConsolidatedSensitivityBlock
           panelKey="margin"
           panel={panelByKey.margin}
-          resolveDriverAxis={resolveDriverAxis}
           computeSensitivityCell={computeSensitivityCell}
           quotesLoading={quotesLoading}
         />
