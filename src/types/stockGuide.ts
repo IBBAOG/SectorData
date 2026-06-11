@@ -65,6 +65,16 @@ export interface StockGuideCompany {
   net_income_y1: number | null;
   net_income_y2: number | null;
   /**
+   * Optional ADJUSTED net income (BRL million) used on the EX-TAX-CREDIT companion
+   * row ONLY, PER FORWARD YEAR. When filled, the companion row's P/E denominator
+   * (and the Net Income figure it displays) is this adjusted earnings instead of
+   * the reported `net_income_yN`; NULL → the companion falls back to the reported
+   * `net_income_yN`. The NORMAL company row ALWAYS uses `net_income_yN` and ignores
+   * these. Migration `20260623000000`; persisted via `admin_upsert_stock_guide_company`.
+   */
+  net_income_ex_y1: number | null;
+  net_income_ex_y2: number | null;
+  /**
    * Optional NPV (BRL million) of recognized tax credits for this company, PER
    * FORWARD YEAR (`npv_tax_credit_y1` → year 1, `npv_tax_credit_y2` → year 2).
    * When EITHER is > 0, the comps table renders an EXTRA "{Company} ex-tax credit"

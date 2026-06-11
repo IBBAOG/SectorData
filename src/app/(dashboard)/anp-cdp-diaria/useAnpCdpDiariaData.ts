@@ -106,6 +106,14 @@ export const OTHERS_COLOR = "#808080";
  */
 export const FIXED_COMPANIES = ["PRIO", "Petrobras"] as const;
 
+/**
+ * TEMPORARY (P-78 coverage banner gating — user decision 2026-06-10): the
+ * banner renders ONLY on the Petrobras company tab. Type-checked against
+ * FIXED_COMPANIES so a rename there breaks the build instead of silently
+ * orphaning the condition. Remove together with P78CoverageNotice.tsx.
+ */
+export const PETROBRAS: (typeof FIXED_COMPANIES)[number] = "Petrobras";
+
 /** Trace name used for the company-wide net production headline line. */
 export const COMPANY_TOTAL_LABEL = "Company total";
 
