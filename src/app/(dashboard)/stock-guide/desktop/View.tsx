@@ -625,15 +625,18 @@ const INTERP_GAP_PX = 34;
 function InterpMarker({
   orientation,
   frac,
+  gapPx = INTERP_GAP_PX,
 }: {
   orientation: "horizontal" | "vertical";
   /** Proportional position 0..1 from the previous scenario → this boundary. */
   frac: number;
+  /** Pixel budget the line slides back into the previous cell (≈ column width). */
+  gapPx?: number;
 }): React.ReactElement {
   // The marker is anchored at the boundary (left/top edge of cell afterIdx+1).
   // frac=1 → current value sits at the boundary; frac→0 → near the previous
   // scenario, so we slide the line back by (1−frac)·GAP into the previous cell.
-  const slide = -(1 - Math.min(Math.max(frac, 0), 1)) * INTERP_GAP_PX;
+  const slide = -(1 - Math.min(Math.max(frac, 0), 1)) * gapPx;
   // A thin continuous orange line (no arrowhead).
   return (
     <span
@@ -924,14 +927,24 @@ function DriverSensitivityTable({
   const marker = driverMarker(scenarios, driverTable.currentValue);
   const nCols = 1 + scenarios.length;
 
+  // ── Compact sizing so the full scenario range (e.g. 50–150 = 11 cols) fits the
+  //    ~920px panel WITHOUT horizontal scrolling: fixed table layout, narrow
+  //    scenario columns, a slim readable label column, smaller font + padding.
+  const LABEL_W = 122; // company / metric-band label column
+  const SCEN_W = 56; // each scenario column
+  const COMPACT_FONT = 11;
+  const compactCellPad = "6px 8px";
+
   const cellBase: React.CSSProperties = {
     ...TD_BASE,
-    padding: "8px 14px",
+    fontSize: COMPACT_FONT,
+    padding: compactCellPad,
     borderRight: "1px solid #ededed",
     borderBottom: "1px solid #ededed",
     color: "#1f2937",
-    minWidth: 72,
     position: "relative",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
   };
 
   return (
@@ -959,20 +972,34 @@ function DriverSensitivityTable({
           boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
         }}
       >
-        <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
+        <table
+          style={{
+            borderCollapse: "collapse",
+            width: "100%",
+            tableLayout: "fixed",
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          <colgroup>
+            <col style={{ width: LABEL_W }} />
+            {scenarios.map((_, ci) => (
+              <col key={ci} style={{ width: SCEN_W }} />
+            ))}
+          </colgroup>
           <thead>
             <tr>
               {/* No label on the first column — just the scenario header. */}
               <th
                 style={{
                   ...TH_BASE,
+                  fontSize: COMPACT_FONT,
+                  padding: compactCellPad,
                   textAlign: "left",
                   background: HEADER_BG,
                   color: HEADER_FG,
                   borderRight: "1px solid rgba(255,255,255,0.18)",
                   borderBottom: "1px solid rgba(255,255,255,0.18)",
                   whiteSpace: "nowrap",
-                  minWidth: 150,
                 }}
               />
               {scenarios.map((s, ci) => {
@@ -984,6 +1011,8 @@ function DriverSensitivityTable({
                     key={ci}
                     style={{
                       ...TH_BASE,
+                      fontSize: COMPACT_FONT,
+                      padding: compactCellPad,
                       textAlign: "right",
                       background: hit ? "#2a1206" : HEADER_BG,
                       color: hit ? BRAND_ORANGE : HEADER_FG,
@@ -993,7 +1022,11 @@ function DriverSensitivityTable({
                     }}
                   >
                     {interpLeft && marker.interp && (
-                      <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
+                      <InterpMarker
+                        orientation="horizontal"
+                        frac={marker.interp.frac}
+                        gapPx={SCEN_W}
+                      />
                     )}
                     {/* Number only — the unit lives in the driver-table title. */}
                     {fmtScenarioHeader(s, "")}
@@ -1014,12 +1047,12 @@ function DriverSensitivityTable({
                       ...TD_BASE,
                       textAlign: "left",
                       fontWeight: 700,
-                      fontSize: 11.5,
+                      fontSize: 10.5,
                       color: "#374151",
                       background: "#eef0f2",
                       borderBottom: "1px solid #dcdcdc",
                       borderTop: "1px solid #dcdcdc",
-                      padding: "6px 14px",
+                      padding: "5px 8px",
                       whiteSpace: "nowrap",
                       letterSpacing: "0.01em",
                     }}
@@ -1038,14 +1071,17 @@ function DriverSensitivityTable({
                         scope="row"
                         style={{
                           ...TD_BASE,
+                          fontSize: COMPACT_FONT,
                           textAlign: "left",
                           fontWeight: 600,
                           color: "#374151",
                           background: ri % 2 === 0 ? "#fafafa" : "#f5f5f5",
                           borderRight: "1px solid #e0e0e0",
                           borderBottom: "1px solid #ededed",
-                          padding: "7px 14px 7px 26px",
+                          padding: "6px 8px 6px 16px",
                           whiteSpace: "nowrap",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
                         }}
                       >
                         {r.companyName}
@@ -1086,7 +1122,11 @@ function DriverSensitivityTable({
                             }}
                           >
                             {interpLeft && marker.interp && (
-                              <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
+                              <InterpMarker
+                                orientation="horizontal"
+                                frac={marker.interp.frac}
+                                gapPx={SCEN_W}
+                              />
                             )}
                             {text}
                           </td>
