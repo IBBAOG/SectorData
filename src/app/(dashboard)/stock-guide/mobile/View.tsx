@@ -198,6 +198,16 @@ function CompsTable({
       <style>{`
         .sg-comps-scroll tbody tr:active td,
         .sg-comps-scroll tbody tr:active th { background: var(--mobile-row-press) !important; }
+        /* Hide native number-input spinners on the driver stepper (custom −/+ buttons only) */
+        .sg-axis-stepper-input {
+          appearance: textfield;
+          -moz-appearance: textfield;
+        }
+        .sg-axis-stepper-input::-webkit-outer-spin-button,
+        .sg-axis-stepper-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
       `}</style>
       <table
         style={{
@@ -860,6 +870,7 @@ function MobileAxisStepper({
             −
           </button>
           <input
+            className="sg-axis-stepper-input"
             type="number"
             inputMode="decimal"
             step={MOBILE_GRID_AXIS_STEP}
