@@ -112,53 +112,6 @@ function RecChip({ code }: { code: StockGuideRecommendation | null }): React.Rea
   );
 }
 
-// ─── Financial-model download link (mobile) ───────────────────────────────────
-
-/**
- * Compact download affordance for a company's financial model. Renders a small
- * brand-orange icon link when `url` is set, else the table's `—` placeholder.
- * This is a plain link (not the desktop-only Excel export), so it's allowed here.
- */
-function ModelLink({ url }: { url: string | null }): React.ReactElement {
-  if (!url) return <span style={{ color: "var(--mobile-text-faint)" }}>—</span>;
-  return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Download financial model"
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        width: 26,
-        height: 26,
-        borderRadius: 5,
-        border: `1px solid ${MOBILE_ACCENT}`,
-        color: MOBILE_ACCENT,
-        textDecoration: "none",
-        lineHeight: 0,
-      }}
-    >
-      <svg
-        width="13"
-        height="13"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        aria-hidden="true"
-      >
-        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-        <polyline points="7 10 12 15 17 10" />
-        <line x1="12" y1="15" x2="12" y2="3" />
-      </svg>
-    </a>
-  );
-}
-
 // ─── Comps summary table ───────────────────────────────────────────────────────
 //
 // Sticky Company column + horizontal scroll. The six forward groups render for
@@ -192,7 +145,6 @@ const YEAR_COLS: YearCol[] = [
 // Price; a new "Current" price column sits right after TP.
 type MobileSingleColId =
   | "ticker"
-  | "model"
   | "recommendation"
   | "tp"
   | "current_price"
@@ -207,7 +159,6 @@ interface MobileSingleCol {
 
 const SINGLE_COLS: MobileSingleCol[] = [
   { id: "ticker",         header: "Ticker",  align: "left"  },
-  { id: "model",          header: "Model",   align: "right" },
   { id: "recommendation", header: "Rec.",    align: "right" },
   { id: "tp",             header: "TP",      align: "right" },
   { id: "current_price",  header: "Current", align: "right" },
@@ -404,14 +355,6 @@ function CompsTable({
                             }}
                           >
                             {isExCredit ? "" : r.ticker}
-                          </td>
-                        );
-                      case "model":
-                        // Ex-tax-credit companion row leaves the Model cell BLANK
-                        // (display parity with Ticker / Rec. / TP / etc.).
-                        return (
-                          <td key={c.id} style={tdBase(rowBg)}>
-                            {isExCredit ? "" : <ModelLink url={r.model_url} />}
                           </td>
                         );
                       case "recommendation":
