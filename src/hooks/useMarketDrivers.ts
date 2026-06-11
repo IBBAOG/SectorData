@@ -207,14 +207,16 @@ function futureBrentForMonth(
   if (target < first.idx) return brentSpot;
   // After the curve ends → flat-extrapolate the tail (not spot).
   if (target > last.idx) return last.price;
-  // Inside the curve span: exact match, else nearest preceding valid contract.
-  let chosen: number | null = null;
+  // Inside the curve span [first.idx, last.idx]: exact match, else carry the
+  // nearest preceding valid contract. `chosen` is always set on the first
+  // iteration (the first element has idx <= target), so it is never null here.
+  let chosen = first.price;
   for (const c of sorted) {
     if (c.idx === target) return c.price;
     if (c.idx < target) chosen = c.price;
     else break;
   }
-  return chosen ?? brentSpot;
+  return chosen;
 }
 
 /** Mean of the non-null values in a 12-element monthly array; null if all null. */
