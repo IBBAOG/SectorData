@@ -391,16 +391,19 @@ function CompsTable({
                           </td>
                         );
                       case "recommendation":
+                        // Ex-tax-credit companion row: leave Recomm./TP/Current
+                        // price/Upside/Market cap BLANK — only the EV/EBITDA-onward
+                        // multiples (computed off the adjusted basis) are shown.
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "right" }}>
-                            <RecommendationChip code={r.recommendation} />
+                            {isExCredit ? "" : <RecommendationChip code={r.recommendation} />}
                           </td>
                         );
                       case "tp":
                         // Centered + whole-number (Eduardo review): 64.00 → 64.
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
-                            {fmtInt(r.target_price)}
+                            {isExCredit ? "" : fmtInt(r.target_price)}
                           </td>
                         );
                       case "current_price":
@@ -408,20 +411,20 @@ function CompsTable({
                         // cap / upside. Kept at 2 decimals (price precision).
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
-                            {quotesLoading && r.livePrice == null ? "—" : fmtNum(r.livePrice, 2)}
+                            {isExCredit ? "" : quotesLoading && r.livePrice == null ? "—" : fmtNum(r.livePrice, 2)}
                           </td>
                         );
                       case "upside":
                         // Whole-percent (Eduardo review): +27.5% → +28%.
                         return (
                           <td key={c.id} style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
-                            {quotesLoading && r.upsidePct == null ? "—" : fmtSignedPctWhole(r.upsidePct)}
+                            {isExCredit ? "" : quotesLoading && r.upsidePct == null ? "—" : fmtSignedPctWhole(r.upsidePct)}
                           </td>
                         );
                       case "market_cap":
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
-                            {quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
+                            {isExCredit ? "" : quotesLoading && r.marketCapBrlMn == null ? "—" : fmtMn(r.marketCapBrlMn)}
                           </td>
                         );
                       default:
