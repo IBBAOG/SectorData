@@ -381,19 +381,19 @@ function CompsTable({
                       case "ticker":
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "left", color: "#6b7280", fontWeight: 600 }}>
-                            {r.ticker}
+                            {isExCredit ? "" : r.ticker}
                           </td>
                         );
                       case "last_update":
                         return (
                           <td key={c.id} style={{ ...TD_BASE, color: "#9ca3af" }}>
-                            {r.last_update ?? "—"}
+                            {isExCredit ? "" : (r.last_update ?? "—")}
                           </td>
                         );
                       case "recommendation":
-                        // Ex-tax-credit companion row: leave Recomm./TP/Current
-                        // price/Upside/Market cap BLANK — only the EV/EBITDA-onward
-                        // multiples (computed off the adjusted basis) are shown.
+                        // Ex-tax-credit companion row: leave Ticker/Last update/
+                        // Recomm./TP/Current price/Upside/Market cap BLANK — only the
+                        // EV/EBITDA-onward multiples (computed off the adjusted basis) show.
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "right" }}>
                             {isExCredit ? "" : <RecommendationChip code={r.recommendation} />}

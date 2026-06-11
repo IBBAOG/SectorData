@@ -1188,11 +1188,11 @@ export function useStockGuideData(): UseStockGuideData {
         mergeTitleCells: true,
         columns: [
           { header: "Company",            key: "displayName",   width: 24, align: "left"   },
-          { header: "Ticker",             key: "ticker",        width: 10, align: "left"   },
-          { header: "Last update",        key: "last_update",   width: 13, align: "center" },
-          // Ex-tax-credit companion rows leave Recommendation/TP/Current price/
-          // Upside/Market cap BLANK (display parity with the table) — only the
-          // EV/EBITDA-onward multiples are shown.
+          { header: "Ticker",             value: (r) => (r.isExTaxCredit ? null : r.ticker),      width: 10, align: "left"   },
+          { header: "Last update",        value: (r) => (r.isExTaxCredit ? null : r.last_update), width: 13, align: "center" },
+          // Ex-tax-credit companion rows leave Ticker/Last update/Recommendation/TP/
+          // Current price/Upside/Market cap BLANK (display parity with the table) —
+          // only the EV/EBITDA-onward multiples are shown.
           { header: "Recommendation",     value: (r) => (r.isExTaxCredit ? null : r.recommendation), width: 15, align: "center" },
           { header: "Target price",       value: (r) => (r.isExTaxCredit ? null : r.target_price),   width: 13, format: "0", align: "center" },
           { header: "Current price",      value: (r) => (r.isExTaxCredit ? null : r.livePrice),      width: 13, format: "0.00", align: "center" },
@@ -1230,9 +1230,10 @@ export function useStockGuideData(): UseStockGuideData {
       downloadCsv({
         rows: computedRows.map((r) => ({
           company: r.displayName,
-          ticker: r.ticker,
-          last_update: r.last_update,
-          // Ex-tax-credit companion rows leave these 5 columns blank (display parity).
+          // Ex-tax-credit companion rows leave Ticker/Last update + these 5
+          // columns blank (display parity with the table).
+          ticker: r.isExTaxCredit ? null : r.ticker,
+          last_update: r.isExTaxCredit ? null : r.last_update,
           recommendation: r.isExTaxCredit ? null : r.recommendation,
           target_price: r.isExTaxCredit ? null : r.target_price,
           current_price: r.isExTaxCredit ? null : r.livePrice,

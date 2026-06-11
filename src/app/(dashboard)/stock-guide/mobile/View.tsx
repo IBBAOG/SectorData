@@ -360,11 +360,11 @@ function CompsTable({
                               fontWeight: 600,
                             }}
                           >
-                            {r.ticker}
+                            {isExCredit ? "" : r.ticker}
                           </td>
                         );
                       case "recommendation":
-                        // Ex-tax-credit companion row: leave Rec./TP/Current
+                        // Ex-tax-credit companion row: leave Ticker/Rec./TP/Current
                         // price/Upside/Market cap BLANK — only the EV/EBITDA-onward
                         // multiples (computed off the adjusted basis) are shown.
                         return (
