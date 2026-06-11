@@ -166,6 +166,20 @@ export interface UseStockGuideData {
   unpanneledTables: SensitivityTable[];
   /** Scenario-grid tables (`isGridTable`), in display_order — always visible, lazy mesh. */
   gridTables: SensitivityTable[];
+  /**
+   * Scenario-grid tables grouped by their `definition.panel` tag ("brent" /
+   * "margin"), in display_order within each panel. Drives the two-column
+   * half-page split in both Views (LEFT = brent grids, RIGHT = margin grids),
+   * mirroring the consolidated static panels above. A grid table WITHOUT a valid
+   * panel tag is absent here and listed in `untaggedGridTables` instead.
+   */
+  gridPanelByKey: Partial<Record<SensitivityPanelKey, SensitivityTable[]>>;
+  /**
+   * Scenario-grid tables that carry NO valid `definition.panel` tag — rendered
+   * full-width below the two-column split, preserving the pre-2026-06-11
+   * behavior for backward compatibility. In display_order.
+   */
+  untaggedGridTables: SensitivityTable[];
 
   /**
    * Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx)
@@ -933,7 +947,14 @@ export function useStockGuideData(): UseStockGuideData {
   // that panel; within a panel the tables are grouped by (driver_id + scenario
   // signature) into ONE rendered driver table each. Every other static table goes
   // to `unpanneledTables`; grids go to `gridTables`.
-  const { panels, panelByKey, unpanneledTables, gridTables } = useMemo(() => {
+  const {
+    panels,
+    panelByKey,
+    unpanneledTables,
+    gridTables,
+    gridPanelByKey,
+    untaggedGridTables,
+  } = useMemo(() => {
     const ordered = [...sensitivityTables].sort(
       (a, b) => a.display_order - b.display_order,
     );
@@ -944,10 +965,21 @@ export function useStockGuideData(): UseStockGuideData {
     };
     const fallback: SensitivityTable[] = [];
     const grids: SensitivityTable[] = [];
+    // Scenario grids split by panel tag for the two-column half-page split. A
+    // grid table reads `definition.panel` exactly like the static panel tables;
+    // an untagged / invalid-tag grid falls to `untaggedGrids` (full-width below).
+    const gridPanels: Record<SensitivityPanelKey, SensitivityTable[]> = {
+      brent: [],
+      margin: [],
+    };
+    const untaggedGrids: SensitivityTable[] = [];
 
     for (const t of ordered) {
       if (tableIsGrid(t)) {
         grids.push(t);
+        const gp = t.definition.panel;
+        if (gp === "brent" || gp === "margin") gridPanels[gp].push(t);
+        else untaggedGrids.push(t);
         continue;
       }
       const panel = t.definition.panel;
@@ -1019,11 +1051,18 @@ export function useStockGuideData(): UseStockGuideData {
       byKey[key] = panel;
     }
 
+    const gridByKey: Partial<Record<SensitivityPanelKey, SensitivityTable[]>> =
+      {};
+    if (gridPanels.brent.length > 0) gridByKey.brent = gridPanels.brent;
+    if (gridPanels.margin.length > 0) gridByKey.margin = gridPanels.margin;
+
     return {
       panels: built,
       panelByKey: byKey,
       unpanneledTables: fallback,
       gridTables: grids,
+      gridPanelByKey: gridByKey,
+      untaggedGridTables: untaggedGrids,
     };
   }, [sensitivityTables, isPanelTable, companyNameByTicker, resolveDriverAxis]);
 
@@ -1467,6 +1506,8 @@ export function useStockGuideData(): UseStockGuideData {
     panelByKey,
     unpanneledTables,
     gridTables,
+    gridPanelByKey,
+    untaggedGridTables,
     computeSensitivityCell,
     resolveDriverAxis,
     isGridTable,

@@ -1426,18 +1426,24 @@ function AxisStepper({
               +
             </button>
           </div>
-          <span
-            style={{
-              fontSize: 10.5,
-              color: axis.liveValue != null ? BRAND_ORANGE : "#9ca3af",
-              fontWeight: 600,
-              fontFamily: "Arial, Helvetica, sans-serif",
-              fontVariantNumeric: "tabular-nums",
-              lineHeight: 1.25,
-            }}
-          >
-            {axis.liveValue != null ? `live ${fmtSlider(axis.liveValue)}` : "live —"}
-          </span>
+          {/* "live X.X" chip only for axes with a live "today" value. A static
+              driver with NO current_value (e.g. the EBITDA-margin drivers until
+              the admin fills them) shows NO chip and NO interp marker — the
+              slider just starts at the mesh midpoint. */}
+          {axis.liveValue != null && (
+            <span
+              style={{
+                fontSize: 10.5,
+                color: BRAND_ORANGE,
+                fontWeight: 600,
+                fontFamily: "Arial, Helvetica, sans-serif",
+                fontVariantNumeric: "tabular-nums",
+                lineHeight: 1.25,
+              }}
+            >
+              live {fmtSlider(axis.liveValue)}
+            </span>
+          )}
         </div>
       )}
     </div>
@@ -1459,169 +1465,216 @@ function GridPanel({
   onResetAll: (tableId: number) => void;
   quotesLoading: boolean;
 }): React.ReactElement {
+  // Compact sizing so the 9-col results table (Company + up to 8 outputs) fits a
+  // HALF-page width (~450px) WITHOUT horizontal scroll: fixed layout, narrow
+  // numeric columns, smaller font + padding, two-line output headers. Matches
+  // the compaction precedent of the static driver tables.
+  const upsideCount = model.outputs.filter((o) => o.mode === "upside").length;
+  const nValueCols = model.outputs.length + upsideCount;
+  const GRID_LABEL_W = 96; // company label column
+  const GRID_VAL_FONT = 10.5;
+  const gridCellPad = "5px 6px";
+  const gridHeadStyle: React.CSSProperties = {
+    ...TH_BASE,
+    fontSize: GRID_VAL_FONT,
+    padding: gridCellPad,
+    textAlign: "center",
+    verticalAlign: "bottom",
+    whiteSpace: "normal",
+    lineHeight: 1.15,
+  };
+  const gridCellStyle: React.CSSProperties = {
+    ...TD_BASE,
+    fontSize: GRID_VAL_FONT,
+    padding: gridCellPad,
+    textAlign: "center",
+  };
+
   return (
-    <div style={{ marginBottom: 28 }}>
+    <div style={{ marginBottom: 22 }}>
       {/* Title */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
+        <span style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13, fontWeight: 700, color: "#1a1a1a" }}>
           {table.title}
         </span>
       </div>
       <div
         style={{
           fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 11.5,
+          fontSize: 11,
           color: "#9ca3af",
-          marginBottom: 14,
+          marginBottom: 12,
+          lineHeight: 1.4,
         }}
       >
         Adjust the assumptions to re-price live across our scenario mesh. Markers
         show today&rsquo;s values.
       </div>
 
+      {/* Half-width layout: axis sliders STACKED ABOVE the results table (the old
+          side-by-side rail cannot fit a half). Axes flow horizontally and wrap. */}
       <div
         style={{
-          display: "grid",
-          gridTemplateColumns: "minmax(240px, 280px) minmax(0, 1fr)",
-          gap: 20,
-          alignItems: "start",
+          border: "1px solid #e6e6e6",
+          borderRadius: 10,
+          background: "#fff",
+          padding: "10px 12px 2px",
+          marginBottom: 12,
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "0 22px",
+          alignItems: "flex-start",
         }}
       >
-        {/* ── Axis sliders (1..3, stacked) — narrow control rail ────────────── */}
-        <div
-          style={{
-            border: "1px solid #e6e6e6",
-            borderRadius: 10,
-            background: "#fff",
-            padding: 12,
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-          }}
-        >
-          {model.axes.map((axis, i) => (
+        {model.axes.map((axis, i) => (
+          <div key={`${axis.key}-${i}`} style={{ flex: "0 1 auto", minWidth: 0 }}>
             <AxisStepper
-              key={`${axis.key}-${i}`}
               tableId={table.id}
               axisIdx={i}
               axis={axis}
               onSetAxis={onSetAxis}
               onResetAxis={onResetAxis}
             />
-          ))}
-          {model.anyOverridden && (
-            <button
-              type="button"
-              onClick={() => onResetAll(table.id)}
-              style={{
-                marginTop: 2,
-                padding: "4px 10px",
-                borderRadius: 12,
-                cursor: "pointer",
-                border: `1px solid ${BRAND_ORANGE}`,
-                background: BRAND_ORANGE,
-                color: "#fff",
-                fontSize: 11,
-                fontWeight: 700,
-                fontFamily: "Arial, Helvetica, sans-serif",
-              }}
-            >
-              Reset all to live
-            </button>
-          )}
-        </div>
+          </div>
+        ))}
+        {model.anyOverridden && (
+          <button
+            type="button"
+            onClick={() => onResetAll(table.id)}
+            style={{
+              alignSelf: "center",
+              marginBottom: 12,
+              padding: "4px 10px",
+              borderRadius: 12,
+              cursor: "pointer",
+              border: `1px solid ${BRAND_ORANGE}`,
+              background: BRAND_ORANGE,
+              color: "#fff",
+              fontSize: 11,
+              fontWeight: 700,
+              fontFamily: "Arial, Helvetica, sans-serif",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Reset all to live
+          </button>
+        )}
+      </div>
 
-        {/* ── Output table (one column per configured output) ───────────────── */}
-        <div
+      {/* ── Output table (one column per configured output) — fits the half ── */}
+      <div
+        style={{
+          border: "1px solid #e0e0e0",
+          borderRadius: 12,
+          background: "#fff",
+          overflow: "hidden",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+        }}
+      >
+        <table
           style={{
-            border: "1px solid #e0e0e0",
-            borderRadius: 12,
-            background: "#fff",
-            overflowX: "auto",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+            borderCollapse: "collapse",
+            width: "100%",
+            tableLayout: "fixed",
+            fontFamily: "Arial, Helvetica, sans-serif",
           }}
         >
-          <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
-            <thead>
-              <tr>
-                <th style={{ ...TH_BASE, textAlign: "left" }}>Company</th>
-                {model.outputs.map((o) => {
-                  const cols = [
-                    <th key={o.key} style={{ ...TH_BASE, textAlign: "right" }}>
-                      {o.label}
+          <colgroup>
+            <col style={{ width: GRID_LABEL_W }} />
+            {Array.from({ length: nValueCols }).map((_, ci) => (
+              <col key={ci} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ ...gridHeadStyle, textAlign: "left" }}>Company</th>
+              {model.outputs.map((o) => {
+                const cols = [
+                  <th key={o.key} style={gridHeadStyle}>
+                    {o.label}
+                  </th>,
+                ];
+                // An 'upside' output shows the interpolated price column then a
+                // derived Upside column (vs the live share price).
+                if (o.mode === "upside") {
+                  cols.push(
+                    <th key={`${o.key}-up`} style={gridHeadStyle}>
+                      Upside
                     </th>,
-                  ];
-                  // An 'upside' output shows the interpolated price column then a
-                  // derived Upside column (vs the live share price).
-                  if (o.mode === "upside") {
-                    cols.push(
-                      <th key={`${o.key}-up`} style={{ ...TH_BASE, textAlign: "right" }}>
-                        Upside
-                      </th>,
-                    );
-                  }
-                  return cols;
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {model.rows.length === 0 ? (
-                <tr>
-                  <td
-                    colSpan={
-                      1 + model.outputs.length + model.outputs.filter((o) => o.mode === "upside").length
-                    }
-                    style={{ ...TD_BASE, textAlign: "center", color: "#9ca3af", padding: "24px 10px" }}
-                  >
-                    No companies to re-price.
-                  </td>
-                </tr>
-              ) : (
-                model.rows.map((r, i) => {
-                  const bg = i % 2 === 0 ? "#fff" : "#fbfbfb";
-                  return (
-                    <tr key={r.ticker} style={{ background: bg }}>
-                      <td style={{ ...TD_BASE, textAlign: "left", fontWeight: 700, color: "#111827" }}>
-                        {r.companyName}
-                      </td>
-                      {model.outputs.map((o) => {
-                        const cell = r.values[o.key];
-                        if (o.mode === "upside") {
-                          // Primary cell = the interpolated target PRICE (raw BRL);
-                          // the derived Upside ratio comes from the live price.
-                          const upside =
-                            cell?.raw != null && r.livePrice != null && r.livePrice > 0
-                              ? cell.raw / r.livePrice - 1
-                              : null;
-                          const upsideColor =
-                            upside == null
-                              ? "#1a1a1a"
-                              : upside > 0
-                                ? "#15803d"
-                                : upside < 0
-                                  ? "#b91c1c"
-                                  : "#6b7280";
-                          return [
-                            <td key={o.key} style={{ ...TD_BASE }}>
-                              {cell?.raw == null ? "—" : fmtSlider(cell.raw)}
-                            </td>,
-                            <td key={`${o.key}-up`} style={{ ...TD_BASE, color: upsideColor, fontWeight: 700 }}>
-                              {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
-                            </td>,
-                          ];
-                        }
-                        const showDash = quotesLoading && cell?.value == null;
-                        return (
-                          <td key={o.key} style={{ ...TD_BASE }}>
-                            {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
-                          </td>
-                        );
-                      })}
-                    </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                }
+                return cols;
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {model.rows.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={1 + nValueCols}
+                  style={{ ...gridCellStyle, color: "#9ca3af", padding: "24px 10px" }}
+                >
+                  No companies to re-price.
+                </td>
+              </tr>
+            ) : (
+              model.rows.map((r, i) => {
+                const bg = i % 2 === 0 ? "#fff" : "#fbfbfb";
+                return (
+                  <tr key={r.ticker} style={{ background: bg }}>
+                    <td
+                      style={{
+                        ...gridCellStyle,
+                        textAlign: "left",
+                        fontWeight: 700,
+                        color: "#111827",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.companyName}
+                    </td>
+                    {model.outputs.map((o) => {
+                      const cell = r.values[o.key];
+                      if (o.mode === "upside") {
+                        // Primary cell = the interpolated target PRICE (raw BRL);
+                        // the derived Upside ratio comes from the live price.
+                        const upside =
+                          cell?.raw != null && r.livePrice != null && r.livePrice > 0
+                            ? cell.raw / r.livePrice - 1
+                            : null;
+                        const upsideColor =
+                          upside == null
+                            ? "#1a1a1a"
+                            : upside > 0
+                              ? "#15803d"
+                              : upside < 0
+                                ? "#b91c1c"
+                                : "#6b7280";
+                        return [
+                          <td key={o.key} style={gridCellStyle}>
+                            {cell?.raw == null ? "—" : fmtSlider(cell.raw)}
+                          </td>,
+                          <td key={`${o.key}-up`} style={{ ...gridCellStyle, color: upsideColor, fontWeight: 700 }}>
+                            {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
+                          </td>,
+                        ];
+                      }
+                      const showDash = quotesLoading && cell?.value == null;
+                      return (
+                        <td key={o.key} style={gridCellStyle}>
+                          {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -1695,10 +1748,94 @@ function GridInView({
 
 // ── The whole sensitivity section (consolidated, always-visible) ──────────────
 
+/** Title for a scenario-grid half (mirrors the consolidated static panels). */
+const GRID_PANEL_TITLE: Record<SensitivityPanelKey, string> = {
+  brent: "Brent scenario mesh",
+  margin: "EBITDA margin scenario mesh",
+};
+
+const GRID_PANEL_PLACEHOLDER =
+  "No scenario-grid table tagged to this panel yet — tag one in the Admin Panel.";
+
+/**
+ * One half of the scenario-grid two-column split — the brent or margin grid
+ * table(s), or a subtle placeholder when this panel has none. Mirrors the
+ * `ConsolidatedSensitivityBlock` scaffold so the grid section lines up visually
+ * with the consolidated static panels above it.
+ */
+function GridPanelHalf({
+  panelKey,
+  tables,
+  getGridModel,
+  ensureGridLoaded,
+  gridLoading,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
+  quotesLoading,
+}: {
+  panelKey: SensitivityPanelKey;
+  tables: SensitivityTable[] | undefined;
+  getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
+  gridLoading: boolean;
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#1a1a1a",
+          marginBottom: 10,
+        }}
+      >
+        {GRID_PANEL_TITLE[panelKey]}
+      </div>
+      {tables == null || tables.length === 0 ? (
+        <div
+          style={{
+            padding: "22px 16px",
+            color: "#9ca3af",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 12.5,
+            border: "1px dashed #d8d8d8",
+            borderRadius: 12,
+            background: "#fafafa",
+            lineHeight: 1.5,
+          }}
+        >
+          {GRID_PANEL_PLACEHOLDER}
+        </div>
+      ) : (
+        tables.map((t) => (
+          <GridInView
+            key={t.id}
+            table={t}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 function SensitivitySection({
   panelByKey,
   unpanneledTables,
-  gridTables,
+  gridPanelByKey,
+  untaggedGridTables,
   y1Label,
   y2Label,
   resolveDriverAxis,
@@ -1713,7 +1850,8 @@ function SensitivitySection({
 }: {
   panelByKey: UseStockGuideData["panelByKey"];
   unpanneledTables: SensitivityTable[];
-  gridTables: SensitivityTable[];
+  gridPanelByKey: UseStockGuideData["gridPanelByKey"];
+  untaggedGridTables: SensitivityTable[];
   y1Label: string;
   y2Label: string;
   resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
@@ -1726,6 +1864,8 @@ function SensitivitySection({
   onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
+  const hasGridSplit =
+    gridPanelByKey.brent != null || gridPanelByKey.margin != null;
   return (
     <div>
       {/* ── Two always-rendered block frames: Brent (left) · Margin (right) ──── */}
@@ -1769,10 +1909,50 @@ function SensitivitySection({
         </div>
       )}
 
-      {/* ── Scenario-grid tables, always visible, lazy mesh on scroll-in ─────── */}
-      {gridTables.length > 0 && (
+      {/* ── Scenario-grid mesh: same two-column half-page split as the static
+             panels above — LEFT = Brent grids, RIGHT = EBITDA-margin grids.
+             Always visible (each half's ~194k-point mesh is fetched lazily on
+             scroll-in). Auto-stacks when the viewport is narrow. ──────────── */}
+      {hasGridSplit && (
+        <div
+          style={{
+            marginTop: 32,
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+            gap: 24,
+            alignItems: "start",
+          }}
+        >
+          <GridPanelHalf
+            panelKey="brent"
+            tables={gridPanelByKey.brent}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+          <GridPanelHalf
+            panelKey="margin"
+            tables={gridPanelByKey.margin}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+        </div>
+      )}
+
+      {/* ── Untagged scenario-grid tables (no valid panel) → full-width below,
+             preserving the legacy behavior for backward compatibility. ────── */}
+      {untaggedGridTables.length > 0 && (
         <div style={{ marginTop: 32 }}>
-          {gridTables.map((t) => (
+          {untaggedGridTables.map((t) => (
             <GridInView
               key={t.id}
               table={t}
@@ -1831,7 +2011,8 @@ export default function DesktopView(): React.ReactElement {
     refreshQuotes,
     panelByKey,
     unpanneledTables,
-    gridTables,
+    gridPanelByKey,
+    untaggedGridTables,
     resolveDriverAxis,
     computeSensitivityCell,
     getGridModel,
@@ -1950,7 +2131,8 @@ export default function DesktopView(): React.ReactElement {
                 <SensitivitySection
                   panelByKey={panelByKey}
                   unpanneledTables={unpanneledTables}
-                  gridTables={gridTables}
+                  gridPanelByKey={gridPanelByKey}
+                  untaggedGridTables={untaggedGridTables}
                   y1Label={config.y1_label}
                   y2Label={config.y2_label}
                   resolveDriverAxis={resolveDriverAxis}

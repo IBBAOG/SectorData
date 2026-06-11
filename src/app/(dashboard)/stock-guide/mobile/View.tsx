@@ -1031,16 +1031,21 @@ function MobileAxisStepper({
         <span style={{ fontSize: 12.5, fontWeight: 700, color: "var(--mobile-text)" }}>
           {axis.label} ({axis.unit})
         </span>
-        <span
-          style={{
-            color: axis.liveValue != null ? MOBILE_ACCENT : "var(--mobile-text-faint)",
-            fontWeight: 600,
-            fontSize: 11,
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {axis.liveValue != null ? `live ${mobileFmtSlider(axis.liveValue)}` : "live —"}
-        </span>
+        {/* "live X.X" chip only for axes with a live "today" value. A static
+            driver with NO current_value shows NO chip — the slider just starts
+            at the mesh midpoint. */}
+        {axis.liveValue != null && (
+          <span
+            style={{
+              color: MOBILE_ACCENT,
+              fontWeight: 600,
+              fontSize: 11,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            live {mobileFmtSlider(axis.liveValue)}
+          </span>
+        )}
       </div>
 
       {axis.disabled ? (
@@ -1370,12 +1375,87 @@ function MobileGridInView({
   );
 }
 
+// ─── Scenario-grid half (mobile, stacked) ──────────────────────────────────────
+//
+// Mobile is single-column, so the desktop two-column split becomes a vertical
+// stack: the Brent grid mesh block then the EBITDA-margin grid mesh block, each
+// with its own heading + placeholder, then any untagged grids. Same lazy mesh +
+// empty state + NULL-current-value slider behavior as desktop.
+
+const MOBILE_GRID_PANEL_TITLE: Record<SensitivityPanelKey, string> = {
+  brent: "Brent scenario mesh",
+  margin: "EBITDA margin scenario mesh",
+};
+
+const MOBILE_GRID_PANEL_PLACEHOLDER =
+  "No scenario-grid table tagged to this panel yet — tag one in the Admin Panel.";
+
+function MobileGridPanelHalf({
+  panelKey,
+  tables,
+  getGridModel,
+  ensureGridLoaded,
+  gridLoading,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
+  quotesLoading,
+}: {
+  panelKey: SensitivityPanelKey;
+  tables: SensitivityTable[] | undefined;
+  getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
+  gridLoading: boolean;
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 10 }}>
+        {MOBILE_GRID_PANEL_TITLE[panelKey]}
+      </div>
+      {tables == null || tables.length === 0 ? (
+        <div
+          style={{
+            padding: "16px 14px",
+            color: "var(--mobile-text-muted)",
+            fontSize: 12,
+            border: "1px dashed var(--mobile-border)",
+            borderRadius: "var(--mobile-radius-md, 12px)",
+            background: "var(--mobile-surface-elevated)",
+            lineHeight: 1.5,
+          }}
+        >
+          {MOBILE_GRID_PANEL_PLACEHOLDER}
+        </div>
+      ) : (
+        tables.map((t) => (
+          <MobileGridInView
+            key={t.id}
+            table={t}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 // ─── Sensitivity section (consolidated, always-visible inline) ────────────────
 
 function MobileSensitivity({
   panelByKey,
   unpanneledTables,
-  gridTables,
+  gridPanelByKey,
+  untaggedGridTables,
   selectedTicker,
   y1Label,
   y2Label,
@@ -1391,7 +1471,8 @@ function MobileSensitivity({
 }: {
   panelByKey: UseStockGuideData["panelByKey"];
   unpanneledTables: SensitivityTable[];
-  gridTables: SensitivityTable[];
+  gridPanelByKey: UseStockGuideData["gridPanelByKey"];
+  untaggedGridTables: SensitivityTable[];
   selectedTicker: string | null;
   y1Label: string;
   y2Label: string;
@@ -1405,6 +1486,8 @@ function MobileSensitivity({
   onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
+  const hasGridSplit =
+    gridPanelByKey.brent != null || gridPanelByKey.margin != null;
   return (
     <div>
       {/* Two always-rendered blocks, stacked vertically (Brent then Margin). */}
@@ -1435,8 +1518,38 @@ function MobileSensitivity({
         />
       ))}
 
-      {/* Scenario-grid tables, always visible, lazy mesh on scroll-in. */}
-      {gridTables.map((t) => (
+      {/* Scenario-grid mesh — the desktop two-column split stacked vertically:
+          Brent block then EBITDA-margin block, each with its own heading +
+          placeholder. Lazy mesh on scroll-in. */}
+      {hasGridSplit && (
+        <>
+          <MobileGridPanelHalf
+            panelKey="brent"
+            tables={gridPanelByKey.brent}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+          <MobileGridPanelHalf
+            panelKey="margin"
+            tables={gridPanelByKey.margin}
+            getGridModel={getGridModel}
+            ensureGridLoaded={ensureGridLoaded}
+            gridLoading={gridLoading}
+            onSetGridAxis={onSetGridAxis}
+            onResetGridAxis={onResetGridAxis}
+            onResetGridAll={onResetGridAll}
+            quotesLoading={quotesLoading}
+          />
+        </>
+      )}
+
+      {/* Untagged scenario-grid tables (no valid panel) → full-width below. */}
+      {untaggedGridTables.map((t) => (
         <MobileGridInView
           key={t.id}
           table={t}
@@ -1469,7 +1582,8 @@ export default function MobileView(): React.ReactElement {
     quotesLoading,
     panelByKey,
     unpanneledTables,
-    gridTables,
+    gridPanelByKey,
+    untaggedGridTables,
     resolveDriverAxis,
     computeSensitivityCell,
     getGridModel,
@@ -1705,7 +1819,8 @@ export default function MobileView(): React.ReactElement {
             <MobileSensitivity
               panelByKey={panelByKey}
               unpanneledTables={unpanneledTables}
-              gridTables={gridTables}
+              gridPanelByKey={gridPanelByKey}
+              untaggedGridTables={untaggedGridTables}
               selectedTicker={null}
               y1Label={config.y1_label}
               y2Label={config.y2_label}
