@@ -53,8 +53,10 @@ next-env.d.ts
 __pycache__/
 *.pyc
 
-# claude
-.claude/
+# claude — local-only EXCEPT the committed skills/ directory.
+# A negation inside a wholly-ignored dir is dead, so use the /* form.
+.claude/*
+!.claude/skills/
 
 # clones de repos externos (ex: IBBAOG/news-hunter-scanner para cross-repo PRs)
 .clone/
