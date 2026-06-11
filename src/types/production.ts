@@ -174,3 +174,41 @@ export interface WellByWellHeaderRow {
   yoy_pct: number | null;                // percent units (already × 100 server-side); 2.4 = +2.4%
   ytd_avg: number | null;
 }
+
+/**
+ * Single-row completeness probe for the latest month in `anp_cdp_producao`.
+ * Returned by `get_production_month_status()` (zero-arg, SECURITY DEFINER;
+ * migration `supabase/migrations/20260628000000_production_month_status.sql`).
+ *
+ * The ANP publishes the monthly CDP incrementally, so the most recent month is
+ * frequently still partial (e.g. May 2026 shows ~1,447 producing wells vs
+ * ~6,460 in April 2026 while ANP is still loading fields). `/well-by-well`
+ * keeps the partial month visible (charts + default reference month) and only
+ * flags it with a "Partial data" banner.
+ *
+ * Heuristic mirrors `scripts/cdp_roster_canary.py`: a month is "complete" when
+ * its producing-well count (petroleo_bbl_dia > 0) is >= 70% of the previous
+ * month's count; `prev_producing_wells = 0` counts as complete (fail open).
+ *
+ * Field semantics (raw wire shape):
+ *   - `latest_ano` / `latest_mes`             — the most recent (ano, mes) in the base table.
+ *   - `latest_producing_wells`                — wells with petroleo_bbl_dia > 0 in the latest month.
+ *   - `prev_producing_wells`                  — same count for the immediately-preceding month.
+ *   - `completeness_ratio`                    — latest / prev, rounded to 4 dp; NULL when prev = 0.
+ *   - `is_complete`                           — ratio >= 0.70, or prev = 0 (fail open).
+ *   - `last_complete_ano` / `last_complete_mes` — most recent complete month (canary walk-back).
+ *
+ * The RPC returns ZERO rows when the table is empty — callers treat that (and
+ * any error) as "assume complete, no banner" (fail open). See
+ * `rpcGetProductionMonthStatus` in `src/lib/rpc.ts`.
+ */
+export interface ProductionMonthStatus {
+  latest_ano: number;
+  latest_mes: number;
+  latest_producing_wells: number;
+  prev_producing_wells: number;
+  completeness_ratio: number | null;     // NULL when prev month has 0 producing wells
+  is_complete: boolean;                  // ratio >= 0.70, or prev = 0 (fail open)
+  last_complete_ano: number;
+  last_complete_mes: number;
+}

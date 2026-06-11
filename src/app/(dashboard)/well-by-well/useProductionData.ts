@@ -107,6 +107,7 @@ import {
   rpcGetProductionBrazilFieldTimeseries,
   rpcGetProductionBrazilInstallationTimeseries,
   rpcGetWellByWellHeader,
+  rpcGetProductionMonthStatus,
   rpcGetAnpCdpBswScatterCanonical,
   rpcGetAnpCdpBswFieldAggregateCanonical,
   rpcGetAnpCdpDepletionScatterCanonical,
@@ -126,6 +127,7 @@ import type {
   ProductionFieldTimeseriesRow,
   ProductionInstallationTimeseriesRow,
   WellByWellHeaderRow,
+  ProductionMonthStatus,
 } from "../../../types/production";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -286,6 +288,65 @@ export function fmtMonthLabel(anchor: string): string {
   const m = parseInt(anchor.slice(5, 7), 10);
   const y = anchor.slice(0, 4);
   return `${months[m - 1]} ${y}`;
+}
+
+// ─── Partial-month indicator (2026-06-11) ─────────────────────────────────────
+//
+// The ANP publishes the monthly CDP incrementally, so the latest month is often
+// still partial (e.g. May 2026: ~1,447 producing wells vs ~6,460 in April).
+// `/well-by-well` keeps that month visible everywhere and only flags it with a
+// "Partial data" banner. The hook fetches `get_production_month_status()` once
+// during bootstrap, maps it to the UI shape below, and exposes a derived
+// `latestMonthIsPartial` flag plus the shared `buildPartialMonthNotice` copy.
+
+/**
+ * UI-shaped view of `get_production_month_status()` (the wire shape is
+ * `ProductionMonthStatus`). Month anchors are `YYYY-MM-01` strings so they
+ * compare cleanly against `latestMonth` / `referenceDate` elsewhere in the hook.
+ */
+export interface WellByWellMonthStatus {
+  /** Latest month in `anp_cdp_producao`, as a `YYYY-MM-01` anchor. */
+  month: string;
+  /** True when the latest month cleared the 70% completeness heuristic. */
+  isComplete: boolean;
+  /** Producing-well count (petroleo_bbl_dia > 0) in the latest month. */
+  producingWells: number;
+  /** Producing-well count in the immediately-preceding month. */
+  prevProducingWells: number;
+  /** producingWells / prevProducingWells; null when the prev month had 0. */
+  ratio: number | null;
+  /** Most recent month that cleared the heuristic, as a `YYYY-MM-01` anchor. */
+  lastCompleteMonth: string;
+}
+
+/**
+ * Build the single canonical "Partial data" notice sentence shared by both
+ * Views (desktop banner + mobile card). Defined ONCE here so the copy can't
+ * drift between the two surfaces.
+ *
+ * Example (ratio present):
+ *   "May 2026 data is still partial — ANP has published 1,447 producing wells
+ *    vs 6,460 in April 2026 (≈22%). Figures will be revised as more fields
+ *    report."
+ *
+ * When `ratio` is null (the previous month had 0 producing wells, so a
+ * percentage is meaningless) the "(≈NN%)" parenthetical is omitted.
+ */
+export function buildPartialMonthNotice(s: WellByWellMonthStatus): string {
+  const latestLabel = fmtMonthLabel(s.month);
+  const prevAnchor = shiftMonth(s.month, -1);
+  const prevLabel = fmtMonthLabel(prevAnchor);
+  const wells = s.producingWells.toLocaleString("en-US");
+  const prevWells = s.prevProducingWells.toLocaleString("en-US");
+  const pct =
+    s.ratio != null && Number.isFinite(s.ratio)
+      ? ` (≈${Math.round(s.ratio * 100)}%)`
+      : "";
+  return (
+    `${latestLabel} data is still partial — ANP has published ${wells} ` +
+    `producing wells vs ${prevWells} in ${prevLabel}${pct}. ` +
+    `Figures will be revised as more fields report.`
+  );
 }
 
 // ─── Drill KPI table builder (Round 16, 2026-05-28) ───────────────────────────
@@ -499,6 +560,19 @@ export interface UseProductionData {
   /** Most recent `YYYY-MM-01` available in `anp_cdp_producao`. */
   latestMonth: string | null;
 
+  // Partial-month indicator (2026-06-11). `monthStatus` is null until the
+  // bootstrap probe resolves, and STAYS null on RPC error / empty table
+  // (fail open — render no banner). `latestMonthIsPartial` is the derived
+  // boolean both Views gate the banner / "(partial)" suffixes on.
+  /** Completeness status of the latest CDP month; null = assume complete. */
+  monthStatus: WellByWellMonthStatus | null;
+  /**
+   * True only when the probe resolved, the latest month is incomplete, AND it
+   * matches `latestMonth` (guards against lag between the MV used by the
+   * bootstrap probe and the base table read by the status RPC).
+   */
+  latestMonthIsPartial: boolean;
+
   // View pill state machine (Round 9, 2026-05-27).
   // `view` is one of `WELL_BY_WELL_VIEWS` and drives which RPC family fires:
   //   - "Brasil"        → Brazil-wide RPCs (no stake weighting)
@@ -647,6 +721,9 @@ export function useProductionData(): UseProductionData {
   // ── State ──────────────────────────────────────────────────────────────────
   const [bootstrapping, setBootstrapping] = useState(true);
   const [latestMonth, setLatestMonth] = useState<string | null>(null);
+  // Partial-month indicator. null = "assume complete, no banner" (fail open) —
+  // set by the bootstrap probe; left null on RPC error / empty table.
+  const [monthStatus, setMonthStatus] = useState<WellByWellMonthStatus | null>(null);
   const [empresasList, setEmpresasList] = useState<FieldStakeEmpresa[]>([]);
 
   // Round 9: view replaces empresa as the active toggle state. Default is
@@ -774,9 +851,10 @@ export function useProductionData(): UseProductionData {
       try {
         // Fire both bootstrap RPCs IN PARALLEL — empresa list is independent
         // of the Brazil probe, no reason to chain them.
-        const [empresasRes, probeRes] = await Promise.allSettled([
+        const [empresasRes, probeRes, statusRes] = await Promise.allSettled([
           rpcGetFieldStakesEmpresas(supabase),
           rpcGetProductionBrazilAggregate(supabase, "2018-01-01", "2099-12-31", null),
+          rpcGetProductionMonthStatus(supabase),
         ]);
         if (cancelled) return;
 
@@ -810,6 +888,30 @@ export function useProductionData(): UseProductionData {
               (orderIdx.get(b.empresa) ?? Number.MAX_SAFE_INTEGER),
           );
         setEmpresasList(empresas);
+
+        // Partial-month status — non-fatal. A rejection (or a null result from
+        // an RPC error / empty table) leaves the banner off (fail open); it
+        // must never block the bootstrap or surface an error in the UI.
+        const status: ProductionMonthStatus | null =
+          statusRes.status === "fulfilled" ? statusRes.value : null;
+        if (status) {
+          const statusAnchor =
+            `${String(status.latest_ano).padStart(4, "0")}-` +
+            `${String(status.latest_mes).padStart(2, "0")}-01`;
+          const lastCompleteAnchor =
+            `${String(status.last_complete_ano).padStart(4, "0")}-` +
+            `${String(status.last_complete_mes).padStart(2, "0")}-01`;
+          setMonthStatus({
+            month: statusAnchor,
+            isComplete: status.is_complete,
+            producingWells: status.latest_producing_wells,
+            prevProducingWells: status.prev_producing_wells,
+            ratio: status.completeness_ratio,
+            lastCompleteMonth: lastCompleteAnchor,
+          });
+        } else {
+          setMonthStatus(null);
+        }
 
         // Safety: snap `view` back to `Brasil` if a stale session points
         // outside the 5-view whitelist (e.g. URL param or restored state).
@@ -1815,12 +1917,24 @@ export function useProductionData(): UseProductionData {
   const anyLoading =
     brazilLoading || companyLoading || topFieldsLoading || installationsLoading || yoyLoading || headerLoading;
 
+  // ── Partial-month flag ────────────────────────────────────────────────────
+  // True only when the probe resolved, the latest month is NOT complete, AND
+  // the status month matches `latestMonth`. The `month === latestMonth` guard
+  // covers the rare lag where the MV behind the bootstrap probe and the base
+  // table read by the status RPC disagree on the most recent month — without
+  // it the banner could describe a month the charts aren't even showing.
+  const latestMonthIsPartial =
+    monthStatus != null && !monthStatus.isComplete && monthStatus.month === latestMonth;
+
   return {
     visible,
     visLoading,
 
     bootstrapping,
     latestMonth,
+
+    monthStatus,
+    latestMonthIsPartial,
 
     view,
     setView,

@@ -3487,6 +3487,7 @@ import type {
   ProductionFieldTimeseriesRow,
   ProductionInstallationTimeseriesRow,
   WellByWellHeaderRow,
+  ProductionMonthStatus,
 } from "../types/production";
 
 /**
@@ -4222,6 +4223,53 @@ export async function rpcGetProductionBrazilWellCount(
     return 0;
   }
   return Number(data) || 0;
+}
+
+// ─── Partial-month indicator ──────────────────────────────────────────────────
+//
+// `/well-by-well` keeps the latest (often still-incremental) CDP month visible
+// on every chart and as the default reference month — it only flags it with a
+// "Partial data" banner. This single-row probe tells the hook whether the
+// latest month is complete enough to be trusted (>= 70% of the previous month's
+// producing-well count). See `get_production_month_status()` in migration
+// `supabase/migrations/20260628000000_production_month_status.sql`.
+
+/**
+ * Fetch the completeness status of the latest month in `anp_cdp_producao`.
+ *
+ * Returns `null` on RPC error OR when the probe yields no rows (empty table).
+ *
+ * Fail-open contract: the caller MUST treat `null` as "assume the latest month
+ * is complete — render no banner". A transient RPC error or an empty table must
+ * never blank the dashboard or surface an error in the UI; the worst-case
+ * degradation is simply the absence of the partial-data banner.
+ *
+ * `get_production_month_status()` is a zero-arg SECURITY DEFINER function
+ * returning a single row; PostgREST serializes a SETOF as an array, so we read
+ * `data[0]` (and defensively handle a bare object should the shape ever change).
+ */
+export async function rpcGetProductionMonthStatus(
+  supabase: SupabaseClient,
+): Promise<ProductionMonthStatus | null> {
+  const { data, error } = await supabase.rpc("get_production_month_status", {});
+  if (error) {
+    console.error("get_production_month_status failed", error);
+    return null;
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row) return null;
+  const r = row as Record<string, unknown>;
+  const ratioRaw = r.completeness_ratio;
+  return {
+    latest_ano:             Number(r.latest_ano),
+    latest_mes:             Number(r.latest_mes),
+    latest_producing_wells: Number(r.latest_producing_wells ?? 0),
+    prev_producing_wells:   Number(r.prev_producing_wells ?? 0),
+    completeness_ratio:     ratioRaw == null ? null : Number(ratioRaw),
+    is_complete:            Boolean(r.is_complete),
+    last_complete_ano:      Number(r.last_complete_ano),
+    last_complete_mes:      Number(r.last_complete_mes),
+  };
 }
 
 // ─── MODULE: Stock Guide (/src/app/(dashboard)/stock-guide/) ─────────────────

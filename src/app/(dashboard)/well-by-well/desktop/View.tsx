@@ -78,6 +78,7 @@ import {
 
 import {
   useProductionData,
+  buildPartialMonthNotice,
   fmtNumber,
   fmtPct,
   fmtMonthLabel,
@@ -1453,6 +1454,7 @@ export default function DesktopView(): React.ReactElement | null {
     visible, visLoading,
     bootstrapping,
     latestMonth,
+    monthStatus, latestMonthIsPartial,
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     empresa,
     allMonths, dateRange, monthIdxRange, setDateRange,
@@ -1567,7 +1569,12 @@ export default function DesktopView(): React.ReactElement | null {
                   }}
                 >
                   {refMonthOptions.map((m) => (
-                    <option key={m} value={m}>{fmtMonthLabel(m)}</option>
+                    <option key={m} value={m}>
+                      {fmtMonthLabel(m)}
+                      {latestMonthIsPartial && monthStatus && m === monthStatus.month
+                        ? " (partial)"
+                        : ""}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -1596,6 +1603,39 @@ export default function DesktopView(): React.ReactElement | null {
                 </div>
               ) : (
                 <>
+                  {/* ── Partial-month banner (2026-06-11) ───────────────── */}
+                  {latestMonthIsPartial && monthStatus && (
+                    <div
+                      role="status"
+                      style={{
+                        display: "flex",
+                        gap: 10,
+                        alignItems: "baseline",
+                        background: "#fff7e6",
+                        border: "1px solid #f0c36d",
+                        borderRadius: 6,
+                        padding: "10px 14px",
+                        marginBottom: 16,
+                        fontFamily: "Arial",
+                        fontSize: 12.5,
+                        color: "#7a5300",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 700,
+                          fontSize: 11,
+                          letterSpacing: "0.4px",
+                          textTransform: "uppercase",
+                          flexShrink: 0,
+                        }}
+                      >
+                        Partial data
+                      </span>
+                      <span>{buildPartialMonthNotice(monthStatus)}</span>
+                    </div>
+                  )}
+
                   {/* ── Header table (full width of main, Round 10) ───── */}
                   <div style={{ marginBottom: 24 }}>
                     <div
@@ -1616,6 +1656,9 @@ export default function DesktopView(): React.ReactElement | null {
                       loading={headerLoading}
                       referenceDate={referenceDate}
                       viewMode={view}
+                      currentIsPartial={
+                        latestMonthIsPartial && monthStatus?.month === referenceDate
+                      }
                     />
                   </div>
 

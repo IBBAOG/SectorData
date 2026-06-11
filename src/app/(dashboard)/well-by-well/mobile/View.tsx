@@ -59,6 +59,7 @@ import {
 
 import {
   useProductionData,
+  buildPartialMonthNotice,
   fmtNumber,
   fmtPct,
   fmtMonthLabel,
@@ -1023,6 +1024,7 @@ export default function MobileView(): React.ReactElement | null {
     visible, visLoading,
     bootstrapping,
     latestMonth,
+    monthStatus, latestMonthIsPartial,
     view, setView, isCompanyView: viewIsCompany, viewEmpresa,
     allMonths, dateRange, setDateRange,
     referenceDate,
@@ -1096,7 +1098,13 @@ export default function MobileView(): React.ReactElement | null {
   }
 
   // ── Titles + subtitles for each section ──────────────────────────────────
-  const refLabel = fmtMonthLabel(referenceDate);
+  // Mobile has no Reference month dropdown, so the partial marker rides the
+  // section subtitles whose data is anchored to the reference month (Top 10
+  // fields, Production by FPSO/UEP). The guard checks the reference month IS
+  // the still-incomplete latest month before appending "(partial)".
+  const refIsPartial =
+    latestMonthIsPartial && monthStatus != null && monthStatus.month === referenceDate;
+  const refLabel = fmtMonthLabel(referenceDate) + (refIsPartial ? " (partial)" : "");
   const scopeLabel = SCOPE_PILL_LABEL[view] ?? view;
   const heroSubtitle = viewIsCompany
     ? `${scopeLabel} · stake-weighted · stacked by environment`
@@ -1154,6 +1162,36 @@ export default function MobileView(): React.ReactElement | null {
           padding: "12px 12px 8px",
         }}
       >
+        {/* ── Partial-month banner (2026-06-11) — first card ───────── */}
+        {latestMonthIsPartial && monthStatus && (
+          <div
+            role="status"
+            style={{
+              background: "#fff7e6",
+              border: "1px solid #f0c36d",
+              borderRadius: 12,
+              padding: "10px 12px",
+              fontFamily: "Arial, Helvetica, sans-serif",
+              fontSize: 12,
+              color: "#7a5300",
+              lineHeight: 1.4,
+            }}
+          >
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: 11,
+                letterSpacing: "0.4px",
+                textTransform: "uppercase",
+                marginBottom: 3,
+              }}
+            >
+              Partial data
+            </div>
+            {buildPartialMonthNotice(monthStatus)}
+          </div>
+        )}
+
         {/* ── SECTION 1 — Hero stacked bar ─────────────────────────── */}
         {/* Y-axis intentionally hidden: the per-bar total annotation and the
             in-segment labels already carry the magnitude, and the unit lives

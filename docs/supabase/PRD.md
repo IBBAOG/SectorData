@@ -662,6 +662,41 @@ Todas mantêm `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg
 
 **Padrão precedente.** Esta é a primeira RPC com `p_expand_canonical` — o padrão pode ser adotado por futuras RPCs que façam JOIN com `anp_cdp_producao` por `campo` e queiram coerência com a filosofia canonical do `/well-by-well` (`canonical_field_name()` helper, `field_canonical_names` table). Critério: o caller serve um sumário executivo onde "TUPI" deve significar "o campo físico TUPI" (agregando variantes); o default `false` continua adequado para callers analíticos que precisam ver as variantes separadas.
 
+#### `get_production_month_status` — partial-month probe (2026-06-11) — Migration `20260628000000_production_month_status.sql`
+
+RPC zero-arg, single-row, que sinaliza se o **mês mais recente** de `anp_cdp_producao` ainda está parcial. Consumida no bootstrap de `/well-by-well` (`useProductionData.ts`) para mostrar um banner "Partial data" nas duas views (desktop + mobile) — ver [`docs/app/well-by-well.md`](../app/well-by-well.md) § "Partial month indicator".
+
+**Assinatura:**
+
+```sql
+get_production_month_status()
+RETURNS TABLE (
+  latest_ano             int,
+  latest_mes             int,
+  latest_producing_wells int,
+  prev_producing_wells   int,
+  completeness_ratio     numeric,   -- NULL quando o mês anterior tem 0 poços produtores
+  is_complete            boolean,   -- ratio >= 0.70, ou prev count = 0 (fail open)
+  last_complete_ano      int,       -- mês completo mais recente (walk-back do canary)
+  last_complete_mes      int
+)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp;
+GRANT EXECUTE ... TO anon, authenticated;
+```
+
+**Semântica (porta SQL do canary).** Espelha a heurística `pick_reference_month` de `scripts/cdp_roster_canary.py`:
+
+- Um mês é **completo** quando sua contagem de poços produtores (`petroleo_bbl_dia > 0`) é ≥ **70%** da contagem do mês anterior.
+- `prev_producing_wells = 0` ⇒ completo (**fail open** — sem mês anterior para comparar, não bloqueia).
+- `completeness_ratio = round(n_cur / n_prev, 4)`, ou `NULL` quando `n_prev = 0`.
+- **Walk-back** de até 3 steps (`MAX_MONTH_STEPS = 3`): avalia os meses nos steps 0..2, retorna em `last_complete_*` o primeiro mês completo encontrado (ordenado por step); fallback é o mês do step 3 quando nenhum dos steps 0..2 qualifica.
+
+**Por que lê a tabela base e não as MVs.** As MVs de produção (`mv_brazil_monthly`, `mv_production_monthly`, etc.) já estão pré-agregadas por `(ano, mes, ...)` e **não preservam contagem de poços** — a contagem de poços produtores precisa de rows well-level. A RPC lê `anp_cdp_producao` diretamente; as contagens filtram pelo prefixo `(ano, mes)` da PK, então cada `count(*)` é um index range scan barato (~28 ms no total). `SECURITY DEFINER` + `search_path` fixo porque `anp_cdp_producao` só concede SELECT a `authenticated` (Pegadinha #18) — sem isso o caller anon receberia `[]`.
+
+**Tabela vazia ⇒ zero rows** (a CTE `latest` não retorna linha, então o `SELECT` final é vazio). O frontend trata erro/empty como **fail-open**: `monthStatus = null`, `latestMonthIsPartial = false`, sem banner — nunca um estado de erro.
+
+**Surface area:** nova RPC, signature isolada, não toca nenhuma das 11 RPCs de produção existentes nem as MVs. Wrapper `rpcGetProductionMonthStatus` em `src/lib/rpc.ts`.
+
 ### Sessions / Auth state
 
 | Tabela | Dept consumidor | Populada por |

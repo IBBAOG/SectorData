@@ -162,6 +162,16 @@ export interface HeaderTableProps {
    * any caller that hasn't been updated yet).
    */
   viewMode?: WellByWellView;
+  /**
+   * Partial-month indicator (2026-06-11). When true, the "current" column
+   * header gains a `*` marker and a footnote renders below the table noting
+   * that the latest ANP figures are still partial. Optional / defaults to
+   * undefined (false) for back-compat with callers that don't pass it.
+   *
+   * The caller is responsible for the guard: it should only set this true when
+   * the reference month being rendered IS the still-incomplete latest month.
+   */
+  currentIsPartial?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────────────
@@ -171,6 +181,7 @@ export default function HeaderTable({
   loading,
   referenceDate,
   viewMode,
+  currentIsPartial = false,
 }: HeaderTableProps): React.ReactElement {
   // Sort rows by display_order defensively (DB should already do this, but
   // guard against future RPC body changes). Round 12 (2026-05-27): the table
@@ -221,6 +232,7 @@ export default function HeaderTable({
   const rowsOpacity = loading && sortedRows.length > 0 ? 0.7 : 1;
 
   return (
+    <>
     <div
       className="wbw-header-table-wrap"
       style={{
@@ -249,7 +261,10 @@ export default function HeaderTable({
             <th style={{ ...TH_BASE, textAlign: "left", width: "30%" }}>
               {/* intentionally blank — left column carries row labels */}
             </th>
-            <th style={{ ...TH_BASE, textAlign: "right" }}>{colLabels.current}</th>
+            <th style={{ ...TH_BASE, textAlign: "right" }}>
+              {colLabels.current}
+              {currentIsPartial && <span style={{ color: "#b5860b" }}> *</span>}
+            </th>
             <th style={{ ...TH_BASE, textAlign: "right" }}>{colLabels.prevMonth}</th>
             <th style={{ ...TH_BASE, textAlign: "right" }}>Δ MoM</th>
             <th style={{ ...TH_BASE, textAlign: "right" }}>{colLabels.prevYear}</th>
@@ -464,5 +479,18 @@ export default function HeaderTable({
         </tbody>
       </table>
     </div>
+    {currentIsPartial && sortedRows.length > 0 && (
+      <div
+        style={{
+          marginTop: 6,
+          fontFamily: "Arial",
+          fontSize: 10.5,
+          color: "#7a5300",
+        }}
+      >
+        * Partial ANP data — figures will be revised.
+      </div>
+    )}
+    </>
   );
 }

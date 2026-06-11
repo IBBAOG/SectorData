@@ -47,6 +47,7 @@ All math is done **server-side** in SECURITY DEFINER RPCs (migration `supabase/m
 | `get_field_stakes_overview` | (admin-only) | **Round 4:** now returns an extra `canonical text` column alongside `campo` so the admin variant editor can group variants by their canonical roll-up. Owned by `worker_supabase`, consumed by `worker_dash-admin`. |
 | `get_production_installation_timeseries` | `(p_instalacao text, p_empresa text, p_date_start date, p_date_end date)` | Stake-weighted monthly timeseries for one installation × one company. Powers the Installation drill-down in **company** view. Returns the SAME row shape as `get_production_field_timeseries`. |
 | `get_production_brazil_installation_timeseries` *(Round 9)* | `(p_instalacao text, p_date_start date, p_date_end date)` | Same as above but Brazil-wide. Powers the Installation drill-down in **Brasil** view. |
+| `get_production_month_status` *(2026-06-11)* | `()` — zero-arg | Single-row completeness probe for the latest month in `anp_cdp_producao`. Drives the "Partial data" indicator (see [Partial month indicator](#partial-month-indicator)). Returns `(latest_ano, latest_mes, latest_producing_wells, prev_producing_wells, completeness_ratio, is_complete, last_complete_ano, last_complete_mes)`; zero rows when the table is empty. Fail-open: the hook treats any error/empty as "assume complete, no banner". |
 | `get_well_by_well_header` | `(p_empresa text, p_year int, p_month int)` | PDF-style page-2 header table (Round 8). Always returns BOTH a Brazil section AND a company section (24 rows total since Round 12 — 12 BRAZIL rows + 12 empresa rows with Oil + Gas + Main fields per empresa). The HeaderTable component renders ONLY the rows for the active pill's section: Brasil → `section === 'BRAZIL'`, empresa pill → `section === UPPER(p_empresa)`. In **Brasil** view the wrapper still passes a fallback empresa (`Petrobras`) to satisfy the non-null param; the company rows from the response are discarded by the filter. |
 
 All return `LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp` (Pegadinha #18) and are granted to `anon, authenticated`. Frontend wrappers live in `src/lib/rpc.ts` under the "MODULE: Brazil Production Summary" section.
@@ -71,6 +72,7 @@ Source-of-truth migrations:
 - `supabase/migrations/20260528300000_well_by_well_round4.sql` (Round 4: `module_visibility` slug rename `production → well-by-well`, new `field_canonical_names` table, canonical-aware bodies for `get_production_top_fields` + `get_production_field_timeseries`, new `canonical` column in `get_field_stakes_overview`).
 - `supabase/migrations/20260528500000_well_by_well_header.sql` (Round 8: `get_well_by_well_header` RPC — PDF-style page-2 header table).
 - `supabase/migrations/20260528600000_well_by_well_brazil_rpcs.sql` (Round 9: 4 Brazil-wide RPCs + 2 MVs + updated refresh function — `get_production_brazil_top_fields`, `get_production_brazil_installation`, `get_production_brazil_field_timeseries`, `get_production_brazil_installation_timeseries`).
+- `supabase/migrations/20260628000000_production_month_status.sql` (2026-06-11: `get_production_month_status()` — partial-month completeness probe, owned by `worker_supabase`).
 
 ### View pills (5)
 
@@ -208,6 +210,31 @@ The original `/well-by-well` desktop layout had a YoY/MoM/YTD breakdown table at
 Round 9 update: the YoY drawer is also **hidden in Brasil mode** since `get_production_yoy_table` requires a company name and the Brazil-wide RPCs don't produce per-ambiente YoY rows. Brasil users get the HeaderTable's Brazil section instead.
 
 The hook still fetches `yoyTable` (skipped in Brasil view via early return) because the mobile View consumes it in company view. If mobile ever drops the YoY drawer, the `get_production_yoy_table` RPC and its hook state can be retired in a follow-up.
+
+## Partial month indicator
+
+The ANP publishes the monthly CDP **incrementally** — the most recent month is routinely still partial for several weeks while fields report in. As of 2026-06-11, May 2026 shows ~1,447 producing wells vs ~6,460 in April 2026 (ratio ≈0.22). Product decision (per the project's "never delete partial months" rule): the partial month **stays visible** on every chart and remains the default reference month — it is only **flagged**, never hidden or clipped.
+
+**Heuristic.** `get_production_month_status()` (single-row, zero-arg, `SECURITY DEFINER`) mirrors the production canary `scripts/cdp_roster_canary.py`: a month is *complete* when its producing-well count (`petroleo_bbl_dia > 0`) is ≥ **70%** of the previous month's count. `prev_producing_wells = 0` counts as complete (fail open). It also walks back up to 3 months to report the most recent complete month.
+
+**Fail-open.** The wrapper `rpcGetProductionMonthStatus` returns `null` on RPC error OR empty result; the hook maps that (and any `Promise.allSettled` rejection during bootstrap) to `monthStatus = null`. The derived flag `latestMonthIsPartial` is then `false`, so **no banner, no markers** — a transient error or empty table degrades to the pre-indicator UI, never an error state.
+
+**Hook surface** (`useProductionData.ts`, single source of truth for both views):
+- `monthStatus: WellByWellMonthStatus | null` — UI-shaped status (`month` as `YYYY-MM-01`, `isComplete`, `producingWells`, `prevProducingWells`, `ratio`, `lastCompleteMonth`). Fetched once in the bootstrap `Promise.allSettled` (alongside the empresa list + Brazil probe) — not on every filter change.
+- `latestMonthIsPartial: boolean` — `monthStatus != null && !monthStatus.isComplete && monthStatus.month === latestMonth`. The `month === latestMonth` guard covers any lag between the MV behind the bootstrap probe and the base table read by the status RPC.
+- `buildPartialMonthNotice(s)` — the single canonical banner sentence, shared by both views so the copy can't drift: `"May 2026 data is still partial — ANP has published 1,447 producing wells vs 6,460 in Apr 2026 (≈22%). Figures will be revised as more fields report."` (numbers via `toLocaleString("en-US")`; the `(≈NN%)` parenthetical is omitted when `ratio` is null).
+
+**Where it surfaces:**
+
+| Surface | Desktop | Mobile |
+|---|---|---|
+| **Banner** (`role="status"`, amber `#fff7e6` / `#f0c36d` / `#7a5300`, bold uppercase "Partial data" prefix) | Above the Headline block, full width | First card of the section stack, below the sticky pill bar (radius 12 card) |
+| **"(partial)" suffix** | On the Reference month `<select>` option whose value is the partial month | On the Top 10 fields + FPSO/UEP subtitles (mobile has no reference-month dropdown) — gated on `referenceDate === monthStatus.month` |
+| **`*` marker + footnote** | `HeaderTable` `currentIsPartial` prop adds `*` to the current column header + footnote `* Partial ANP data — figures will be revised.` when the rendered reference month is the partial one | n/a (mobile does not render `HeaderTable`) |
+
+The banner is gated on `latestMonthIsPartial` (a global "latest data is partial" notice — shows regardless of which reference month is selected), whereas the `*`/footnote and the desktop dropdown suffix are scoped to whether the **rendered** reference month is the partial one (`monthStatus.month === referenceDate`).
+
+**Export is intentionally unchanged.** `src/lib/export/dashboards/wellByWell.ts` exports full well-level history "as published" — the partial month's rows are facts and belong in the export untouched. No partial-flag column, no clipping.
 
 ## Field drill-down (Round 2, 2026-05-27; Brasil-aware since Round 9; 3-tab popup since Phase 2, 2026-05-30)
 
