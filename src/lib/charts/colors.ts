@@ -5,7 +5,7 @@
 //   - the same entity gets its canonical color (when a canonical map is given);
 //   - no two entities in the same chart ever share a color (palette collisions
 //     are skipped, not silently reused);
-//   - "Others" is always grey (#7F7F7F) and always rendered LAST;
+//   - "Others" is always grey (#808080) and always rendered LAST;
 //   - the returned order IS the stack order AND the legend order (no inversion).
 //
 // Consumers must feed the entities in the order they want them stacked/legended
@@ -17,8 +17,8 @@
 import { PALETTE, BRAND_ORANGE } from "@/lib/plotlyDefaults";
 import type { Layout } from "plotly.js";
 
-/** Canonical grey for the "Others" bucket (PALETTE pos 14). */
-export const OTHERS_GREY = "#7F7F7F";
+/** Canonical grey for the "Others" bucket (PALETTE pos 12 — Dark Grey). */
+export const OTHERS_GREY = "#808080";
 
 export interface AssignSeriesColorsOptions {
   /** Entity → fixed color map (e.g. COMPANY_COLORS / COUNTRY_COLORS). Consulted
@@ -29,9 +29,9 @@ export interface AssignSeriesColorsOptions {
    *  series "pops" (BSW, anp-cdp-diaria). Ignored for the `othersLabel` entity.
    *
    *  Note: this is NOT the same thing as the default positional leader color.
-   *  The PALETTE now leads with navy (#1f2937, pos 1); a plain positional /
-   *  stacked chart that does NOT pass `leader` gets navy as its 1st series and
-   *  orange as its 2nd. `leader: true` is the opt-in highlight override that
+   *  The PALETTE leads with Very Dark Blue (#000512, pos 1); a plain positional
+   *  / stacked chart that does NOT pass `leader` gets #000512 as its 1st series
+   *  and orange as its 2nd. `leader: true` is the opt-in highlight override that
    *  re-claims orange for the selected series. Both coexist by design. */
   leader?: boolean;
   /** Label of the "Others" bucket. Always colored grey and pushed to the end. */
@@ -49,13 +49,13 @@ export interface SeriesColor {
  * Resolution order, per entity:
  *   1. If `leader` (explicit highlight) and this is the first non-Others
  *      entity → BRAND_ORANGE. (Without `leader`, the first entity simply
- *      takes PALETTE pos 1 = navy #1f2937 — the default leader-order color.)
+ *      takes PALETTE pos 1 = #000512 Very Dark Blue — the default leader color.)
  *   2. `opts.canonical[entity]` if present (and not already taken — if the
  *      canonical color was already consumed by an earlier entity it falls
  *      through to the palette step so we never duplicate).
  *   3. Next PALETTE color not yet used in this chart (collision-skip).
  *
- * `othersLabel` (if it appears in the list) is always grey (#7F7F7F) and is
+ * `othersLabel` (if it appears in the list) is always grey (#808080) and is
  * moved to the END of the returned array regardless of its input position.
  *
  * If the palette is exhausted (> 14 distinct non-Others series), throws — the

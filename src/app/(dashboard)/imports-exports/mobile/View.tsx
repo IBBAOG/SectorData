@@ -87,7 +87,7 @@ const ORIGIN_COUNTRY_PINS: ReadonlyArray<{
   { dbName: "Arábia Saudita", label: "Saudi Arabia", color: COUNTRY_COLORS["Saudi Arabia"] },
 ];
 
-const OTHERS_COLOR = "#7F7F7F";
+const OTHERS_COLOR = "#808080";
 const OTHERS_LABEL = "Others";
 
 const ORIGIN_LABEL_BY_DB: Record<string, string> = ORIGIN_COUNTRY_PINS.reduce(

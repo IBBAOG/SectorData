@@ -357,13 +357,13 @@ const ORIGIN_COLOR_BY_LABEL_DATA: Record<string, string> = ORIGIN_COUNTRY_PINS_D
   {} as Record<string, string>,
 );
 
-const OTHERS_COLOR_DATA = "#7F7F7F";
+const OTHERS_COLOR_DATA = "#808080";
 const OTHERS_LABEL_DATA = "Others";
 
 // Panel B canonical importer order — fixed display order regardless of volume.
 // Colors are entity-bound (not rank-bound) and come from the canonical
-// COMPANY_COLORS map in plotlyDefaults: Petrobras always black, Vibra teal,
-// Ipiranga navy, Raízen mint, Atem purple, Royal FIC amber. Color assignment
+// COMPANY_COLORS map in plotlyDefaults: Petrobras always Very Dark Blue, Vibra
+// green, Ipiranga blue, Raízen brown, Atem purple, Royal FIC orange. Assignment
 // is delegated to assignSeriesColors (src/lib/charts/colors.ts), which:
 //   - pins each importer to its COMPANY_COLORS color,
 //   - falls back to the next FREE palette color for any importer outside the

@@ -71,7 +71,7 @@ import { applyStackedLegendOrder } from "../../../../lib/charts/colors";
 
 // ─── Colour helpers ────────────────────────────────────────────────────────────
 
-const OTHERS_COLOR = "#7F7F7F"; // neutral grey for "Others" bucket (pinned palette spec)
+const OTHERS_COLOR = "#808080"; // Dark Grey for "Others" bucket (canonical palette spec)
 const OTHERS_LABEL = "Others";
 
 // ─── Pinned origin-country palette (Imports tab — countries panels) ───────────

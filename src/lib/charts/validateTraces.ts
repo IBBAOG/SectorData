@@ -37,7 +37,7 @@
 import { PALETTE } from "@/lib/plotlyDefaults";
 import type { Layout, PlotData } from "plotly.js";
 
-const OTHERS_GREY = "#7F7F7F";
+const OTHERS_GREY = "#808080";
 
 /**
  * Charts already migrated to the central color assigner. Only these are

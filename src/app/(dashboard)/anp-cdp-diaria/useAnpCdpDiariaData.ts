@@ -90,13 +90,13 @@ export const TOP_N_COMPANY = 6;
 export const OTHERS_LABEL = "Others";
 
 /**
- * Neutral mid-grey for the "Others" bucket — the project's canonical Others
- * color (`#7F7F7F`, mirrors `COUNTRY_COLORS.Others` and PALETTE position 14 in
+ * Dark Grey for the "Others" bucket — the project's canonical Others color
+ * (`#808080`, mirrors `COUNTRY_COLORS.Others` and PALETTE position 12 in
  * plotlyDefaults). Others is an aggregate of mixed-stake fields, so it never
  * borrows a field's PALETTE slot nor the brand orange (reserved for the
  * "Company total" headline line).
  */
-export const OTHERS_COLOR = "#7F7F7F";
+export const OTHERS_COLOR = "#808080";
 
 /**
  * The two fixed, primary companies (Two-Tier Tabs IA, 2026-06-05). The dynamic
