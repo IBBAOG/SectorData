@@ -763,7 +763,7 @@ function MobileDriverSensitivityTable({
                   <th
                     key={ci}
                     style={{
-                      textAlign: "right",
+                      textAlign: "center",
                       padding: "7px 11px",
                       color: hit ? MOBILE_ACCENT : "var(--mobile-text-muted)",
                       fontWeight: 700,
@@ -847,7 +847,7 @@ function MobileDriverSensitivityTable({
                           <td
                             key={ci}
                             style={{
-                              textAlign: "right",
+                              textAlign: "center",
                               padding: "7px 11px",
                               fontVariantNumeric: "tabular-nums",
                               color: hit ? MOBILE_ACCENT : "var(--mobile-text)",

@@ -945,6 +945,7 @@ function DriverSensitivityTable({
     position: "relative",
     overflow: "hidden",
     textOverflow: "ellipsis",
+    textAlign: "center",
   };
 
   return (
@@ -1013,7 +1014,7 @@ function DriverSensitivityTable({
                       ...TH_BASE,
                       fontSize: COMPACT_FONT,
                       padding: compactCellPad,
-                      textAlign: "right",
+                      textAlign: "center",
                       background: hit ? "#2a1206" : HEADER_BG,
                       color: hit ? BRAND_ORANGE : HEADER_FG,
                       borderRight: "1px solid rgba(255,255,255,0.12)",
