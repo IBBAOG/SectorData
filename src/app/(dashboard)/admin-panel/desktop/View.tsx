@@ -2086,6 +2086,19 @@ export default function DesktopView(): React.ReactElement | null {
                           {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
                             hint: "used for Market cap = shares × live price",
                           })}
+                          <label style={{ display: "block", gridColumn: "1 / -1" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Financial model URL</span>
+                            <input
+                              type="url"
+                              value={sgEditorRow.model_url}
+                              onChange={(e) => handleChangeSgField("model_url", e.target.value)}
+                              placeholder="https://… (link to the downloadable model)"
+                              style={{ ...SG_INPUT_STYLE }}
+                            />
+                            <span style={{ display: "block", fontSize: 10.5, color: "#9ca3af", marginTop: 3 }}>
+                              Shows a per-row download link in the comps table. Empty = no model.
+                            </span>
+                          </label>
                         </div>
 
                         {/* Live-derivation hint */}

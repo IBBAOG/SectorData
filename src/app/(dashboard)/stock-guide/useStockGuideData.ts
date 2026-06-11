@@ -832,6 +832,9 @@ export function useStockGuideData(): UseStockGuideData {
         const mEx = deriveMultiples(exR, basisY1, basisY2);
         out.push({
           ...exR,
+          // Ex-tax-credit companion rows blank the Model link (display parity with
+          // Ticker / Recomm. / TP / Price / Upside / Market cap / Last update).
+          model_url: null,
           isExTaxCredit: true,
           displayName: `${r.company_name} ex-tax credit`,
           livePrice,
@@ -1383,6 +1386,9 @@ export function useStockGuideData(): UseStockGuideData {
           { header: `EBITDA ${y2} (mn)`,  key: "ebitda_y2",     width: 16, format: "#,##0", align: "center" },
           { header: `Volumes ${y1}`,      key: "volumes_y1",    width: 13, format: "#,##0", align: "center" },
           { header: `Volumes ${y2}`,      key: "volumes_y2",    width: 13, format: "#,##0", align: "center" },
+          // Ex-tax-credit companion rows carry model_url=null already, so this is
+          // blank on them too (the link belongs to the parent company row).
+          { header: "Model URL",          key: "model_url",     width: 40, align: "left"   },
         ],
       });
     } catch (e) {
@@ -1426,6 +1432,9 @@ export function useStockGuideData(): UseStockGuideData {
           [`ebitda_${y2}`]: r.ebitda_y2,
           [`volumes_${y1}`]: r.volumes_y1,
           [`volumes_${y2}`]: r.volumes_y2,
+          // Ex-tax-credit companion rows carry model_url=null (blank), normal rows
+          // emit the link if set.
+          model_url: r.model_url,
         })) as unknown as Record<string, unknown>[],
         filename: "stock_guide_comps",
         includeBom: true,

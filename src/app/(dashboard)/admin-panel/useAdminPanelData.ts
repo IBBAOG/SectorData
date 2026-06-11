@@ -208,6 +208,12 @@ export interface SgEditorRow {
   dividends_y2: string;
   volumes_y1: string;
   volumes_y2: string;
+  /**
+   * URL to the company's downloadable financial model (externally hosted Excel).
+   * Surfaced as a per-row "Model" download link in the /stock-guide comps table.
+   * Empty/whitespace → NULL server-side (no model). Migration `20260626000000`.
+   */
+  model_url: string;
   display_order: string;
 }
 
@@ -252,6 +258,7 @@ function adminCompanyToEditorRow(c: StockGuideAdminCompany): SgEditorRow {
     dividends_y2: numToStr(c.dividends_y2),
     volumes_y1: numToStr(c.volumes_y1),
     volumes_y2: numToStr(c.volumes_y2),
+    model_url: c.model_url ?? "",
     display_order: numToStr(c.display_order),
   };
 }
@@ -2096,6 +2103,9 @@ export function useAdminPanelData(): UseAdminPanelData {
         dividends_y2: strToNum(r.dividends_y2),
         volumes_y1: strToNum(r.volumes_y1),
         volumes_y2: strToNum(r.volumes_y2),
+        // Link to the downloadable financial model; empty/whitespace → NULL
+        // server-side (the RPC coerces blank to NULL).
+        model_url: r.model_url.trim() === "" ? null : r.model_url.trim(),
         display_order: strToNum(r.display_order) ?? 0,
       };
       await rpcAdminUpsertStockGuideCompany(supabase, sgSelectedTicker, data);

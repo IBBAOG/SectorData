@@ -87,6 +87,55 @@ function RecommendationChip({
   );
 }
 
+// ─── Financial-model download link ─────────────────────────────────────────────
+
+/**
+ * Compact download affordance for a company's financial model. Renders a small
+ * brand-orange icon link when `url` is set, else the table's `—` placeholder.
+ * Opens the externally-hosted Excel in a new tab.
+ */
+function ModelLink({ url }: { url: string | null }): React.ReactElement {
+  if (!url) return <span style={{ color: "#9ca3af" }}>—</span>;
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Download financial model"
+      aria-label="Download financial model"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: 24,
+        height: 24,
+        borderRadius: 5,
+        border: `1px solid ${BRAND_ORANGE}`,
+        color: BRAND_ORANGE,
+        textDecoration: "none",
+        lineHeight: 0,
+      }}
+    >
+      <svg
+        width="13"
+        height="13"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+        <polyline points="7 10 12 15 17 10" />
+        <line x1="12" y1="15" x2="12" y2="3" />
+      </svg>
+    </a>
+  );
+}
+
 // ─── Comps table ──────────────────────────────────────────────────────────────
 
 // Comps table header is a solid near-black band with white text, matching the
@@ -163,6 +212,7 @@ const PAIR_GROUPS: PairGroup[] = [
 // Price; a new "Current Price" column sits right after TP.
 type SingleColId =
   | "ticker"
+  | "model"
   | "last_update"
   | "recommendation"
   | "tp"
@@ -179,6 +229,7 @@ interface SingleCol {
 
 const SINGLE_COLS: SingleCol[] = [
   { id: "ticker",         header: "Ticker",            align: "left"   },
+  { id: "model",          header: "Model",             align: "center" },
   { id: "last_update",    header: "Last update",       align: "right"  },
   { id: "recommendation", header: "Recomm.",           align: "right"  },
   { id: "tp",             header: "TP",                align: "center" },
@@ -377,6 +428,14 @@ function CompsTable({
                         return (
                           <td key={c.id} style={{ ...TD_BASE, textAlign: "left", color: "#6b7280", fontWeight: 600 }}>
                             {isExCredit ? "" : r.ticker}
+                          </td>
+                        );
+                      case "model":
+                        // Ex-tax-credit companion row leaves the Model cell BLANK
+                        // (display parity with Ticker / Recomm. / TP / etc.).
+                        return (
+                          <td key={c.id} style={{ ...TD_BASE, textAlign: "center" }}>
+                            {isExCredit ? "" : <ModelLink url={r.model_url} />}
                           </td>
                         );
                       case "last_update":
