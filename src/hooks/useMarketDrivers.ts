@@ -48,8 +48,10 @@ export interface DriverCatalogEntry {
  * The 6 supported dynamic metrics (Brent + FX, three forward years each). Adding
  * a metric here makes it selectable in the admin Source picker and computed below
  * in `computeCatalogValues`. The 2028 keys were added 2026-06-11 for the elastic
- * multi-year sensitivity sliders; see `avgBrentForYear` / `avgFxForYear` for how
- * a year whose forward curve doesn't reach that far falls back to spot-flat.
+ * multi-year sensitivity sliders. With the extended forward curve (now through
+ * Dec of current-year + 3), `avg_brent_2028` is curve-based — see `avgBrentForYear`
+ * for the edge-aware fallbacks (flat-extrapolate the curve tail rather than snap
+ * to spot). `avg_fx_2028` stays spot-flat (the proxy has no FX forward).
  */
 export const MARKET_DRIVER_CATALOG: DriverCatalogEntry[] = [
   { key: "avg_brent_2026", label: "Avg Brent 2026", unit: "USD/bbl" },
@@ -153,6 +155,68 @@ export function forwardPrice(
   return null;
 }
 
+/** A month index = year*12 + (month0). Monotone key for ordering the curve. */
+function monthIndex(year: number, month1: number): number {
+  return year * 12 + (month1 - 1);
+}
+
+/**
+ * The valid (finite, positive) contracts of the curve sorted ascending by
+ * (year, month). Used to find the curve's first/last contract and to flat-fill
+ * gaps. Returns each as `{ idx, price }` where `idx` is the month index.
+ */
+function sortedValidCurve(
+  curve: CurveContract[],
+): { idx: number; price: number }[] {
+  const out: { idx: number; price: number }[] = [];
+  for (const c of curve) {
+    if (c.price != null && Number.isFinite(c.price) && c.price > 0) {
+      out.push({ idx: monthIndex(c.year, c.month + 1), price: c.price });
+    }
+  }
+  out.sort((a, b) => a.idx - b.idx);
+  return out;
+}
+
+/**
+ * Resolve a FUTURE month against the forward curve with edge-aware fallbacks.
+ * `sorted` is the ascending list of valid contracts (see `sortedValidCurve`);
+ * `brentSpot` is the spot fallback. The rules (backwardation-safe):
+ *   • month present in the curve            → that contract's price;
+ *   • empty curve                           → spot (legacy behavior);
+ *   • month BEFORE the first contract        → spot (near-month gap: the curve
+ *     starts ~M+2, so M / M+1 don't exist and spot is the best estimate);
+ *   • month AFTER the last contract          → the LAST contract's price
+ *     (flat-extrapolation off the curve tail — the right answer in
+ *     backwardation, where spot systematically overstates the far tenor);
+ *   • gap in the MIDDLE of the curve         → the nearest preceding valid
+ *     contract (flat carry-forward — simplest equivalent to interpolation and
+ *     keeps the function monotone-cheap).
+ */
+function futureBrentForMonth(
+  sorted: { idx: number; price: number }[],
+  year: number,
+  month1: number,
+  brentSpot: number | null,
+): number | null {
+  if (sorted.length === 0) return brentSpot;
+  const target = monthIndex(year, month1);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  // Before the curve starts → near-month gap → spot.
+  if (target < first.idx) return brentSpot;
+  // After the curve ends → flat-extrapolate the tail (not spot).
+  if (target > last.idx) return last.price;
+  // Inside the curve span: exact match, else nearest preceding valid contract.
+  let chosen: number | null = null;
+  for (const c of sorted) {
+    if (c.idx === target) return c.price;
+    if (c.idx < target) chosen = c.price;
+    else break;
+  }
+  return chosen ?? brentSpot;
+}
+
 /** Mean of the non-null values in a 12-element monthly array; null if all null. */
 function meanNonNull(values: (number | null)[]): number | null {
   let sum = 0;
@@ -171,13 +235,17 @@ function meanNonNull(values: (number | null)[]): number | null {
  * each resolved relative to `now`:
  *   • past month    → realized monthly average;
  *   • current month → month-to-date realized average, else spot;
- *   • future month  → forward-curve price, else spot (the near 1–2 months may not
- *     be in the curve since it starts ~M+2, so they fall back to spot).
+ *   • future month  → forward curve, with EDGE-AWARE fallbacks (see
+ *     `futureBrentForMonth`): curve price when present; spot for the near 1–2
+ *     months BEFORE the curve starts (it begins ~M+2); the LAST contract's price
+ *     (flat-extrapolation) for months BEYOND the curve tail; the nearest preceding
+ *     contract for a mid-curve gap.
  *
- * Works for ANY forward year (2026 / 2027 / 2028 …). When the forward curve does
- * not reach that far out (typical for 2028), every month falls back to `brentSpot`
- * → the result is a SPOT-FLAT approximation. Null only when there is no spot AND
- * no realized/forward data at all.
+ * Works for ANY forward year (2026 / 2027 / 2028 …). Since the proxy now extends
+ * the Brent curve through Dec of (current year + 3), 2028 is fully curve-based —
+ * months past the curve tail flat-extrapolate the last contract instead of
+ * snapping to spot, which in backwardation systematically overstated the far
+ * tenor. Null only when there is no spot AND no realized/forward data at all.
  */
 export function avgBrentForYear(
   year: number,
@@ -188,6 +256,7 @@ export function avgBrentForYear(
 ): number | null {
   const curYear = now.getFullYear();
   const curMonth = now.getMonth() + 1; // 1–12
+  const sorted = sortedValidCurve(curve);
   const monthly: (number | null)[] = [];
   for (let m = 1; m <= 12; m++) {
     const isPast = year < curYear || (year === curYear && m < curMonth);
@@ -197,8 +266,8 @@ export function avgBrentForYear(
     } else if (isCurrent) {
       monthly.push(realizedMonthlyAvg(brentHist, year, m) ?? brentSpot);
     } else {
-      // future
-      monthly.push(forwardPrice(curve, year, m) ?? brentSpot);
+      // future → edge-aware curve resolution (flat-extrapolate the tail, not spot)
+      monthly.push(futureBrentForMonth(sorted, year, m, brentSpot));
     }
   }
   return meanNonNull(monthly);
@@ -248,8 +317,9 @@ export function computeCatalogValues(input: {
   return {
     avg_brent_2026: avgBrentForYear(2026, now, brentHist, curve, brentSpot),
     avg_brent_2027: avgBrentForYear(2027, now, brentHist, curve, brentSpot),
-    // 2028: typically beyond the forward curve → spot-flat fallback inside
-    // avgBrentForYear (every future month resolves to brentSpot).
+    // 2028: now within the extended forward curve (proxy reaches Dec of
+    // current-year + 3). Months past the curve tail flat-extrapolate the last
+    // contract inside avgBrentForYear (no longer spot-flat).
     avg_brent_2028: avgBrentForYear(2028, now, brentHist, curve, brentSpot),
     avg_fx_2026: avgFxForYear(2026, now, fxHist, fxSpot),
     avg_fx_2027: avgFxForYear(2027, now, fxHist, fxSpot),
