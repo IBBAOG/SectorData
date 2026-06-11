@@ -1327,7 +1327,9 @@ function MobileGridInView({
   table,
   getGridModel,
   ensureGridLoaded,
-  gridLoading,
+  retryGridLoad,
+  gridLoadingIds,
+  gridErrorIds,
   onSetGridAxis,
   onResetGridAxis,
   onResetGridAll,
@@ -1336,7 +1338,9 @@ function MobileGridInView({
   table: SensitivityTable;
   getGridModel: UseStockGuideData["getGridModel"];
   ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
-  gridLoading: boolean;
+  retryGridLoad: UseStockGuideData["retryGridLoad"];
+  gridLoadingIds: UseStockGuideData["gridLoadingIds"];
+  gridErrorIds: UseStockGuideData["gridErrorIds"];
   onSetGridAxis: UseStockGuideData["setGridAxisValue"];
   onResetGridAxis: UseStockGuideData["resetGridAxis"];
   onResetGridAll: UseStockGuideData["resetGridAll"];
@@ -1344,6 +1348,9 @@ function MobileGridInView({
 }): React.ReactElement {
   const ref = useInViewOnce<HTMLDivElement>(() => ensureGridLoaded(table.id));
   const model = getGridModel(table);
+  // PER-TABLE state — independent of any other grid's fetch (no shared boolean).
+  const loading = gridLoadingIds.has(table.id);
+  const errored = gridErrorIds.has(table.id);
   return (
     <div ref={ref}>
       {model ? (
@@ -1360,10 +1367,12 @@ function MobileGridInView({
           <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 8 }}>
             {table.title}
           </div>
-          {gridLoading ? (
+          {loading ? (
             <div style={{ padding: "20px 0" }}>
               <BarrelLoading bare />
             </div>
+          ) : errored ? (
+            <MobileGridErrorCard onRetry={() => retryGridLoad(table.id)} />
           ) : (
             <div style={{ padding: "14px 4px", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
               No scenario-grid points uploaded for this table yet.
@@ -1371,6 +1380,49 @@ function MobileGridInView({
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Per-table error card (mobile) with a brand-orange Retry button. */
+function MobileGridErrorCard({
+  onRetry,
+}: {
+  onRetry: () => void;
+}): React.ReactElement {
+  return (
+    <div
+      style={{
+        padding: "14px 14px",
+        border: "1px solid #f3c9bb",
+        borderRadius: "var(--mobile-radius-md, 12px)",
+        background: "#fff7f3",
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      <span style={{ fontSize: 12.5, color: "#7a3a23", flex: "1 1 160px" }}>
+        Couldn&rsquo;t load the scenario mesh.
+      </span>
+      <button
+        type="button"
+        onClick={onRetry}
+        style={{
+          fontSize: 12.5,
+          fontWeight: 700,
+          color: "#fff",
+          background: "#ff5000",
+          border: "none",
+          borderRadius: 8,
+          padding: "8px 16px",
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      >
+        ↻ Retry
+      </button>
     </div>
   );
 }
@@ -1395,7 +1447,9 @@ function MobileGridPanelHalf({
   tables,
   getGridModel,
   ensureGridLoaded,
-  gridLoading,
+  retryGridLoad,
+  gridLoadingIds,
+  gridErrorIds,
   onSetGridAxis,
   onResetGridAxis,
   onResetGridAll,
@@ -1405,7 +1459,9 @@ function MobileGridPanelHalf({
   tables: SensitivityTable[] | undefined;
   getGridModel: UseStockGuideData["getGridModel"];
   ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
-  gridLoading: boolean;
+  retryGridLoad: UseStockGuideData["retryGridLoad"];
+  gridLoadingIds: UseStockGuideData["gridLoadingIds"];
+  gridErrorIds: UseStockGuideData["gridErrorIds"];
   onSetGridAxis: UseStockGuideData["setGridAxisValue"];
   onResetGridAxis: UseStockGuideData["resetGridAxis"];
   onResetGridAll: UseStockGuideData["resetGridAll"];
@@ -1437,7 +1493,9 @@ function MobileGridPanelHalf({
             table={t}
             getGridModel={getGridModel}
             ensureGridLoaded={ensureGridLoaded}
-            gridLoading={gridLoading}
+            retryGridLoad={retryGridLoad}
+            gridLoadingIds={gridLoadingIds}
+            gridErrorIds={gridErrorIds}
             onSetGridAxis={onSetGridAxis}
             onResetGridAxis={onResetGridAxis}
             onResetGridAll={onResetGridAll}
@@ -1463,7 +1521,9 @@ function MobileSensitivity({
   computeSensitivityCell,
   getGridModel,
   ensureGridLoaded,
-  gridLoading,
+  retryGridLoad,
+  gridLoadingIds,
+  gridErrorIds,
   onSetGridAxis,
   onResetGridAxis,
   onResetGridAll,
@@ -1480,7 +1540,9 @@ function MobileSensitivity({
   computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
   getGridModel: UseStockGuideData["getGridModel"];
   ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
-  gridLoading: boolean;
+  retryGridLoad: UseStockGuideData["retryGridLoad"];
+  gridLoadingIds: UseStockGuideData["gridLoadingIds"];
+  gridErrorIds: UseStockGuideData["gridErrorIds"];
   onSetGridAxis: UseStockGuideData["setGridAxisValue"];
   onResetGridAxis: UseStockGuideData["resetGridAxis"];
   onResetGridAll: UseStockGuideData["resetGridAll"];
@@ -1528,7 +1590,9 @@ function MobileSensitivity({
             tables={gridPanelByKey.brent}
             getGridModel={getGridModel}
             ensureGridLoaded={ensureGridLoaded}
-            gridLoading={gridLoading}
+            retryGridLoad={retryGridLoad}
+            gridLoadingIds={gridLoadingIds}
+            gridErrorIds={gridErrorIds}
             onSetGridAxis={onSetGridAxis}
             onResetGridAxis={onResetGridAxis}
             onResetGridAll={onResetGridAll}
@@ -1539,7 +1603,9 @@ function MobileSensitivity({
             tables={gridPanelByKey.margin}
             getGridModel={getGridModel}
             ensureGridLoaded={ensureGridLoaded}
-            gridLoading={gridLoading}
+            retryGridLoad={retryGridLoad}
+            gridLoadingIds={gridLoadingIds}
+            gridErrorIds={gridErrorIds}
             onSetGridAxis={onSetGridAxis}
             onResetGridAxis={onResetGridAxis}
             onResetGridAll={onResetGridAll}
@@ -1555,7 +1621,9 @@ function MobileSensitivity({
           table={t}
           getGridModel={getGridModel}
           ensureGridLoaded={ensureGridLoaded}
-          gridLoading={gridLoading}
+          retryGridLoad={retryGridLoad}
+          gridLoadingIds={gridLoadingIds}
+          gridErrorIds={gridErrorIds}
           onSetGridAxis={onSetGridAxis}
           onResetGridAxis={onResetGridAxis}
           onResetGridAll={onResetGridAll}
@@ -1588,7 +1656,9 @@ export default function MobileView(): React.ReactElement {
     computeSensitivityCell,
     getGridModel,
     ensureGridLoaded,
-    gridLoading,
+    retryGridLoad,
+    gridLoadingIds,
+    gridErrorIds,
     setGridAxisValue,
     resetGridAxis,
     resetGridAll,
@@ -1828,7 +1898,9 @@ export default function MobileView(): React.ReactElement {
               computeSensitivityCell={computeSensitivityCell}
               getGridModel={getGridModel}
               ensureGridLoaded={ensureGridLoaded}
-              gridLoading={gridLoading}
+              retryGridLoad={retryGridLoad}
+              gridLoadingIds={gridLoadingIds}
+              gridErrorIds={gridErrorIds}
               onSetGridAxis={setGridAxisValue}
               onResetGridAxis={resetGridAxis}
               onResetGridAll={resetGridAll}

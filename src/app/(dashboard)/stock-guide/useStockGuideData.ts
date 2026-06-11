@@ -32,7 +32,10 @@
 //      always visible with a lazy mesh fetch). `computeSensitivityCell()` turns a
 //      (table,row,col) into a DISPLAY value; `resolveDriverAxis()` maps a driver
 //      axis → { driver, scenarios, currentValue }. The grid mesh is fetched via
-//      `ensureGridLoaded(tableId)` only when the Views scroll it into view.
+//      `ensureGridLoaded(tableId)` only when the Views scroll it into view, with
+//      PER-TABLE loading/error state (`gridLoadingIds` / `gridErrorIds`) + a
+//      `retryGridLoad(tableId)` affordance — a failed fetch is never cached as
+//      an empty mesh and stays retryable (project pitfall #2).
 //   f. Optional sectorFilter; `setFilters` merges partials.
 //   g. Desktop-only export (Excel + CSV) of the computed VISIBLE table.
 //
@@ -220,13 +223,35 @@ export interface UseStockGuideData {
   getGridModel: (table: SensitivityTable) => GridTableModel | null;
   /**
    * Idempotently fetch + cache the mesh for ONE grid table (guarded by an
-   * internal fetched-set ref, so repeat calls are no-ops). The Views call this
-   * when the grid panel scrolls into view (`useInViewOnce`) — the ~194k-point
-   * mesh is NEVER fetched on page load. Stable identity.
+   * internal fetched-set ref, so repeat calls are no-ops while a fetch is
+   * in-flight or succeeded). The Views call this when the grid panel scrolls
+   * into view (`useInViewOnce`) — the ~194k-point mesh is NEVER fetched on page
+   * load. On failure the id is REMOVED from the fetched-set so a later
+   * `ensureGridLoaded` / `retryGridLoad` can retry. Stable identity.
    */
   ensureGridLoaded: (tableId: number) => void;
-  /** True while ANY grid table's mesh is being fetched. */
-  gridLoading: boolean;
+  /**
+   * Re-arm a FAILED grid fetch and fire it again (clears that table's error,
+   * drops it from the fetched-set, then calls `ensureGridLoaded`). Wired to the
+   * "Retry" button the Views show on a per-table error. Stable identity.
+   */
+  retryGridLoad: (tableId: number) => void;
+  /**
+   * PER-TABLE loading state — the set of grid-table ids whose mesh fetch is
+   * currently in flight. Replaces the old single `gridLoading` boolean (which
+   * raced: a fast empty grid flipped it false while another grid was still
+   * fetching). A View shows the spinner for table T iff `gridLoadingIds.has(T.id)`.
+   */
+  gridLoadingIds: ReadonlySet<number>;
+  /**
+   * PER-TABLE error state — the set of grid-table ids whose LAST mesh fetch
+   * FAILED (transient RPC error, e.g. a Postgres statement timeout on one paged
+   * call). A failed fetch NEVER writes `[]` into the mesh cache, so an error can
+   * never masquerade as a genuinely-empty mesh. A View shows the error card +
+   * Retry button for table T iff `gridErrorIds.has(T.id)`. Cleared on retry /
+   * success.
+   */
+  gridErrorIds: ReadonlySet<number>;
   /** Set the value of ONE axis slider of a grid table (re-interpolates live). */
   setGridAxisValue: (tableId: number, axisIdx: number, value: number) => void;
   /** Reset ONE axis slider back to its live "today" value. */
@@ -1137,8 +1162,18 @@ export function useStockGuideData(): UseStockGuideData {
   const [gridMeshById, setGridMeshById] = useState<
     Record<number, ScenarioGridPoint[]>
   >({});
+  // Fetched-set: ids whose mesh fetch is in-flight OR succeeded (suppresses a
+  // duplicate fetch). On FAILURE we drop the id so a retry is possible.
   const gridFetchedRef = useRef<Set<number>>(new Set());
-  const [gridLoading, setGridLoading] = useState(false);
+  // PER-TABLE loading / error state (replaces the old single `gridLoading`
+  // boolean, which raced — a fast empty grid flipped it false while another grid
+  // was still mid-fetch, surfacing the "no points" card during the real fetch).
+  const [gridLoadingIds, setGridLoadingIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const [gridErrorIds, setGridErrorIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
 
   // tableId → per-axis user overrides. The array is indexed by axis position;
   // `null` means "follow the live value" (LAZY: we never eager-init from market
@@ -1150,21 +1185,79 @@ export function useStockGuideData(): UseStockGuideData {
   // Idempotently fetch ONE grid table's mesh (cached by id, guarded by the
   // fetched-set ref). Called by the Views when the grid panel scrolls into view
   // (`useInViewOnce`) — NEVER on page load, because the mesh is ~194k points.
+  //
+  // PER-TABLE state: marks ONLY this id loading (no shared boolean → no race).
+  // On FAILURE (e.g. a Postgres statement timeout on one of the paged calls) it
+  // records a per-table error, DROPS the id from the fetched-set so a retry is
+  // possible, and DOES NOT write `[]` into the mesh cache — an error must never
+  // masquerade as an empty mesh (project pitfall #2: a swallowed RPC error that
+  // becomes a permanent empty state). The underlying error is `console.error`d.
   const ensureGridLoaded = useCallback(
     (tableId: number) => {
       if (!supabase) return;
       if (gridFetchedRef.current.has(tableId)) return; // already fetched / fetching
       gridFetchedRef.current.add(tableId);
-      setGridLoading(true);
+      // Entering a (re)fetch clears any prior error for this id + marks it loading.
+      setGridErrorIds((prev) => {
+        if (!prev.has(tableId)) return prev;
+        const next = new Set(prev);
+        next.delete(tableId);
+        return next;
+      });
+      setGridLoadingIds((prev) => {
+        const next = new Set(prev);
+        next.add(tableId);
+        return next;
+      });
       rpcGetStockGuideScenarioGrid(supabase, tableId)
-        .then((points) => ({ points }))
-        .catch(() => ({ points: [] as ScenarioGridPoint[] }))
-        .then(({ points }) => {
+        .then((points) => {
+          // SUCCESS — cache the mesh (may be a genuinely-empty []), clear loading.
           setGridMeshById((prev) => ({ ...prev, [tableId]: points }));
-          setGridLoading(false);
+          setGridLoadingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(tableId);
+            return next;
+          });
+        })
+        .catch((err: unknown) => {
+          // FAILURE — never cache []; record the error, re-arm for retry.
+          console.error(
+            `[stock-guide] scenario-grid mesh fetch failed for table ${tableId}`,
+            err,
+          );
+          gridFetchedRef.current.delete(tableId);
+          setGridLoadingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(tableId);
+            return next;
+          });
+          setGridErrorIds((prev) => {
+            const next = new Set(prev);
+            next.add(tableId);
+            return next;
+          });
         });
     },
     [supabase],
+  );
+
+  // Deliberate retry affordance for the Views' per-table error card: clear the
+  // error, drop the id from the fetched-set, then re-fire the (now re-armed)
+  // fetch. `ensureGridLoaded` already re-arms on failure, but the fetched-set
+  // delete here makes a manual retry safe even mid-flight is impossible (no
+  // in-flight id can be errored).
+  const retryGridLoad = useCallback(
+    (tableId: number) => {
+      gridFetchedRef.current.delete(tableId);
+      setGridErrorIds((prev) => {
+        if (!prev.has(tableId)) return prev;
+        const next = new Set(prev);
+        next.delete(tableId);
+        return next;
+      });
+      ensureGridLoaded(tableId);
+    },
+    [ensureGridLoaded],
   );
 
   const setGridAxisValue = useCallback(
@@ -1513,7 +1606,9 @@ export function useStockGuideData(): UseStockGuideData {
     isGridTable,
     getGridModel,
     ensureGridLoaded,
-    gridLoading,
+    retryGridLoad,
+    gridLoadingIds,
+    gridErrorIds,
     setGridAxisValue,
     resetGridAxis,
     resetGridAll,
