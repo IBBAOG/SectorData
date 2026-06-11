@@ -43,13 +43,12 @@ Layout padrão da sidebar:
 - **Sempre** via wrapper `PlotlyChart` (não importe `react-plotly.js` direto).
 - Tooltip já estilizado globalmente (drop-shadow + rounded). Não override.
 - Crosshair preto (svg url). Não troque.
-- Cores de série: laranja primário + variações neutras + verde/vermelho só pra Stocks (alta/baixa).
+- **Cores de série, ordem, canonical maps, assigner/lock e a receita de chart** → skill [`design-standards`](../../.claude/skills/design-standards/SKILL.md) (`references/charts.md`, `references/colors.md`). Não documente cor de gráfico aqui.
 
 ### Tabelas
 
-- **Header**: `.sd-table th` style (12px 600 uppercase letter-spacing 0.5px) — copiar fora de Stocks só se fizer sentido visual; a maioria das tabelas usa Bootstrap padrão.
-- **Hover**: bg muito sutil (#f9f9f9 light, ou 5% laranja).
-- **Selected row**: border-left laranja 2px (padrão Stocks).
+- **Receita canônica de tabela de dados** (banding de seção, numéricos tabular-nums, cores de delta, row-highlight tints) → skill [`design-standards`](../../.claude/skills/design-standards/SKILL.md) (`references/tables.md`). Não duplique aqui.
+- UX geral: hover de linha sutil; selected row com border-left laranja 2px (padrão Stocks).
 
 ## Responsividade
 

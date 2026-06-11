@@ -6,6 +6,17 @@ Entries newest first.
 
 ---
 
+## 2026-06-10 — Official brand palette + design-standards skill
+
+- **New canonical skill** `.claude/skills/design-standards/` (`SKILL.md` + `references/colors.md`, `charts.md`, `tables.md`) — single source of truth for chart, table and color decisions. Owned by `worker_designer`; **every worker that generates a chart/table/color decision must read it first**. `.gitignore` restructured (`.claude/` → `.claude/*` + `!.claude/skills/`) so the skill is versioned while the rest of `.claude/` stays local-only.
+- **Official CLOSED brand palette** (15 colors, priority order): `#FF5000` Standard Orange, `#000512` Very Dark Blue, `#FFAE66` Light Orange, `#FF800D` Orange, `#73C6A1` Green, `#7030A0` Purple, `#094DFF` Blue, `#D2FF00` Yellow, `#BF3F00` Brown, `#BFBFBF` Light Grey, `#A6A6A6` Grey, `#808080` Dark Grey + 3 background-only tints `#E2F3EC` / `#CCDAFF` / `#E6DDEC`. **Chart series rotation (12 colors)**: leader `#000512`, then `#FF5000` (reserved — positional 2nd or explicit highlight, never an entity pin), then list order; the **Others bucket = `#808080`, always last**.
+- **Old 14-color PALETTE RETIRED** (`#1f2937` leader, `#0EA5E9`, `#8258A0`, `#D97706`, `#BE185D`, `#0F766E`, `#9bd9a9`, `#1D4080`, `#52525B`, `#7F7F7F`, …) — no longer the chart-color source of truth.
+- **Central migration** in `src/lib/plotlyDefaults.ts`: `PALETTE` 14→12, new `BACKGROUND_TINTS` export, all 5 canonical maps re-pinned (`COMPANY_COLORS` now Petrobras `#000512`, Vibra `#73C6A1`, Ipiranga `#094DFF`, Raízen `#BF3F00`, Atem `#7030A0`, Royal FIC `#FF800D`, Others `#808080`). `OTHERS_GREY` `#7F7F7F`→`#808080` in `src/lib/charts/colors.ts` + `validateTraces.ts` + 4 local copies.
+- **Consumer sync** across dashboards: `/well-by-well` (PreSal/oil `#000512`, Terra `#73C6A1`, table sectionBg `#000512`), `/market-share` + `/anp-glp` (canonical `COLORS_IND`, `PALETTE` imported for rotations) + `exportExcel.ts` `PLAYER_COLORS` mirror, `/anp-prices` `FONTE_COLORS`, `/subsidy-tracker` (all `COLOR_*` re-pinned, mobile literals now reuse hook constants), `/diesel-gasoline-margins` stack colors, `/navios-diesel` Discharged `#000512`, `/anp-cdp-bsw` + `/anp-cdp-diaria` orange-safe rotation (`NON_LEADER_PALETTE` / exported `COMPANY_FIELD_COLORS`).
+- **`docs/design/identity.md` slimmed** — chart/table/color standards moved to the skill; identity.md keeps mobile tokens / CSS components. `worker_designer.md` now mandates reading the skill before any chart/table/color work.
+- **Out of scope / unchanged**: `/stocks` theme (exempt), `/price-bands` pins (follow-up), semantic state colors, neutral chrome.
+- See `.claude/skills/design-standards/SKILL.md`, `src/lib/plotlyDefaults.ts`, and `docs/design/identity.md`.
+
 ## 2026-06-10 — `/anp-cdp-diaria` blended company stakes (Petrobras net oil ~185 kbpd overstatement fixed)
 
 - **Bug**: the company-level daily RPCs joined `field_stakes.campo = anp_cdp_diaria.campo` by raw name. Contract-split fields (BÚZIOS / ATAPU / SÉPIA, which have separate `*_ECO` tranche rows in `field_stakes`) matched only the 100% ToR row, because the daily Power BI panel merges tranches into one field row — the whole field was weighted at 100%. Petrobras net oil overstated **~185 kbpd** (Apr-2026: 2808.3 shown vs ≈2623.5 correct).

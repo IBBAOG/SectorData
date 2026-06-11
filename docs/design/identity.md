@@ -2,6 +2,9 @@
 
 Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/app/globals.css`).
 
+> **Changelog**
+> - **2026-06-10** — Padrões de **chart / table / data-color** saíram deste arquivo e passaram a ser propriedade da skill [`design-standards`](../../.claude/skills/design-standards/SKILL.md). A **paleta oficial de marca** (15 cores, fechada) foi adotada como fonte da verdade lá + em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts). Este arquivo deixou de documentar paleta multi-série, canonical maps e o assigner/lock de cores (ver seção "Chart, table & color standards" abaixo).
+
 ## Paleta
 
 ### Cor primária
@@ -47,193 +50,18 @@ Tokens, componentes e padrões. Fonte da verdade derivada do código real (`src/
 | Erro inline | `#c0392b` | `.profile-edit-error`, `.profile-name-edit-error` |
 | Tick salvo | `#22aa55` | `.settings-saved-tick` |
 
-### Paleta multi-série (Plotly)
+### Chart, table & color standards → design-standards skill
 
-Paleta canônica para gráficos com múltiplas séries (stacked area, multi-line, bar charts, dots em tabelas). Fonte da verdade: `PALETTE` em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
+**Os padrões de gráfico, tabela e cor de dados NÃO moram mais aqui.** Eles são propriedade da skill [`design-standards`](../../.claude/skills/design-standards/SKILL.md) (+ `references/colors.md`, `references/charts.md`, `references/tables.md`) — a **única fonte da verdade** para:
 
-Spec definido pelo CTO em 2026-05-27, atualizado em 2026-05-28 (audit "sem branco em gráficos"), em 2026-06-09 (**reorder da ordem-líder navy→orange→mint**) e em 2026-06-10 (**reorder do fallback tier por distinguibilidade**): **14 cores em 2 tiers** — 3 da *ordem-líder* consumidas primeiro, 11 *fallback* quando a ordem-líder se esgota. Os consumers indexam posicionalmente via `PALETTE[i % PALETTE.length]`.
+- A **paleta oficial de marca** (15 cores, **fechada** — nenhuma cor de série fora dela). Source da verdade em código: `PALETTE` / `BACKGROUND_TINTS` / canonical maps em [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
+- A **ordem de série** (líder `#000512` → orange `#FF5000` → rotação), e "Others" `#808080` sempre por último.
+- A **regra de reserva do `#FF5000`** (nunca pina entidade nomeada — só 2ª série posicional ou highlight `leader: true`).
+- Os **canonical maps por entidade** (`PRODUCT_COLORS`, `COUNTRY_COLORS`, `REGION_COLORS`, `SEGMENT_COLORS`, `COMPANY_COLORS`).
+- O **pipeline de chart** — `PlotlyChart` + `assignSeriesColors` / `applyStackedLegendOrder` + o lock `validateTraces`.
+- A **receita canônica de tabela de dados** (banding de seção, numéricos tabular-nums, cores de delta).
 
-#### Ordem-líder (posições 1-3) — navy → orange → mint
-
-Reorder de 2026-06-09 (diretiva do CTO): a ordem-líder global passou a ser a paleta do gráfico empilhado **"Brazil — Oil Production (kbpd)"** do `/well-by-well` — a convenção do relatório PDF Itaú BBA. A 1ª série (líder/dominante, base da pilha) é **navy/slate**, a 2ª é **brand orange**, a 3ª é **mint**. Consumidores posicionais (`PALETTE[i % len]`) passam a liderar com navy/orange/mint automaticamente. Os hexes `#1f2937` e `#9bd9a9` são **exatamente** os de `src/data/wellByWellColors.ts`, para casar com o PDF.
-
-| Pos | Hex | Papel |
-|---|---|---|
-| 1 | `#1f2937` | Navy/slate — **líder** (Pre-Salt no PDF; série dominante / base da pilha) |
-| 2 | `#FF5000` | Brand orange — **série legítima**, 2ª da pilha (Post-Salt no PDF) |
-| 3 | `#9bd9a9` | Light mint — 3ª série (Onshore/Terra no PDF) |
-
-#### Fallback tier (posições 4-14)
-
-Usadas apenas quando a ordem-líder se esgota (≥4 séries simultâneas). Todas as posições problemáticas (branco, near-yellow, near-white grey) foram removidas no audit de 2026-05-28. **Reorder de 2026-06-10 (distinguibilidade):** matizes bem distintos foram trazidos para a frente (pos 4-8) e os escuros redundantes / o slate-grey / o 2º mint foram empurrados para o fim (pos 10-13), para que charts posicionais com ≤7 séries nunca peguem dois escuros nem dois verdes próximos.
-
-| Pos | Hex | Cor |
-|---|---|---|
-| 4 | `#0EA5E9` | Sky blue *(substituiu `#FFFFFF` branco — 2026-05-28)* |
-| 5 | `#8258A0` | Purple *(trazido para a frente — reorder 2026-06-10)* |
-| 6 | `#D97706` | Amber *(substituiu `#FFFF99` amarelo claro)* |
-| 7 | `#BE185D` | Magenta *(substituiu `#D8D8D8` light grey)* |
-| 8 | `#0F766E` | Teal *(substituiu `#D2FF00` lime — quase-amarelo ilegível)* |
-| 9 | `#FFAE66` | Peach *(quente, próximo do brand orange — fora da frente)* |
-| 10 | `#000000` | Preto *(empurrado para o fim — reorder 2026-06-10, evita cluster de escuros)* |
-| 11 | `#1D4080` | Royal navy *(empurrado para o fim — distinto do slate `#1f2937` da pos 1)* |
-| 12 | `#52525B` | Slate-grey *(substituiu `#F2F2F2` near-white)* |
-| 13 | `#73C6A1` | Medium mint *(empurrado para o fim — próximo do light mint `#9bd9a9` da pos 3)* |
-| 14 | `#7F7F7F` | Mid grey — canônico "Others", sempre por último |
-
-**Motivo do reorder de 2026-06-10:** consumers posicionais que filtram orange (ex.: `/anp-cdp-diaria` company view → `COMPANY_FIELD_COLORS = PALETTE` sem orange) pegavam as posições 0,3,4 = `#1f2937` slate, `#000000` preto, `#1D4080` navy num chart de ≤5 séries — **três escuros quase idênticos** no mesmo gráfico (campos da PRIO PEREGRINO / TUBARÃO MARTELO / POLVO indistinguíveis). É a mesma classe de bug "duas séries, uma cor" que originou a reforma de cores. Fix: front-load de matizes distintos (sky → purple → amber → magenta → teal) e tail dos escuros/grey/2º-mint. Pos 1-3 (ordem-líder) e pos 14 (grey de Others) ficaram travadas; só 4-13 foram reordenadas. As 14 cores seguem distintas (nenhuma dropada).
-
-**Cores removidas no reorder de 2026-06-09** (para manter 14 distintas ao injetar navy+mint no topo):
-
-- `#000512` (antiga pos 3, near-black com nuance navy) — redundante contra `#000000` **e** o novo líder `#1f2937`; três near-blacks ficavam indistinguíveis num gráfico. `SEGMENT_COLORS.Total` mantém o literal `#000512` (pin fixo de entidade pode usar hex fora da PALETTE).
-- `#7030A0` (antiga pos 10, deep purple) — near-duplicate do purple `#8258A0`; par mais fraco em distinção e não referenciado por nenhum canonical map.
-
-#### Regras
-
-1. **Sempre importe de `PALETTE`** — nunca hard-code hex de gráfico em componente.
-2. **Não reordene sem decisão do CTO** — pos 1-3 = ordem-líder (navy/orange/mint); pos 4-14 = fallback.
-3. **`BRAND_ORANGE` (`#FF5000`) é cor de série legítima** (desde 2026-06-09). Como cor de **série de gráfico** aparece como **2ª da ordem-líder** (`PALETTE[1]`) e PODE preencher a 2ª série de um stacked. Adicionalmente, o padrão de **highlight explícito** `assignSeriesColors(..., { leader: true })` força a série *selecionada* para orange (BSW, anp-cdp-diaria) — é um uso opt-in, distinto do líder posicional default. **Distinção:** líder posicional default = navy `#1f2937`; highlight de série selecionada = orange. Os dois coexistem. Orange continua sendo a cor primária da identidade UI (botões, links, accents). **Não é usado para "fixar" uma entidade recorrente** (Diesel, Estados Unidos, Big-3) — use os canonical maps abaixo.
-4. **Não use branco** em traces, markers, fillcolor ou line.color. White paper/plot bg está OK (padrão Plotly); white text em barra escura também (legibilidade).
-5. **Não invente cor nova** para gráfico — se precisar de mais de 14 séries, agrupe em "Outros" ou passe pelo CTO.
-
-### Canonical chart colors — mapeamentos fixos por entidade
-
-Tabelas pinadas em `src/lib/plotlyDefaults.ts`. **Use estas constantes em vez de `PALETTE` rotation quando a entidade existe em mais de um dashboard** — garante que a mesma entidade tem a mesma cor em todas as views.
-
-#### `PRODUCT_COLORS`
-
-| Produto | Hex | Aliases aceitos |
-|---|---|---|
-| Diesel | `#1D4080` (navy) | Diesel B, Diesel S10 |
-| Gasoline | `#0F766E` (teal) | Gasoline C, Gasolina C |
-| Crude Oil | `#1f2937` (dark slate) | — |
-| Ethanol | `#73C6A1` (mint) | Etanol Hidratado, Hydrous Ethanol, An. Ethanol |
-| Biodiesel | `#0EA5E9` (sky blue) | — |
-| LPG | `#8258A0` (purple) | GLP |
-| Otto-Cycle | `#A16207` (bronze) | — |
-
-Brand orange não fixa nenhum produto: ele é a 2ª cor da ordem-líder (preenche a 2ª série posicional) e o highlight de série selecionada — manter um produto fixo em orange roubaria esse slot.
-
-#### `COUNTRY_COLORS` (origens + destinos em `/imports-exports`)
-
-| País | Hex | Note |
-|---|---|---|
-| Russia | `#000000` | preto |
-| United States | `#1D4080` | navy (era `#FF5000` brand orange — flagged no audit 2026-05-28) |
-| UAE | `#73C6A1` | mint (afinidade com verde emiradense) |
-| Netherlands | `#FFAE66` | peach (próximo do laranja holandês, sem colidir com brand) |
-| India | `#8258A0` | purple |
-| Saudi Arabia | `#0F766E` | teal saturado (era `#D2FF00` near-yellow ilegível) |
-| Norway | `#0EA5E9` | sky blue |
-| Argentina | `#A16207` | bronze |
-| Others | `#7F7F7F` | mid grey neutro |
-
-#### `REGION_COLORS` (Brasil — N / NE / CO / SE / S)
-
-| Região | Hex | Aliases |
-|---|---|---|
-| N (Norte) | `#0F766E` | NORTE |
-| NE (Nordeste) | `#FFAE66` | NORDESTE |
-| CO (Centro-Oeste) | `#A16207` | CENTRO-OESTE |
-| SE (Sudeste) | `#1D4080` | SUDESTE |
-| S (Sul) | `#8258A0` | SUL |
-
-#### `SEGMENT_COLORS` (cadeia de suprimentos / segmento de venda)
-
-| Segmento | Hex | Note |
-|---|---|---|
-| Producer | `#1D4080` | navy — wholesale (refinaria / importador) |
-| Refinery | `#1D4080` | alias |
-| Distribution | `#0F766E` | teal — B2B (canonical) |
-| Retail | `#73C6A1` | mint — bomba |
-| TRR | `#A16207` | bronze — Transporte Revendedor Retalhista |
-| Importer | `#8258A0` | purple |
-| Total | `#000512` | near-black — agregado |
-
-#### `COMPANY_COLORS` (fuel-distributor / oil companies)
-
-Pins each company to a fixed color across every dashboard that renders it (By
-Importer panel of `/imports-exports`, market-share, future company charts).
-Source of truth: `COMPANY_COLORS` in [`src/lib/plotlyDefaults.ts`](../../src/lib/plotlyDefaults.ts).
-
-| Company | Hex | PALETTE pos | Aliases |
-|---|---|---|---|
-| Petrobras | `#000000` (black) | 10 | — |
-| Vibra | `#0F766E` (teal) | 8 | — |
-| Ipiranga | `#1D4080` (navy) | 11 | — |
-| Raízen | `#73C6A1` (mint) | 13 | Raizen |
-| Atem | `#8258A0` (purple) | 5 | Atem's |
-| Royal FIC | `#D97706` (amber) | 6 | Royal Fic |
-| Others | `#7F7F7F` (mid grey) | 14 | always last |
-
-Contract: every hex is a PALETTE member; `BRAND_ORANGE` is **not** used to pin a
-company — a fixed company in orange would steal it from the leader-order 2nd slot
-and from the `leader: true` highlight; all companies are distinct so two series
-in one chart can never collide; `Others` is grey and always rendered last. Royal
-FIC's amber replaces the old `#D2FF00` lime that collided with Atem's and was
-removed in the 2026-05-28 "no near-yellow" audit (root cause of the reported bug).
-
-### Central chart-color assigner + lock (2026-06-09)
-
-Two new modules turn the canonical maps above into a guarantee, not a
-convention:
-
-#### `assignSeriesColors` / `applyStackedLegendOrder` — [`src/lib/charts/colors.ts`](../../src/lib/charts/colors.ts)
-
-`assignSeriesColors(orderedEntities, { canonical, leader, othersLabel })` returns
-an ordered `{ entity, color }[]`. Rules:
-
-1. Each entity resolves to `canonical[entity]` first.
-2. `othersLabel` is always grey (`#7F7F7F`) and pushed last.
-3. Fallback is the next PALETTE color **not yet used in this chart** (collision
-   skip → duplicates are impossible by construction). If the palette is
-   exhausted (> 13 distinct non-Others series) it throws, telling the caller to
-   collapse the tail into "Others" rather than repeat a color.
-4. `leader: true` forces the first entity to `BRAND_ORANGE` (explicit highlight
-   pattern — distinct from the default positional leader, which is navy
-   `#1f2937` = `PALETTE[0]` when `leader` is not passed).
-5. The returned order **is** the stack order **and** the legend order.
-
-`applyStackedLegendOrder(layout)` non-destructively merges
-`legend.traceorder: 'normal'` so a stacked chart's legend reads in the same
-order the traces stack (Plotly's stacked default is `'reversed'`, which is what
-made the legend look inverted).
-
-`toColorMap(assignment)` adapts the ordered result to the `{ entity: color }`
-shape existing trace builders consume (pair it with the ordered entity list for
-stacking).
-
-#### `validateTraces` — the lock — [`src/lib/charts/validateTraces.ts`](../../src/lib/charts/validateTraces.ts)
-
-Wired into the single chart wrapper [`PlotlyChart`](../../src/components/PlotlyChart.tsx)
-(new optional `ctx?: string` prop). Before every render it checks:
-
-- **A. Duplicate color** — two VISIBLE traces (ignores `visible:'legendonly'`/`false`)
-  sharing `fillcolor`/`line.color`/`marker.color`.
-- **B. Inverted stacked legend** — any trace has `stackgroup` but
-  `layout.legend.traceorder` is not explicitly `'normal'` or `'reversed'`.
-
-Behavior by environment:
-
-- **dev / CI** (`NODE_ENV !== 'production'`): for charts on the `MIGRATED_CTX`
-  allowlist → **throws** (fails the build/test), naming the `ctx` and the
-  colliding series. Charts NOT yet on the allowlist → `console.warn` only, so
-  the gradual rollout never breaks unmigrated dashboards.
-- **production**: never throws — auto-corrects (re-assigns the colliding color
-  to the next free palette color; forces `traceorder:'normal'`) and
-  `console.error`s, so the end user's chart never breaks.
-
-Rollout: `MIGRATED_CTX` currently holds only the `/imports-exports` charts. Add
-a dashboard's `ctx` strings to that Set as it adopts `assignSeriesColors` +
-`applyStackedLegendOrder`. Tests: [`src/lib/charts/__tests__/validateTraces.test.ts`](../../src/lib/charts/__tests__/validateTraces.test.ts).
-
-> Dashboards que já tinham mapeamento próprio (ex: `/anp-prices` mantém Producer=navy / Distribution=bronze / Retail=teal para distinguir B2B de Retail num gráfico com os 3 simultaneamente; `/diesel-gasoline-margins` mantém o stack com 5 cores fixas) mantêm essas tabelas locais — mas devem se alinhar com a paleta canônica quando possível.
-
-#### Quando NÃO usar o canonical map
-
-- Dashboards com 1 produto fixo (filter implícito) onde a série representa **role** (Import Parity / Export Parity / Petrobras / Reference) — use cores semânticas locais (ver `price-bands.ts` e `subsidy-tracker.ts`).
-- Tabela locais como `STACK_COLORS` em `/diesel-gasoline-margins` (componentes da composição do preço, não-aplicável a "produto" como entidade).
-- Brand-coloring de empresas reais (ex: Vibra `#f26522`, Ipiranga `#73C6A1`) onde a marca define a cor — manter como está.
+> **Regra anti-drift:** nada sobre padrões de **chart / table / data-color** deve ser re-documentado neste arquivo. Se você precisar mexer em paleta, série, canonical map, assigner/lock ou recipe de tabela, edite a skill (e o código em `plotlyDefaults.ts` / `src/lib/charts/`), **nunca** este `identity.md`. Este arquivo cobre só o **chrome de UI** (cor primária, neutros, NavBar, estados, tema Stocks isolado, tipografia, radius, sombras, componentes CSS nomeados, animações, responsividade, logo, mobile system).
 
 ### Stocks (tema isolado — flat trading terminal)
 
