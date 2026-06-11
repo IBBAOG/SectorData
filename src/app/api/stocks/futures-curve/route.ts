@@ -12,7 +12,10 @@ const UA = "Mozilla/5.0";
 const MONTH_CODES = ["F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function generateContractTickers(count = 24): { ticker: string; label: string; monthIndex: number; year: number }[] {
+/** Forward horizon: the curve runs through December of (current year + this many). */
+const HORIZON_YEARS = 3;
+
+function generateContractTickers(): { ticker: string; label: string; monthIndex: number; year: number }[] {
   const now = new Date();
   let month = now.getMonth(); // 0-indexed
   let year = now.getFullYear();
@@ -23,6 +26,13 @@ function generateContractTickers(count = 24): { ticker: string; label: string; m
   // Start from M+2 to match CME/ICE convention (e.g. Apr 1 → Jun front).
   month += 2;
   if (month > 11) { month -= 12; year++; }
+
+  // Dynamic horizon: generate from the M+2 start month through December of
+  // (current year + HORIZON_YEARS) — computed, never hardcoded, so the curve
+  // never "ages out" (today: M+2 → Dec 2029). Months are counted inclusively
+  // from the start (year, month) to (endYear, December).
+  const endYear = now.getFullYear() + HORIZON_YEARS;
+  const count = (endYear - year) * 12 + (11 - month) + 1;
 
   const contracts: { ticker: string; label: string; monthIndex: number; year: number }[] = [];
   for (let i = 0; i < count; i++) {
@@ -63,7 +73,7 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const contracts = generateContractTickers(24);
+  const contracts = generateContractTickers();
 
   // Fetch all contract prices in parallel
   const prices = await Promise.all(contracts.map((c) => fetchPrice(c.ticker)));

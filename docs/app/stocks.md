@@ -183,6 +183,12 @@ Routes em `src/app/api/stocks/*` servem como **proxy CORS** para Yahoo Finance.
 | `/api/stocks/search?q=petr` | Busca |
 | `/api/stocks/futures-curve?symbol=BRENT` | Curva de futuros |
 
+### Brent futures curve horizon (dynamic)
+
+`futures-curve/route.ts` generates Brent contract tickers (`BZ{monthCode}{yy}.NYM`) starting at **M+2** (ICE/CME front-month convention) through **December of (current year + `HORIZON_YEARS`)**, where `HORIZON_YEARS = 3`. The `count` is **computed from the date**, never hardcoded — so the curve never "ages out". Today (2026-06) that is **Aug 2026 → Dec 2029** (~41 contracts). The previous fixed `count = 24` ended at Jul 2028, which left Aug–Dec 2028 off the curve; `useMarketDrivers` (`/stock-guide`) needs all of 2028 for the `avg_brent_2028` dynamic driver, hence the extension.
+
+Illiquid contracts with no Yahoo price are still dropped (`price !== null && price > 0`). Each cache-miss fires one fetch per contract in parallel (≈41 today), cached 24h via `next: { revalidate: 86400 }` — accepted. The `FuturesCurveChart` card auto-spaces its X labels by available width (`xStep`), so the longer curve stays legible.
+
 **Nunca** chame Yahoo Finance direto do componente — cai em CORS.
 
 Cuidado com **rate limits** do Yahoo. Polling agressivo pode bloquear o IP.
