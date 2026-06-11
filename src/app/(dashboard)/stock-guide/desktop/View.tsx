@@ -215,6 +215,16 @@ function CompsTable({
         .sg-comps-wrap tbody tr:not([data-sel="1"]):hover > td {
           background: #f3f6fb !important;
         }
+        /* Hide native number-input spinners on the driver stepper (custom −/+ buttons only) */
+        .sg-axis-stepper-input {
+          appearance: textfield;
+          -moz-appearance: textfield;
+        }
+        .sg-axis-stepper-input::-webkit-outer-spin-button,
+        .sg-axis-stepper-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
       `}</style>
       <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%" }}>
         <thead>
@@ -1047,6 +1057,7 @@ function AxisStepper({
               −
             </button>
             <input
+              className="sg-axis-stepper-input"
               type="number"
               inputMode="decimal"
               step={GRID_AXIS_STEP}
