@@ -44,7 +44,7 @@ import {
   formatStakePct,
   productUnitLabel,
   BRAND_ORANGE,
-  PALETTE,
+  COMPANY_FIELD_COLORS,
   COMPANY_TOTAL_LABEL,
   FIXED_COMPANIES,
   type Product,
@@ -136,7 +136,13 @@ function buildMobileChart(
         y: entries.map(([, v]) => metricDisplay(v, metric) ?? 0),
         line: {
           width: i === 0 ? 2.4 : 1.4,
-          color: i === 0 ? BRAND_ORANGE : PALETTE[(i + 1) % PALETTE.length],
+          // Leader pops orange; followers walk COMPANY_FIELD_COLORS (PALETTE
+          // minus orange) so no follower can re-issue orange and collide with
+          // the leader, even past the 12-color wrap.
+          color:
+            i === 0
+              ? BRAND_ORANGE
+              : COMPANY_FIELD_COLORS[(i - 1) % COMPANY_FIELD_COLORS.length],
         },
         hovertemplate: `${d}: %{y:,.1f} ${unit}<extra></extra>`,
       } as PlotData;
@@ -1006,7 +1012,11 @@ function RankingCard({
         </span>
       }
       sparkline={sparkValues.length >= 2 ? sparkValues : undefined}
-      sparklineColor={isLeader ? BRAND_ORANGE : PALETTE[(rank) % PALETTE.length]}
+      sparklineColor={
+        isLeader
+          ? BRAND_ORANGE
+          : COMPANY_FIELD_COLORS[(rank - 2) % COMPANY_FIELD_COLORS.length]
+      }
       rightSlot={
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
           <span

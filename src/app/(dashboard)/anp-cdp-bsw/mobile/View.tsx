@@ -40,8 +40,8 @@ import BarrelLoading from "../../../../components/dashboard/BarrelLoading";
 
 import {
   useAnpCdpBswData,
-  PALETTE,
   BRAND_ORANGE,
+  NON_LEADER_PALETTE,
 } from "../useAnpCdpBswData";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -66,7 +66,13 @@ function buildFieldTraces(
     const subset = fieldPoints
       .filter((p) => p.campo === campo)
       .sort((a, b) => a.pct_voip - b.pct_voip);
-    const color = i === 0 ? BRAND_ORANGE : PALETTE[(i + 1) % PALETTE.length];
+    // Leader pops orange; followers walk NON_LEADER_PALETTE (PALETTE minus
+    // orange) so no follower can ever re-issue orange and collide with the
+    // leader, even when more than 12 fields are plotted (wrap-safe).
+    const color =
+      i === 0
+        ? BRAND_ORANGE
+        : NON_LEADER_PALETTE[(i - 1) % NON_LEADER_PALETTE.length];
     return {
       type: "scatter",
       mode: MOBILE_LINE_STYLE,

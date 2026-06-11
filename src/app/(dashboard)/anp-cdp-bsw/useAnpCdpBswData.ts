@@ -41,6 +41,18 @@ import {
 export const BRAND_ORANGE = "#FF5000";
 export { PALETTE };
 
+// Non-highlight rotation: PALETTE with BRAND_ORANGE removed. The leader trace
+// (first selected field / well) is always pinned to BRAND_ORANGE, so the
+// follower traces must never be able to re-issue orange — otherwise a follower
+// would collide with the leader. Since the 2026-06-10 palette reorder orange
+// sits at index 1, so the old `PALETTE[(i + 1) % len]` offset handed the FIRST
+// follower brand orange AND re-issued it again on wrap (charts can plot up to
+// 20 fields > 12 colors). Filtering orange out (rather than offsetting the
+// index) keeps the guarantee through any future PALETTE reorder.
+export const NON_LEADER_PALETTE: string[] = PALETTE.filter(
+  (c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase(),
+);
+
 export type ViewMode = "well" | "field";
 export type LineStyle = "markers" | "markers+lines";
 
@@ -123,9 +135,10 @@ export interface UseAnpCdpBswData {
 // `PlotData[]` array. Same logic as desktop builder but:
 //   • No layout (MobileChart handles axes / font / margins).
 //   • Smaller markers / lines so legibility on a ~360px chart stays high.
-//   • Leader trace (first selected field) gets BRAND_ORANGE; followers use
-//     the PALETTE rotated by selection index + 1 so the leader is always
-//     visually privileged (mockup parity with stocks/anp-cdp mobile).
+//   • Leader trace (first selected field) gets BRAND_ORANGE; followers walk
+//     NON_LEADER_PALETTE (PALETTE minus orange) so the leader is always
+//     visually privileged and no follower can ever collide with it on wrap
+//     (mockup parity with stocks/anp-cdp mobile).
 
 function buildMobileChart(
   wellPoints: AnpCdpBswPoint[],
@@ -149,7 +162,10 @@ function buildMobileChart(
     }
     return seen.map((poco, i) => {
       const subset = wellPoints.filter((p) => p.poco === poco);
-      const color = i === 0 ? BRAND_ORANGE : PALETTE[(i + 1) % PALETTE.length];
+      const color =
+        i === 0
+          ? BRAND_ORANGE
+          : NON_LEADER_PALETTE[(i - 1) % NON_LEADER_PALETTE.length];
       return {
         type: "scattergl",
         mode,
@@ -169,7 +185,10 @@ function buildMobileChart(
     const subset = fieldPoints
       .filter((p) => p.campo === campo)
       .sort((a, b) => a.pct_voip - b.pct_voip);
-    const color = i === 0 ? BRAND_ORANGE : PALETTE[(i + 1) % PALETTE.length];
+    const color =
+      i === 0
+        ? BRAND_ORANGE
+        : NON_LEADER_PALETTE[(i - 1) % NON_LEADER_PALETTE.length];
     return {
       type: "scatter",
       mode,

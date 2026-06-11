@@ -65,9 +65,9 @@ export type {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // Chart colors come from the canonical identity palette — never hard-coded hex
-// (docs/design/identity.md). PALETTE position 0 is navy (#1f2937); BRAND_ORANGE
-// (#FF5000) sits at position 1. The "Company total" headline line is always
-// pinned to BRAND_ORANGE, so per-field colors EXCLUDE orange (see
+// (docs/design/identity.md). PALETTE position 0 is very dark blue (#000512);
+// BRAND_ORANGE (#FF5000) sits at position 1. The "Company total" headline line
+// is always pinned to BRAND_ORANGE, so per-field colors EXCLUDE orange (see
 // COMPANY_FIELD_COLORS / companyFieldColorMap) to avoid colliding with the total
 // line in the same chart. Re-exported here so both Views import their chart
 // colors from the shared hook (single source of truth) and never invent a hex.
@@ -397,10 +397,13 @@ export function orderCompanyFieldDims(rows: UnifiedRow[], metric: Metric): strin
  * traces, so no field may receive orange or it would collide with the total
  * line. We filter orange out of the sequence (rather than offsetting the index)
  * so the guarantee survives any future PALETTE reorder — the position of orange
- * in the array no longer matters. PALETTE pos 0 is now navy (#1f2937), a
- * legitimate field color here since the company chart has no fixed navy series.
+ * in the array no longer matters. PALETTE pos 0 is now very dark blue (#000512),
+ * a legitimate field color here since the company chart has no fixed navy series.
+ *
+ * Exported so the mobile View reuses the exact same orange-safe sequence for its
+ * Explore-sheet chart traces and ranking sparklines (single source of truth).
  */
-const COMPANY_FIELD_COLORS: string[] = PALETTE.filter((c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase());
+export const COMPANY_FIELD_COLORS: string[] = PALETTE.filter((c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase());
 
 /**
  * Canonical field → color map for a company's charts. `orderedDims` must come
