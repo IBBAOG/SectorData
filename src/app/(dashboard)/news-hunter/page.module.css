@@ -578,8 +578,13 @@
   .searchBar { margin: 8px 16px; }
   .quickChips { margin: 0 16px 4px; }
   .headlinesSection { margin: 10px 16px 30px; }
-  .headline { flex-wrap: wrap; }
-  .hlink { flex-wrap: wrap; }
-  .htitle { white-space: normal; overflow: visible; text-overflow: clip; }
-  .hage { margin-left: 16px; padding-left: 0; }
+  /* NOTE: this stylesheet is consumed ONLY by desktop/View.tsx. A narrow
+     desktop browser stays on the desktop view by design (useIsMobile keys off
+     UA, never resize), and that view virtualizes the headline list with a
+     FIXED 33px row height (DESKTOP_ITEM_H). The pre-dual-view wrap overrides
+     that used to live here (.headline/.hlink flex-wrap, .htitle white-space:
+     normal, .hage repositioning) let rows grow to multiple lines while
+     react-window kept stacking them every 33px → rows painted on top of each
+     other. They are removed: desktop headline rows MUST stay single-line
+     nowrap + ellipsis at any viewport width. */
 }
