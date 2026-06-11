@@ -30,6 +30,19 @@ export type StockGuideVolumeUnit = "kbpd" | "thousand_m3";
 export type StockGuideRecommendation = "OP" | "MP" | "UP";
 
 /**
+ * Consolidated-sensitivity panel a single-row static table is merged into. A
+ * sensitivity table tagged `definition.panel` is rendered as ONE ROW inside the
+ * matching always-visible block of `/stock-guide` (instead of as a standalone
+ * matrix):
+ *   • `"brent"`  → the LEFT "Brent sensitivity" block (e.g. FCFE yield 2026,
+ *     Div yield 2026 / 2027 — each a single-company × Brent-scenario table).
+ *   • `"margin"` → the RIGHT "EBITDA margin sensitivity" block.
+ * Any other value is ignored at the mapper (the table then renders via the
+ * generic full-width fallback). See `SensitivityTable["definition"].panel`.
+ */
+export type SensitivityPanelKey = "brent" | "margin";
+
+/**
  * Raw comps row as returned by `get_stock_guide_comps()`, with every numeric
  * field already coerced to a JS `number | null` by the rpc.ts wrapper (Postgres
  * `numeric` arrives as a string over PostgREST).
@@ -99,6 +112,12 @@ export interface StockGuideCompany {
   /** Forward volumes in `volume_unit` (kbpd or thousand m³). */
   volumes_y1: number | null;
   volumes_y2: number | null;
+  /**
+   * URL to the company's downloadable financial model (externally hosted Excel).
+   * Surfaced as a per-row "Model" download link in the comps table. NULL/empty
+   * (server coerces blank → NULL) → no model available. Migration `20260626000000`.
+   */
+  model_url: string | null;
 }
 
 /**
@@ -389,6 +408,25 @@ export interface SensitivityTable {
      * `get_stock_guide_scenario_grid`.
      */
     grid?: SensitivityGridBlock;
+    /**
+     * Optional CONSOLIDATED-PANEL tag (2026-06-11). When set to a valid
+     * `SensitivityPanelKey` ("brent" / "margin"), a single-row STATIC table is
+     * merged as ONE ROW into the matching always-visible block on the dashboard
+     * (the LEFT Brent block / the RIGHT EBITDA-margin block) instead of being
+     * rendered as a standalone matrix. Only honored for non-grid, single-company
+     * (row-axis kind "company" with exactly one company) tables; a table that
+     * violates that guard, or carries an unknown value, falls through to the
+     * generic full-width fallback. The rpc.ts mapper validates the value (only
+     * "brent"/"margin" survive). Absent → the table renders standalone.
+     */
+    panel?: SensitivityPanelKey;
+    /**
+     * Optional row label shown for this table inside its consolidated panel
+     * (e.g. "FCFE yield 2026"). Falls back to `title` when empty/absent. Only
+     * meaningful alongside a valid `panel` tag. Non-empty string passed through
+     * verbatim by the rpc.ts mapper.
+     */
+    row_label?: string;
   };
   display_order: number;
 }

@@ -4352,6 +4352,10 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     dividends_y2: toNumOrNull(r.dividends_y2),
     volumes_y1: toNumOrNull(r.volumes_y1),
     volumes_y2: toNumOrNull(r.volumes_y2),
+    model_url:
+      r.model_url != null && String(r.model_url).trim() !== ""
+        ? String(r.model_url)
+        : null,
   };
 }
 
@@ -4497,7 +4501,8 @@ export async function rpcAdminGetStockGuideSensitivity(
  * EX-TAX-CREDIT row's P/E denominator + displayed Net Income when filled; empty =
  * the companion uses the reported `net_income_yN`; the normal row always uses
  * reported), `fcfe_y1/y2`, `dividends_y1/y2`,
- * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
+ * `volumes_y1/y2`, and `model_url` (link to the downloadable financial model;
+ * empty/whitespace coerces to NULL server-side). The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the
  * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
  * Passed as JSONB; the server coerces numerics and sets `updated_by = auth.uid()`.
@@ -4779,6 +4784,17 @@ function mapSensitivityTable(r: Record<string, unknown>): SensitivityTable {
   // mesh). Axis + output metadata only — stored verbatim by the upsert RPC.
   const grid = mapGridBlock(def.grid);
   if (grid) out.definition.grid = grid;
+  // CONSOLIDATED-PANEL tags (2026-06-11): a single-row static table can be merged
+  // into an always-visible block on the dashboard. Pass `panel` through ONLY when
+  // it is one of the two known keys (anything else is ignored → the table falls to
+  // the generic fallback), and `row_label` through only when it is a non-empty
+  // string. The dashboard owns the single-row / company-axis guard.
+  if (def.panel === "brent" || def.panel === "margin") {
+    out.definition.panel = def.panel;
+  }
+  if (typeof def.row_label === "string" && def.row_label.trim() !== "") {
+    out.definition.row_label = def.row_label;
+  }
   return out;
 }
 
@@ -4984,6 +5000,14 @@ export async function rpcAdminDeleteStockGuideDriver(
  * cells, cells_secondary? }`), `display_order`. Passed as JSONB; the server
  * validates `value_mode`/object shape and sets `updated_by = auth.uid()`.
  * Returns the table's id.
+ *
+ * `definition` may also carry the optional CONSOLIDATED-PANEL keys
+ * `panel` (`"brent" | "margin"`) and `row_label` (string) — when present, the
+ * dashboard merges a single-row static table as one row into the matching
+ * always-visible block (`mapSensitivityTable` validates them on read; the server
+ * stores the `definition` jsonb verbatim). The scenario-grid `grid` block is
+ * likewise stored verbatim. These keys are written by the admin Sensitivities
+ * editor.
  *
  * Backed by SECURITY DEFINER RPC `admin_upsert_stock_guide_sensitivity_table`.
  */

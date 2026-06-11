@@ -6,6 +6,15 @@ Entries newest first.
 
 ---
 
+## 2026-06-11 — `/stock-guide` sensitivity section redesign (consolidated always-visible panels)
+
+- The sensitivity section is now **ALWAYS VISIBLE and selection-independent** — the comps-row click no longer drives it (`selectedTicker`/`selectTicker`/`selectedTables` removed from the shared hook; desktop drill-down panel + mobile BottomSheet gone).
+- `stock_guide_sensitivities.definition` jsonb gained two OPTIONAL keys — `panel` (`brent`/`margin`) + `row_label` (string). **No schema change** (jsonb-only contract extension). Validated client-side at `mapSensitivityTable`; stored/returned verbatim by `admin_upsert_stock_guide_sensitivity_table` / `get_stock_guide_sensitivity_tables`. The Admin Panel sensitivity editor exposes Panel + Row label fields and round-trips them.
+- **Panel layout (iteration 2, `20260627000000`):** each panel renders **ONE TABLE PER DRIVER** (titled e.g. "Avg. Brent 2026 (USD/bbl)" / "Avg. Brent 2027 (USD/bbl)" from the driver's stored `name`). Inside a driver table, each tagged table contributes a **gray metric-band row** (band label = `row_label ?? title`, e.g. "FCFE Yield" / "Dividend Yield") followed by **one row per company** in that table's row_axis — **multi-company axes are now canonical** (`20260627000000` expanded tables 10-13 to PETR4/PRIO3/RECV3/BRAV3 × scenarios 50-150). A **single column-axis interpolation marker** per driver table (all rows share the driver); the per-row marker machinery from iteration 1 was removed. Typed-null cells render **blank**; "—" only for typed-but-not-yet-computable live cells. Untagged static tables fall to a generic full-width fallback.
+- Scenario-grid slider tables are also always visible; the ~194k-point mesh is fetched **lazily on scroll-into-view** (`useInViewOnce` IntersectionObserver + `ensureGridLoaded`), not on page load.
+- Migration `20260625000000_stock_guide_sensitivity_panels.sql` (DML-only, applied to prod): tags table ids 10-13 with `panel`/`row_label`, seeds 6 static margin drivers ("Vibra/Ultrapar EBITDA margin 2Q26 / 2026E / 2027E", BRL/m³, `current_value` NULL) and deletes the unreferenced junk driver id 4. Migration `20260627000000` (iteration 2) reshaped the panel layout above + expanded tables 10-13 to 4 companies × scenarios 50-150.
+- See `docs/app/stock-guide.md`, `docs/supabase/PRD.md` (stock-guide schema row — `definition` panel/row_label extension).
+
 ## 2026-06-11 — `/stock-guide` scenario-grid RPC paginated (PostgREST 50k truncation fixed)
 
 - `get_stock_guide_scenario_grid` was DROP+CREATEd with pagination params: `(p_sensitivity_id bigint)` → `(p_sensitivity_id bigint, p_limit integer DEFAULT NULL, p_offset integer DEFAULT 0)`. Same `RETURNS TABLE(ticker, metric, x_value, y_value, z_value, primary_value)`, same hide-aware SECURITY DEFINER semantics, same deterministic `ORDER BY (ticker, metric, x_value, y_value, z_value)` — `LIMIT p_limit OFFSET p_offset` appended (`LIMIT NULL` = all rows).

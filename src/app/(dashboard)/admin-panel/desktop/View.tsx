@@ -35,6 +35,7 @@ import type {
   SensitivityAxis,
   SensitivityTableAdmin,
   StockGuideDriver,
+  SensitivityPanelKey,
 } from "../../../../types/stockGuide";
 import {
   isDynamicSource,
@@ -270,6 +271,8 @@ export default function DesktopView(): React.ReactElement | null {
     handleCancelSgTableEdit,
     handleChangeSgTableField,
     handleChangeSgTableValueMode,
+    handleChangeSgTablePanel,
+    handleChangeSgTableRowLabel,
     handleChangeSgTableSingleCompany,
     handleChangeSgAxisKind,
     handleChangeSgAxisDriver,
@@ -2083,6 +2086,19 @@ export default function DesktopView(): React.ReactElement | null {
                           {renderSgNumField("shares_outstanding", "Shares outstanding (absolute)", {
                             hint: "used for Market cap = shares × live price",
                           })}
+                          <label style={{ display: "block", gridColumn: "1 / -1" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#888", marginBottom: 4 }}>Financial model URL</span>
+                            <input
+                              type="url"
+                              value={sgEditorRow.model_url}
+                              onChange={(e) => handleChangeSgField("model_url", e.target.value)}
+                              placeholder="https://… (link to the downloadable model)"
+                              style={{ ...SG_INPUT_STYLE }}
+                            />
+                            <span style={{ display: "block", fontSize: 10.5, color: "#9ca3af", marginTop: 3 }}>
+                              Shows a per-row download link in the comps table. Empty = no model.
+                            </span>
+                          </label>
                         </div>
 
                         {/* Live-derivation hint */}
@@ -2562,6 +2578,8 @@ export default function DesktopView(): React.ReactElement | null {
                   onCancelEdit={handleCancelSgTableEdit}
                   onChangeField={handleChangeSgTableField}
                   onChangeValueMode={handleChangeSgTableValueMode}
+                  onChangePanel={handleChangeSgTablePanel}
+                  onChangeRowLabel={handleChangeSgTableRowLabel}
                   onChangeSingleCompany={handleChangeSgTableSingleCompany}
                   onChangeAxisKind={handleChangeSgAxisKind}
                   onChangeAxisDriver={handleChangeSgAxisDriver}
@@ -2870,6 +2888,10 @@ interface SensitivityBuilderProps {
   onCancelEdit: () => void;
   onChangeField: (field: "title" | "metric_label" | "unit" | "display_order", value: string) => void;
   onChangeValueMode: (mode: SgValueMode) => void;
+  /** Set the consolidated-panel tag of a static table ("" / "brent" / "margin"). */
+  onChangePanel: (panel: "" | SensitivityPanelKey) => void;
+  /** Set the short row label shown inside the consolidated panel. */
+  onChangeRowLabel: (rowLabel: string) => void;
   onChangeSingleCompany: (ticker: string) => void;
   onChangeAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
   onChangeAxisDriver: (axis: "row" | "col", driverId: string) => void;
@@ -2925,6 +2947,7 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
     validationError, deleteConfirm, rowLabels, colLabels, baseInputMeta,
     previewCell, previewQuotesLoading, companyTickers, drivers,
     inputStyle, onSelect, onNew, onCancelEdit, onChangeField, onChangeValueMode,
+    onChangePanel, onChangeRowLabel,
     onChangeSingleCompany, onChangeAxisKind, onChangeAxisDriver, onToggleAxisCompany,
     onAddScenario, onChangeScenario, onRemoveScenario, onChangeCell,
     onChangeCellSecondary,
@@ -3709,6 +3732,41 @@ function SensitivityBuilder(props: SensitivityBuilderProps): React.ReactElement 
                   />
                 </label>
               </div>
+
+              {/* Consolidated-panel tag (single-row static tables only) */}
+              {!draft.grid && (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14, marginBottom: 18 }}>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Panel</span>
+                    <select
+                      value={draft.panel}
+                      onChange={(e) => onChangePanel(e.target.value as "" | SensitivityPanelKey)}
+                      style={{ ...inputStyle, cursor: "pointer" }}
+                    >
+                      <option value="">None (standalone table)</option>
+                      <option value="brent">Brent sensitivity</option>
+                      <option value="margin">EBITDA margin sensitivity</option>
+                    </select>
+                    <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                      Renders this table as a row inside the consolidated block on /stock-guide
+                      (single-row, single-company tables only).
+                    </div>
+                  </label>
+                  <label style={{ display: "block" }}>
+                    <span style={labelSpan}>Row label</span>
+                    <input
+                      type="text"
+                      value={draft.rowLabel}
+                      onChange={(e) => onChangeRowLabel(e.target.value)}
+                      placeholder="e.g. FCFE yield 2026"
+                      style={{ ...inputStyle }}
+                    />
+                    <div style={{ fontSize: 11, color: "#666", marginTop: 4 }}>
+                      Short row label inside the consolidated block (defaults to the title).
+                    </div>
+                  </label>
+                </div>
+              )}
 
               {draft.grid ? (
                 /* ── Scenario-grid (interpolated) editor ───────────────────── */
