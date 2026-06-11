@@ -19,14 +19,25 @@ const PRODUCTS: { dbName: string; sheetName: string; segments: (string | null)[]
   { dbName: "Otto-Cycle",       sheetName: "Otto-Cycle",      segments: ["Retail", "B2B", null] },
 ];
 
+// Mirrors the on-screen entity→color identity from
+// src/app/(dashboard)/market-share/useMarketShareData.ts (COLORS_IND +
+// COLORS_BIG3), so exported XLSX chart series match the dashboard. Values are
+// OOXML hex (no leading '#'). All are official-palette members
+// (src/lib/plotlyDefaults.ts COMPANY_COLORS): Vibra Green, Raizen Brown,
+// Ipiranga Blue, Others canonical Dark Grey. "Big-3" (synthetic aggregate)
+// takes the official Blue — it never co-renders with Ipiranga (the big3 flag is
+// mutually exclusive per chart). Brand orange (#FF5000) is NOT pinned to an
+// entity here (reserved for positional-2nd / highlight roles).
 const PLAYER_COLORS: Record<string, string> = {
-  "Vibra":    "f26522",
-  "Raizen":   "1a1a1a",
-  "Ipiranga": "73C6A1",
-  "Others":   "A9A9A9",
-  "Big-3":    "FF5000",
+  "Vibra":    "73C6A1",  // Green
+  "Raizen":   "BF3F00",  // Brown
+  "Ipiranga": "094DFF",  // Blue
+  "Others":   "808080",  // Dark Grey (canonical Others)
+  "Big-3":    "094DFF",  // Blue (synthetic aggregate)
 };
-const DEFAULT_COLOR = "4472C4";
+// Fallback for unmapped Others-mode distributors — an official-palette member
+// (Light Orange, PALETTE pos 3) so exports stay inside the closed palette.
+const DEFAULT_COLOR = "FFAE66";
 
 function getPlayerColor(player: string): string {
   return PLAYER_COLORS[player] ?? DEFAULT_COLOR;

@@ -44,29 +44,34 @@ import {
   type AnpGlpMsFilters,
 } from "@/lib/rpc";
 import { useExportSize } from "@/hooks/useExportSize";
+import { PALETTE, COMPANY_COLORS } from "@/lib/plotlyDefaults";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Group key used for the dynamic Big-3 (top-3 distributors by LPG volume). */
 export const BIG3_LABEL = "Big-3";
 
+// Big-3 aggregate line color. "Big-3" is the dynamic top-3 distributor bucket,
+// not a named company in COMPANY_COLORS, so it takes the official Blue
+// (#094DFF). Brand orange (#FF5000) stays reserved for positional-2nd /
+// highlight. "Others" is the canonical Dark Grey (#808080).
 export const COLORS_BIG3: Record<string, string> = {
-  "Big-3": "#1D4080",
-  Others: "#A9A9A9",
+  "Big-3": "#094DFF",
+  Others:  COMPANY_COLORS.Others,  // #808080 Dark Grey (canonical Others)
 };
 
-// Neutral palette for Individual mode (LPG players are not the fixed fuel trio,
-// so we colour them from a stable discrete sequence keyed by rank).
-const PLOTLY_COLORS = [
-  "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
-  "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52",
-];
+// Discrete color sequence for Individual mode (LPG distributors are not the
+// fixed fuel trio, so we colour them by rank from the official 12-color
+// rotation — PALETTE in src/lib/plotlyDefaults.ts). No color outside the
+// closed palette.
+const PLOTLY_COLORS = PALETTE;
 export function dynColor(i: number): string {
   return PLOTLY_COLORS[i % PLOTLY_COLORS.length];
 }
 
-// Mobile chart palette (leader = brand orange, rest = neutral hues)
-export const MOBILE_PALETTE = ["#ff5000", "#3b82f6", "#8b5cf6", "#14b8a6", "#94a3b8"];
+// Mobile chart palette — mirrors the 12-color official rotation (PALETTE in
+// src/lib/plotlyDefaults.ts).
+export const MOBILE_PALETTE = PALETTE;
 
 export type Mode = "Individual" | "Big-3" | "Others";
 export const MODE_OPTIONS: Mode[] = ["Individual", "Big-3", "Others"];

@@ -210,7 +210,7 @@ The unified export library wave (`src/lib/export/`, owners `worker_subgerente-ap
 
 Why:
 
-- The Excel workbook embeds OOXML line charts (4 sheets × 3–4 segment blocks, cores fixas Vibra `#f26522` / Raizen `#1a1a1a` / Ipiranga `#73C6A1` / Big-3 `#FF5000` / Others `#A9A9A9`).
+- The Excel workbook embeds OOXML line charts (4 sheets × 3–4 segment blocks). Series colors mirror the on-screen entity identity from the official-palette migration (2026-06-10): Vibra `#73C6A1` (Green) / Raizen `#BF3F00` (Brown) / Ipiranga `#094DFF` (Blue) / Big-3 `#094DFF` (Blue) / Others `#808080` (Dark Grey). `PLAYER_COLORS` in `src/lib/exportExcel.ts` is the source of these OOXML hexes and must stay in sync with `COLORS_IND` / `COLORS_BIG3` in `useMarketShareData.ts` (both now pinned to `COMPANY_COLORS` in `src/lib/plotlyDefaults.ts`). Brand orange `#FF5000` is no longer pinned to any entity (reserved for positional-2nd / highlight).
 - The `<c:numFmt formatCode='0"%"'>` single-quoted-attribute trick (see Pegadinha at the bottom of this section) has been validated in production for years; the new core's chart support has not yet been verified end-to-end against this corner case.
 - The OOXML showcase is too valuable to risk during the migration wave — recovering from a regression would mean re-implementing the chart builder under time pressure.
 

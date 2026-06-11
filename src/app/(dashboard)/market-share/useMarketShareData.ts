@@ -44,39 +44,43 @@ import { resolverDatas } from "@/lib/filterUtils";
 import { useExportSize } from "@/hooks/useExportSize";
 import { downloadMarketShareExcel } from "@/lib/exportExcel";
 import { downloadCsv } from "@/lib/exportCsv";
+import { PALETTE, COMPANY_COLORS } from "@/lib/plotlyDefaults";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const BIG3_MEMBERS = ["Vibra", "Ipiranga", "Raizen"];
 
+// Individual-mode entity colors. Pinned to the canonical COMPANY_COLORS map
+// (src/lib/plotlyDefaults.ts) so each distributor looks identical across every
+// dashboard. All values are official-palette members; "Others" is #808080 grey.
 export const COLORS_IND: Record<string, string> = {
-  Vibra: "#f26522",
-  Raizen: "#1a1a1a",
-  Ipiranga: "#73C6A1",
-  Others: "#A9A9A9",
+  Vibra:    COMPANY_COLORS.Vibra,     // #73C6A1 Green
+  Raizen:   COMPANY_COLORS.Raizen,    // #BF3F00 Brown
+  Ipiranga: COMPANY_COLORS.Ipiranga,  // #094DFF Blue
+  Others:   COMPANY_COLORS.Others,    // #808080 Dark Grey (canonical Others)
 };
 
-// 2026-05-28 chart palette audit: Big-3 line moved from brand-orange to navy.
-// Brand orange is reserved for highlight only (active pills, leader-trace
-// pattern); "Big-3" is a stable recurring entity on the chart, not a
-// transient highlight. Matches the canonical convention used by the other
-// fuel-distribution dashboards (e.g. PRODUCT_COLORS.Diesel = navy).
+// Big-3 line color. "Big-3" is a synthetic aggregate (the Vibra+Ipiranga+Raizen
+// majors), not a named company in COMPANY_COLORS, so it takes the official Blue
+// (#094DFF). It never co-renders with the Individual-mode lines (Big-3 mode is a
+// distinct view), so reusing Blue here causes no in-chart collision. Brand
+// orange (#FF5000) stays reserved for the positional-2nd / highlight roles.
 export const COLORS_BIG3: Record<string, string> = {
-  "Big-3": "#1D4080",
-  Others: "#A9A9A9",
+  "Big-3": "#094DFF",
+  Others:  COMPANY_COLORS.Others,  // #808080 Dark Grey (canonical Others)
 };
 
 export const ALL_PLAYERS_IND = ["Vibra", "Ipiranga", "Raizen", "Others"];
 export const ALL_PLAYERS_BIG3 = ["Big-3", "Others"];
 
-// Mobile chart palette (leader = brand orange, rest = neutral hues)
-export const MOBILE_PALETTE = ["#ff5000", "#3b82f6", "#8b5cf6", "#14b8a6", "#94a3b8"];
+// Mobile chart palette — mirrors the 12-color official rotation (PALETTE in
+// src/lib/plotlyDefaults.ts). Kept as a local alias so mobile views can index
+// positionally without importing PALETTE everywhere.
+export const MOBILE_PALETTE = PALETTE;
 
-// Plotly discrete color sequence for "Others" mode
-const PLOTLY_COLORS = [
-  "#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A",
-  "#19D3F3", "#FF6692", "#B6E880", "#FF97FF", "#FECB52",
-];
+// Discrete color sequence for "Others" mode — the official 12-color rotation
+// (PALETTE in src/lib/plotlyDefaults.ts). No color outside the closed palette.
+const PLOTLY_COLORS = PALETTE;
 export function dynColor(i: number): string {
   return PLOTLY_COLORS[i % PLOTLY_COLORS.length];
 }
