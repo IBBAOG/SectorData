@@ -4778,6 +4778,9 @@ export async function rpcGetStockGuideSensitivityTables(
   return rows.map(mapSensitivityTable);
 }
 
+/** Page size for the scenario-grid read. */
+const SCENARIO_GRID_PAGE = 40_000;
+
 /**
  * The multi-axis, multi-metric scenario-grid mesh for ONE scenario-grid
  * sensitivity table: every `(ticker, metric, x_value, y_value, z_value,
@@ -4790,41 +4793,63 @@ export async function rpcGetStockGuideSensitivityTables(
  * with a non-finite coordinate or value is dropped so the interpolator never
  * sees `NaN`.
  *
+ * **Paginated** — a dense 3-axis × multi-metric × multi-ticker mesh easily
+ * exceeds the PostgREST project `max-rows` cap (50,000); a single unpaginated
+ * `SETOF` call would silently truncate to the first 50k rows, starving the
+ * multilinear interpolator of most of the later tickers/metrics (the mesh is
+ * ordered ticker → metric → x → y → z, so truncation drops whole tickers). We
+ * therefore page through the RPC with `p_limit` / `p_offset` (page size 40,000,
+ * safely under the cap) until a short page signals exhaustion. The RPC's
+ * `ORDER BY ticker, metric, x_value, y_value, z_value` is deterministic, so the
+ * limit/offset windows are stable and non-overlapping.
+ *
+ * Pagination counting uses the RAW page length (rows returned by the RPC) — the
+ * NaN-drop below runs AFTER each fetch, so the post-coercion length must NOT be
+ * used to decide whether another page exists.
+ *
  * Lazy / on-demand: the dashboard calls this only when the user selects a
  * scenario-grid table (and caches by `sensitivityId`).
  *
- * Backed by SECURITY DEFINER RPC `get_stock_guide_scenario_grid`.
+ * Backed by SECURITY DEFINER RPC
+ * `get_stock_guide_scenario_grid(p_sensitivity_id, p_limit, p_offset)`.
  */
 export async function rpcGetStockGuideScenarioGrid(
   supabase: SupabaseClient,
   sensitivityId: number,
 ): Promise<ScenarioGridPoint[]> {
-  const { data, error } = await supabase.rpc(
-    "get_stock_guide_scenario_grid",
-    { p_sensitivity_id: sensitivityId },
-  );
-  if (error) throw error;
-  const rows = (data ?? []) as Record<string, unknown>[];
   const out: ScenarioGridPoint[] = [];
-  for (const r of rows) {
-    const x = toNumOrNull(r.x_value);
-    const y = toNumOrNull(r.y_value);
-    const z = toNumOrNull(r.z_value);
-    const v = toNumOrNull(r.primary_value);
-    if (x == null || y == null || z == null || v == null) continue;
-    // Postgres column DEFAULT 'target_price'; coerce a blank/missing metric to it.
-    const metric =
-      r.metric != null && String(r.metric).trim()
-        ? String(r.metric).trim()
-        : "target_price";
-    out.push({
-      ticker: String(r.ticker),
-      metric,
-      x_value: x,
-      y_value: y,
-      z_value: z,
-      primary_value: v,
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase.rpc("get_stock_guide_scenario_grid", {
+      p_sensitivity_id: sensitivityId,
+      p_limit: SCENARIO_GRID_PAGE,
+      p_offset: offset,
     });
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    for (const r of rows) {
+      const x = toNumOrNull(r.x_value);
+      const y = toNumOrNull(r.y_value);
+      const z = toNumOrNull(r.z_value);
+      const v = toNumOrNull(r.primary_value);
+      if (x == null || y == null || z == null || v == null) continue;
+      // Postgres column DEFAULT 'target_price'; coerce a blank/missing metric to it.
+      const metric =
+        r.metric != null && String(r.metric).trim()
+          ? String(r.metric).trim()
+          : "target_price";
+      out.push({
+        ticker: String(r.ticker),
+        metric,
+        x_value: x,
+        y_value: y,
+        z_value: z,
+        primary_value: v,
+      });
+    }
+    // Use the RAW page length (pre-drop) to decide whether another page exists.
+    if (rows.length < SCENARIO_GRID_PAGE) break;
+    offset += SCENARIO_GRID_PAGE;
   }
   return out;
 }

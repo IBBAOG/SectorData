@@ -6,6 +6,14 @@ Entries newest first.
 
 ---
 
+## 2026-06-11 — `/stock-guide` scenario-grid RPC paginated (PostgREST 50k truncation fixed)
+
+- `get_stock_guide_scenario_grid` was DROP+CREATEd with pagination params: `(p_sensitivity_id bigint)` → `(p_sensitivity_id bigint, p_limit integer DEFAULT NULL, p_offset integer DEFAULT 0)`. Same `RETURNS TABLE(ticker, metric, x_value, y_value, z_value, primary_value)`, same hide-aware SECURITY DEFINER semantics, same deterministic `ORDER BY (ticker, metric, x_value, y_value, z_value)` — `LIMIT p_limit OFFSET p_offset` appended (`LIMIT NULL` = all rows).
+- **Bug**: PostgREST caps SETOF RPC responses at the project `max-rows` (50,000). The 194,481-point mesh (7 metrics × 27,783, `sensitivity_id=18`) was silently truncated to 50k on read — the dashboard interpolated on most of the mesh missing, and the Admin count card showed 50,000.
+- **Frontend fix**: the wrapper `rpcGetStockGuideScenarioGrid` now pages with `p_limit=40000` until a raw page returns < 40k rows; the Admin Panel count card switched to `admin_count_stock_guide_scenario_grid` (`count.total`). The deterministic `ORDER BY` makes limit/offset stable across pages.
+- DROP+CREATE re-asserted grants + SECURITY DEFINER + `search_path` (Pegadinha #18).
+- Migration `20260624000000_scenario_grid_pagination.sql` (applied to prod 2026-06-11). See `docs/app/stock-guide.md`, `docs/supabase/PRD.md` (`get_stock_guide_scenario_grid` row) and `docs/master.md` § "Contrato `/stock-guide`".
+
 ## 2026-06-10 — Official brand palette + design-standards skill
 
 - **New canonical skill** `.claude/skills/design-standards/` (`SKILL.md` + `references/colors.md`, `charts.md`, `tables.md`) — single source of truth for chart, table and color decisions. Owned by `worker_designer`; **every worker that generates a chart/table/color decision must read it first**. `.gitignore` restructured (`.claude/` → `.claude/*` + `!.claude/skills/`) so the skill is versioned while the rest of `.claude/` stays local-only.

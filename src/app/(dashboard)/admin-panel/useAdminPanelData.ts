@@ -70,7 +70,6 @@ import {
   rpcAdminGetStockGuideSensitivityTables,
   rpcAdminUpsertStockGuideSensitivityTable,
   rpcAdminDeleteStockGuideSensitivityTable,
-  rpcGetStockGuideScenarioGrid,
   rpcAdminReplaceStockGuideScenarioGrid,
   rpcAdminCountStockGuideScenarioGrid,
   rpcListSubscribableBases,
@@ -2696,6 +2695,9 @@ export function useAdminPanelData(): UseAdminPanelData {
   // Read-only count of uploaded scenario-grid points for the current saved grid
   // table (confidence the Brent-grid Excel upload landed). Re-fetched whenever the
   // selected grid table changes; null for a non-grid / unsaved table.
+  // Uses the dedicated `is_admin()`-guarded count RPC (cheap aggregate) rather
+  // than re-paging the entire mesh just to read `.length` — a dense mesh can be
+  // ~200k points, and counting via the read RPC would page the whole thing.
   const [sgGridPointCount, setSgGridPointCount] = useState<number | null>(null);
   const [sgGridPointCountLoading, setSgGridPointCountLoading] = useState(false);
   // Bumped after a successful upload to force the read-only count to re-fetch.
@@ -2709,9 +2711,9 @@ export function useAdminPanelData(): UseAdminPanelData {
     }
     let cancelled = false;
     setSgGridPointCountLoading(true);
-    rpcGetStockGuideScenarioGrid(supabase, sgGridDraftId)
-      .then((points) => {
-        if (!cancelled) setSgGridPointCount(points.length);
+    rpcAdminCountStockGuideScenarioGrid(supabase, sgGridDraftId)
+      .then((count) => {
+        if (!cancelled) setSgGridPointCount(count.total);
       })
       .catch(() => {
         if (!cancelled) setSgGridPointCount(null);

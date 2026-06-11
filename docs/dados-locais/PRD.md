@@ -236,7 +236,7 @@ Records: `metric = <nome da aba>`, `x_value = coords[0]`, `y_value = coords[1]` 
 |---|---|---|---|
 | `stock_guide_scenario_grid` | `sensitivity_id`, `ticker`, `metric`, `x_value`, `y_value`, `z_value`, `primary_value` | `(sensitivity_id, ticker, metric, x_value, y_value, z_value)` | Este script (service role, bypassa RLS) |
 
-Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`, estendida para multi-eixo por `20260618200000_stock_guide_scenario_grid_multi_axis.sql` (ALTER + PK 5-col) e para multi-métrica por `20260619000000_stock_guide_scenario_grid_multi_metric.sql` (`metric text NOT NULL DEFAULT 'target_price'` + PK 6-col + RPC recriada com a coluna `metric`). RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id)`; escritas só via service role.
+Tabela criada pela migration `20260612000000_stock_guide_scenario_grid.sql`, estendida para multi-eixo por `20260618200000_stock_guide_scenario_grid_multi_axis.sql` (ALTER + PK 5-col) e para multi-métrica por `20260619000000_stock_guide_scenario_grid_multi_metric.sql` (`metric text NOT NULL DEFAULT 'target_price'` + PK 6-col + RPC recriada com a coluna `metric`). RLS habilitada, sem policies — leituras via RPC hide-aware `get_stock_guide_scenario_grid(p_sensitivity_id, p_limit DEFAULT NULL, p_offset DEFAULT 0)` (paginada desde `20260624000000` — o frontend pagina em batches de 40k contra o cap de 50k max-rows do PostgREST); escritas só via service role.
 
 ### Script de upload (v2) — fallback de automação
 
