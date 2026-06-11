@@ -634,11 +634,7 @@ function InterpMarker({
   // frac=1 → current value sits at the boundary; frac→0 → near the previous
   // scenario, so we slide the line back by (1−frac)·GAP into the previous cell.
   const slide = -(1 - Math.min(Math.max(frac, 0), 1)) * INTERP_GAP_PX;
-  // A thin orange line + a small triangle pointing into the matrix.
-  const tri =
-    orientation === "horizontal"
-      ? { borderLeft: "5px solid transparent", borderRight: "5px solid transparent", borderTop: `6px solid ${BRAND_ORANGE}` }
-      : { borderTop: "5px solid transparent", borderBottom: "5px solid transparent", borderLeft: `6px solid ${BRAND_ORANGE}` };
+  // A thin continuous orange line (no arrowhead).
   return (
     <span
       aria-hidden="true"
@@ -650,17 +646,7 @@ function InterpMarker({
         background: BRAND_ORANGE,
         zIndex: 1,
       }}
-    >
-      <span
-        style={{
-          position: "absolute",
-          ...(orientation === "horizontal" ? { top: -1, left: -4 } : { left: -1, top: -4 }),
-          width: 0,
-          height: 0,
-          ...tri,
-        }}
-      />
-    </span>
+    />
   );
 }
 
