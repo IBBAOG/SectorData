@@ -629,14 +629,6 @@ function InterpMarker({
 
 // ── One sensitivity table (matrix) ────────────────────────────────────────────
 
-const VALUE_MODE_BADGE: Record<SensitivityTable["value_mode"], string> = {
-  absolute: "Absolute",
-  yield: "Yield",
-  pe: "P/E",
-  ev_ebitda: "EV/EBITDA",
-  upside: "Upside",
-};
-
 function SensitivityTableView({
   table,
   selectedTicker,
@@ -663,17 +655,6 @@ function SensitivityTableView({
   // Derived modes are "live": render "—" while quotes load.
   const isLive = table.value_mode !== "absolute";
 
-  // Badge text: "FCFE · BRL mn" or "EV/EBITDA · ×" or "FCFE Yield · %".
-  const unitForBadge =
-    table.value_mode === "absolute"
-      ? table.unit
-      : table.value_mode === "yield" || table.value_mode === "upside"
-        ? "%"
-        : "×";
-  const badge = `${table.metric_label || VALUE_MODE_BADGE[table.value_mode]}${
-    unitForBadge ? ` · ${unitForBadge}` : ""
-  }`;
-
   const cellBase: React.CSSProperties = {
     ...TD_BASE,
     padding: "8px 14px",
@@ -686,7 +667,7 @@ function SensitivityTableView({
 
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* Table header: title + badge */}
+      {/* Table header: title */}
       <div
         style={{
           display: "flex",
@@ -705,22 +686,6 @@ function SensitivityTableView({
           }}
         >
           {table.title}
-        </span>
-        <span
-          style={{
-            display: "inline-block",
-            padding: "2px 9px",
-            borderRadius: 4,
-            background: "rgba(255,80,0,0.10)",
-            color: BRAND_ORANGE,
-            fontSize: 10.5,
-            fontWeight: 700,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-            fontFamily: "Arial, Helvetica, sans-serif",
-          }}
-        >
-          {badge}
         </span>
       </div>
 
@@ -1137,26 +1102,10 @@ function GridPanel({
 }): React.ReactElement {
   return (
     <div style={{ marginBottom: 28 }}>
-      {/* Title + grid badge */}
+      {/* Title */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
         <span style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>
           {table.title}
-        </span>
-        <span
-          style={{
-            display: "inline-block",
-            padding: "2px 9px",
-            borderRadius: 4,
-            background: "rgba(255,80,0,0.10)",
-            color: BRAND_ORANGE,
-            fontSize: 10.5,
-            fontWeight: 700,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-            fontFamily: "Arial, Helvetica, sans-serif",
-          }}
-        >
-          Scenario grid · {model.outputs.map((o) => o.label).join(" · ")}
         </span>
       </div>
       <div

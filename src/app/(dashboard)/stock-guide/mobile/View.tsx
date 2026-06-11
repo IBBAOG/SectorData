@@ -533,14 +533,6 @@ function mobileResolveAxis(
   return { labels, marker, caption };
 }
 
-const MOBILE_VALUE_MODE_BADGE: Record<SensitivityTable["value_mode"], string> = {
-  absolute: "Absolute",
-  yield: "Yield",
-  pe: "P/E",
-  ev_ebitda: "EV/EBITDA",
-  upside: "Upside",
-};
-
 // ─── One sensitivity table (mobile card) ──────────────────────────────────────
 
 function MobileSensitivityTable({
@@ -565,36 +557,11 @@ function MobileSensitivityTable({
   const colAxis = mobileResolveAxis(table.definition.col_axis, ctx);
   const isLive = table.value_mode !== "absolute";
 
-  const unitForBadge =
-    table.value_mode === "absolute"
-      ? table.unit
-      : table.value_mode === "yield" || table.value_mode === "upside"
-        ? "%"
-        : "×";
-  const badge = `${table.metric_label || MOBILE_VALUE_MODE_BADGE[table.value_mode]}${
-    unitForBadge ? ` · ${unitForBadge}` : ""
-  }`;
-
   return (
     <div style={{ marginBottom: 22 }}>
-      {/* Title + badge */}
+      {/* Title */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)" }}>{table.title}</span>
-        <span
-          style={{
-            display: "inline-block",
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: "rgba(255,80,0,0.10)",
-            color: MOBILE_ACCENT,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-          }}
-        >
-          {badge}
-        </span>
       </div>
 
       {colAxis.labels.length === 0 || rowAxis.labels.length === 0 ? (
@@ -967,24 +934,9 @@ function MobileGridPanel({
 }): React.ReactElement {
   return (
     <div style={{ marginBottom: 22 }}>
-      {/* Title + grid badge */}
+      {/* Title */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)" }}>{table.title}</span>
-        <span
-          style={{
-            display: "inline-block",
-            padding: "2px 8px",
-            borderRadius: 4,
-            background: "rgba(255,80,0,0.10)",
-            color: MOBILE_ACCENT,
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.03em",
-            textTransform: "uppercase",
-          }}
-        >
-          Scenario grid · {model.outputs.map((o) => o.label).join(" · ")}
-        </span>
       </div>
       <div style={{ fontSize: 11, color: "var(--mobile-text-muted)", marginBottom: 12, lineHeight: 1.4 }}>
         Adjust the assumptions to re-price live across our scenario mesh. Markers
