@@ -1009,7 +1009,8 @@ function DriverSensitivityTable({
                     {interpLeft && marker.interp && (
                       <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
                     )}
-                    {fmtScenarioHeader(s, driverTable.driverUnit)}
+                    {/* Number only — the unit lives in the driver-table title. */}
+                    {fmtScenarioHeader(s, "")}
                   </th>
                 );
               })}

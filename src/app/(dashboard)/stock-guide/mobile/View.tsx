@@ -774,7 +774,8 @@ function MobileDriverSensitivityTable({
                       borderBottom: "1px solid var(--mobile-border)",
                     }}
                   >
-                    {mobileFmtScenarioHeader(s, driverTable.driverUnit)}
+                    {/* Number only — the unit lives in the driver-table title. */}
+                    {mobileFmtScenarioHeader(s, "")}
                   </th>
                 );
               })}
