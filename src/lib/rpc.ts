@@ -9,6 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { paginateRpc } from "@/lib/paginateRpc";
 import type {
   SubscribableBase,
   MySubscription,
@@ -4799,13 +4800,19 @@ const SCENARIO_GRID_PAGE = 40_000;
  * multilinear interpolator of most of the later tickers/metrics (the mesh is
  * ordered ticker → metric → x → y → z, so truncation drops whole tickers). We
  * therefore page through the RPC with `p_limit` / `p_offset` (page size 40,000,
- * safely under the cap) until a short page signals exhaustion. The RPC's
+ * safely under the cap) via the shared cap-safe pager `paginateRpc`
+ * (`src/lib/paginateRpc.ts`): it appends the RAW page, advances by the number of
+ * rows actually received, and stops only on an EMPTY page — so a final, partial
+ * page is followed by exactly one extra (empty) round-trip that ends the loop.
+ * This empty-page-stop is correct for ANY server cap, including a cap lower than
+ * the client page size (the well-by-well incident); a "short page = done" check
+ * would silently truncate in that case. The RPC's
  * `ORDER BY ticker, metric, x_value, y_value, z_value` is deterministic, so the
  * limit/offset windows are stable and non-overlapping.
  *
- * Pagination counting uses the RAW page length (rows returned by the RPC) — the
- * NaN-drop below runs AFTER each fetch, so the post-coercion length must NOT be
- * used to decide whether another page exists.
+ * Pagination is driven by the RAW page length (rows returned by the RPC) — the
+ * NaN-drop/coercion runs on the accumulated rows AFTER `paginateRpc` returns, so
+ * the post-coercion length never influences the loop.
  *
  * Lazy / on-demand: the dashboard calls this only when the user selects a
  * scenario-grid table (and caches by `sensitivityId`).
@@ -4817,39 +4824,40 @@ export async function rpcGetStockGuideScenarioGrid(
   supabase: SupabaseClient,
   sensitivityId: number,
 ): Promise<ScenarioGridPoint[]> {
-  const out: ScenarioGridPoint[] = [];
-  let offset = 0;
-  for (;;) {
-    const { data, error } = await supabase.rpc("get_stock_guide_scenario_grid", {
-      p_sensitivity_id: sensitivityId,
-      p_limit: SCENARIO_GRID_PAGE,
-      p_offset: offset,
-    });
-    if (error) throw error;
-    const rows = (data ?? []) as Record<string, unknown>[];
-    for (const r of rows) {
-      const x = toNumOrNull(r.x_value);
-      const y = toNumOrNull(r.y_value);
-      const z = toNumOrNull(r.z_value);
-      const v = toNumOrNull(r.primary_value);
-      if (x == null || y == null || z == null || v == null) continue;
-      // Postgres column DEFAULT 'target_price'; coerce a blank/missing metric to it.
-      const metric =
-        r.metric != null && String(r.metric).trim()
-          ? String(r.metric).trim()
-          : "target_price";
-      out.push({
-        ticker: String(r.ticker),
-        metric,
-        x_value: x,
-        y_value: y,
-        z_value: z,
-        primary_value: v,
+  // Fetch every raw page first (cap-safe empty-page-stop), then coerce/drop.
+  const rows = await paginateRpc<Record<string, unknown>>(
+    async (limit, offset) => {
+      const { data, error } = await supabase.rpc("get_stock_guide_scenario_grid", {
+        p_sensitivity_id: sensitivityId,
+        p_limit: limit,
+        p_offset: offset,
       });
-    }
-    // Use the RAW page length (pre-drop) to decide whether another page exists.
-    if (rows.length < SCENARIO_GRID_PAGE) break;
-    offset += SCENARIO_GRID_PAGE;
+      if (error) throw error;
+      return (data ?? []) as Record<string, unknown>[];
+    },
+    { pageSize: SCENARIO_GRID_PAGE },
+  );
+
+  const out: ScenarioGridPoint[] = [];
+  for (const r of rows) {
+    const x = toNumOrNull(r.x_value);
+    const y = toNumOrNull(r.y_value);
+    const z = toNumOrNull(r.z_value);
+    const v = toNumOrNull(r.primary_value);
+    if (x == null || y == null || z == null || v == null) continue;
+    // Postgres column DEFAULT 'target_price'; coerce a blank/missing metric to it.
+    const metric =
+      r.metric != null && String(r.metric).trim()
+        ? String(r.metric).trim()
+        : "target_price";
+    out.push({
+      ticker: String(r.ticker),
+      metric,
+      x_value: x,
+      y_value: y,
+      z_value: z,
+      primary_value: v,
+    });
   }
   return out;
 }
