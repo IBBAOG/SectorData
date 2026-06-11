@@ -31,6 +31,7 @@ import { useModuleVisibilityGuard } from "../../../../hooks/useModuleVisibilityG
 import {
   useStockGuideData,
   formatSensitivityCell,
+  formatGridCell,
   fmtNum,
   fmtPct,
   fmtSignedPctWhole,
@@ -46,7 +47,6 @@ import type {
   SensitivityPanel,
   SensitivityDriverTable,
 } from "../useStockGuideData";
-import { fmtSignedPct } from "../useStockGuideData";
 import { useInViewOnce } from "../useInViewOnce";
 import type {
   StockGuideComputedRow,
@@ -1655,17 +1655,17 @@ function GridPanel({
                                 : "#6b7280";
                         return [
                           <td key={o.key} style={gridCellStyle}>
-                            {cell?.raw == null ? "—" : fmtSlider(cell.raw)}
+                            {cell?.raw == null ? "—" : fmtInt(cell.raw)}
                           </td>,
                           <td key={`${o.key}-up`} style={{ ...gridCellStyle, color: upsideColor, fontWeight: 700 }}>
-                            {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
+                            {quotesLoading && upside == null ? "—" : fmtSignedPctWhole(upside)}
                           </td>,
                         ];
                       }
                       const showDash = quotesLoading && cell?.value == null;
                       return (
                         <td key={o.key} style={gridCellStyle}>
-                          {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
+                          {showDash ? "—" : formatGridCell(cell?.value ?? null, o.mode, o.unit)}
                         </td>
                       );
                     })}

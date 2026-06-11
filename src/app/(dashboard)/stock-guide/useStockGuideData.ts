@@ -546,6 +546,29 @@ const EMPTY_CONFIG: StockGuideConfig = {
  */
 export const formatSensitivityCell = formatSensitivityValue;
 
+/**
+ * Format a SCENARIO-GRID mesh cell (the interpolated outputs table). Analyst
+ * request: every value renders with ZERO decimals EXCEPT P/E ('pe' / '×'
+ * multiples), which keep the standard one-decimal "N.N×" format.
+ *   • 'pe' / 'ev_ebitda' (unit '×') → delegate to formatSensitivityValue (1 dp).
+ *   • 'yield' / 'upside' (unit '%')  → whole percent, e.g. 20.8 → "21%".
+ *   • 'absolute' (any other unit)    → rounded integer + unit suffix.
+ * Null/NaN → "—". Shared by both Views so they can't drift.
+ */
+export function formatGridCell(
+  value: number | null,
+  mode: SensitivityTable["value_mode"],
+  unit: string,
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  if (mode === "pe" || mode === "ev_ebitda" || unit === "×") {
+    return formatSensitivityValue(value, unit);
+  }
+  if (unit === "%") return `${Math.round(value)}%`;
+  const num = Math.round(value).toLocaleString("en-US");
+  return unit ? `${num} ${unit}` : num;
+}
+
 export function useStockGuideData(): UseStockGuideData {
   const supabase = getSupabaseClient();
 

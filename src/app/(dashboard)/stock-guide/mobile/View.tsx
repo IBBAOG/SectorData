@@ -43,9 +43,9 @@ import { useModuleVisibilityGuard } from "@/hooks/useModuleVisibilityGuard";
 import {
   useStockGuideData,
   formatSensitivityCell,
+  formatGridCell,
   fmtNum,
   fmtPct,
-  fmtSignedPct,
   fmtSignedPctWhole,
   fmtInt,
   fmtMn,
@@ -1298,17 +1298,17 @@ function MobileGridPanel({
                             : "var(--mobile-text-muted)";
                     return [
                       <span key={o.key} style={{ width: 78, textAlign: "right", fontWeight: 700, color: "var(--mobile-text)", fontVariantNumeric: "tabular-nums" }}>
-                        {cell?.raw == null ? "—" : mobileFmtSlider(cell.raw)}
+                        {cell?.raw == null ? "—" : fmtInt(cell.raw)}
                       </span>,
                       <span key={`${o.key}-up`} style={{ width: 60, textAlign: "right", fontWeight: 700, color: upsideColor, fontVariantNumeric: "tabular-nums" }}>
-                        {quotesLoading && upside == null ? "—" : fmtSignedPct(upside)}
+                        {quotesLoading && upside == null ? "—" : fmtSignedPctWhole(upside)}
                       </span>,
                     ];
                   }
                   const showDash = quotesLoading && cell?.value == null;
                   return (
                     <span key={o.key} style={{ width: 78, textAlign: "right", fontWeight: 700, color: "var(--mobile-text)", fontVariantNumeric: "tabular-nums" }}>
-                      {showDash ? "—" : formatSensitivityCell(cell?.value ?? null, o.unit)}
+                      {showDash ? "—" : formatGridCell(cell?.value ?? null, o.mode, o.unit)}
                     </span>
                   );
                 })}
