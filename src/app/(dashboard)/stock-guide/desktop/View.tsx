@@ -43,12 +43,17 @@ import {
 import type {
   UseStockGuideData,
   GridTableModel,
+  SensitivityPanel,
+  SensitivityPanelGroup,
 } from "../useStockGuideData";
 import { fmtSignedPct } from "../useStockGuideData";
+import { useInViewOnce } from "../useInViewOnce";
+import { unitForValueMode } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideComputedRow,
   SensitivityTable,
   SensitivityAxis,
+  SensitivityPanelKey,
   StockGuideRecommendation,
 } from "@/types/stockGuide";
 
@@ -187,15 +192,11 @@ function CompsTable({
   rows,
   y1Label,
   y2Label,
-  selectedTicker,
-  onSelect,
   quotesLoading,
 }: {
   rows: StockGuideComputedRow[];
   y1Label: string;
   y2Label: string;
-  selectedTicker: string | null;
-  onSelect: (ticker: string) => void;
   quotesLoading: boolean;
 }): React.ReactElement {
   return (
@@ -209,10 +210,10 @@ function CompsTable({
         boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
       }}
     >
-      {/* Hover affordance — overrides the inline zebra background on non-selected
-          rows only. Scoped to this table via the .sg-comps-wrap wrapper. */}
+      {/* Hover affordance — overrides the inline zebra background. Scoped to this
+          table via the .sg-comps-wrap wrapper. */}
       <style>{`
-        .sg-comps-wrap tbody tr:not([data-sel="1"]):hover > td {
+        .sg-comps-wrap tbody tr:not([data-ex="1"]):hover > td {
           background: #f3f6fb !important;
         }
         /* Hide native number-input spinners on the driver stepper (custom −/+ buttons only) */
@@ -331,14 +332,11 @@ function CompsTable({
           ) : (
             rows.map((r, i) => {
               const isExCredit = r.isExTaxCredit === true;
-              const isSel = r.ticker === selectedTicker;
               const rowBg = isExCredit
                 ? "#f5f5f5"
-                : isSel
-                  ? "rgba(255,80,0,0.06)"
-                  : i % 2 === 0
-                    ? "#fff"
-                    : "#fbfbfb";
+                : i % 2 === 0
+                  ? "#fff"
+                  : "#fbfbfb";
               const upsideColor =
                 r.upsidePct == null
                   ? "#1a1a1a"
@@ -350,9 +348,8 @@ function CompsTable({
               return (
                 <tr
                   key={isExCredit ? `${r.ticker}__ex` : r.ticker}
-                  data-sel={isSel ? "1" : "0"}
-                  onClick={() => onSelect(r.ticker)}
-                  style={{ cursor: "pointer", background: rowBg }}
+                  data-ex={isExCredit ? "1" : "0"}
+                  style={{ background: rowBg }}
                 >
                   {/* Sticky Company cell */}
                   <td
@@ -370,7 +367,6 @@ function CompsTable({
                       minWidth: STICKY_COL_WIDTH,
                       background: rowBg,
                       borderRight: "1px solid #e0e0e0",
-                      borderLeft: isSel && !isExCredit ? `3px solid ${BRAND_ORANGE}` : "3px solid transparent",
                       boxShadow: STICKY_SHADOW,
                     }}
                   >
@@ -460,26 +456,6 @@ function CompsTable({
 }
 
 // ─── Sensitivity matrix ────────────────────────────────────────────────────────
-
-/** Small 3×3 grid glyph for the sensitivity empty-state. */
-function GridGlyph(): React.ReactElement {
-  return (
-    <svg
-      width={34}
-      height={34}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="#cbcbcb"
-      strokeWidth={1.5}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x={3} y={3} width={18} height={18} rx={2.5} />
-      <path d="M3 9h18M3 15h18M9 3v18M15 3v18" />
-    </svg>
-  );
-}
 
 // ── Axis model: resolve labels + the current-value highlight/interpolation ────
 //
@@ -857,6 +833,268 @@ function SensitivityTableView({
           {colAxis.caption && <div>{colAxis.caption}</div>}
           {rowAxis.caption && <div>{rowAxis.caption}</div>}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Consolidated sensitivity block (merged single-row static tables) ──────────
+//
+// A "brent" / "margin" panel renders as ONE merged table per scenario-signature
+// group: a shared scenario column header (formatted with the driver unit) + one
+// body row per underlying single-row static table. Because the rows may reference
+// DIFFERENT drivers (Brent 2026 live ≈ 89.5 vs Brent 2027 ≈ 81.7), the
+// orange current-value marker is PER ROW — anchored inside that row's bracketing
+// cell(s) — not a thead-spanning interpolation line.
+
+const PANEL_TITLE: Record<SensitivityPanelKey, string> = {
+  brent: "Brent sensitivity",
+  margin: "EBITDA margin sensitivity",
+};
+
+const PANEL_PLACEHOLDER =
+  "No tables configured yet — tag a sensitivity table to this panel in the Admin Panel.";
+
+/** Unit suffix shown beside a panel row label, by the table's value_mode. */
+function rowUnitSuffix(table: SensitivityTable): string {
+  const unit = unitForValueMode(table.value_mode, table.unit);
+  return unit ? ` (${unit})` : "";
+}
+
+/** Format a scenario header value (integers as-is, else 1 decimal). */
+function fmtScenarioHeader(v: number, unit: string): string {
+  const n = Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return unit ? `${n} ${unit}` : n;
+}
+
+/** One merged scenario-signature group inside a consolidated panel. */
+function PanelGroup({
+  group,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  group: SensitivityPanelGroup;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  // Resolve the shared driver unit from the FIRST row's column axis (all rows in
+  // a group share the same scenarios; the unit is stable within a Brent/margin
+  // panel). Used only for the column header label.
+  const firstColAxis = group.rows[0]?.table.definition.col_axis;
+  const headerUnit = firstColAxis
+    ? (resolveDriverAxis(firstColAxis).driver?.unit ?? "")
+    : "";
+  const scenarios = group.colScenarios;
+
+  const cellBase: React.CSSProperties = {
+    ...TD_BASE,
+    padding: "8px 14px",
+    borderRight: "1px solid #ededed",
+    borderBottom: "1px solid #ededed",
+    color: "#1f2937",
+    minWidth: 72,
+    position: "relative",
+  };
+
+  return (
+    <div
+      style={{
+        overflowX: "auto",
+        border: "1px solid #e0e0e0",
+        borderRadius: 12,
+        background: "#fff",
+        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+        marginBottom: 12,
+      }}
+    >
+      <table style={{ borderCollapse: "collapse", width: "100%", fontFamily: "Arial, Helvetica, sans-serif" }}>
+        <thead>
+          <tr>
+            <th
+              style={{
+                ...TH_BASE,
+                textAlign: "left",
+                verticalAlign: "bottom",
+                background: HEADER_BG,
+                color: HEADER_FG,
+                borderRight: "1px solid rgba(255,255,255,0.18)",
+                borderBottom: "1px solid rgba(255,255,255,0.18)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              Estimate
+            </th>
+            {scenarios.map((s, ci) => (
+              <th
+                key={ci}
+                style={{
+                  ...TH_BASE,
+                  textAlign: "right",
+                  background: HEADER_BG,
+                  color: HEADER_FG,
+                  borderRight: "1px solid rgba(255,255,255,0.12)",
+                  borderBottom: "1px solid rgba(255,255,255,0.18)",
+                }}
+              >
+                {fmtScenarioHeader(s, headerUnit)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {group.rows.map((row, ri) => {
+            const table = row.table;
+            const isLive = table.value_mode !== "absolute";
+            const { currentValue } = resolveDriverAxis(table.definition.col_axis);
+            // PER-ROW marker: exact hit or interpolated position between two
+            // adjacent scenarios (anchored to the right boundary of cell afterIdx).
+            const marker = driverMarker(scenarios, currentValue);
+            return (
+              <tr key={table.id} style={{ background: ri % 2 === 0 ? "#fff" : "#fbfbfb" }}>
+                <th
+                  scope="row"
+                  style={{
+                    ...TD_BASE,
+                    textAlign: "left",
+                    fontWeight: 700,
+                    color: "#374151",
+                    background: ri % 2 === 0 ? "#f5f5f5" : "#f1f1f1",
+                    borderRight: "1px solid #d6d6d6",
+                    borderBottom: "1px solid #ededed",
+                    padding: "8px 14px",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {row.rowLabel}
+                  <span style={{ color: "#9ca3af", fontWeight: 400 }}>
+                    {rowUnitSuffix(table)}
+                  </span>
+                </th>
+                {scenarios.map((_, ci) => {
+                  const hit = marker.highlightIdx === ci;
+                  const interpLeft =
+                    marker.interp != null && marker.interp.afterIdx + 1 === ci;
+                  const highlighted = hit || interpLeft;
+                  const { value, unit } = computeSensitivityCell(table, 0, ci);
+                  const text =
+                    isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+                  return (
+                    <td
+                      key={ci}
+                      style={{
+                        ...cellBase,
+                        background: highlighted ? "rgba(255,80,0,0.10)" : "transparent",
+                        color: hit ? BRAND_ORANGE : "#1f2937",
+                        fontWeight: highlighted ? 700 : 400,
+                      }}
+                    >
+                      {interpLeft && marker.interp && (
+                        <InterpMarker orientation="horizontal" frac={marker.interp.frac} />
+                      )}
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A consolidated, always-visible panel ("brent"/"margin") or its placeholder. */
+function ConsolidatedSensitivityBlock({
+  panelKey,
+  panel,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  panelKey: SensitivityPanelKey;
+  panel: SensitivityPanel | undefined;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  // De-duped caption: one entry per distinct driver id across the panel's rows,
+  // each "Avg. Brent 2026 = 89.5 USD/bbl", joined by " · ".
+  const captionParts: string[] = [];
+  if (panel) {
+    const seen = new Set<number>();
+    for (const group of panel.groups) {
+      for (const row of group.rows) {
+        const { driver, currentValue } = resolveDriverAxis(
+          row.table.definition.col_axis,
+        );
+        if (driver == null || currentValue == null || seen.has(driver.id)) continue;
+        seen.add(driver.id);
+        const n = Number.isInteger(currentValue)
+          ? String(currentValue)
+          : currentValue.toFixed(1);
+        captionParts.push(
+          `${driver.name} = ${n}${driver.unit ? ` ${driver.unit}` : ""}`,
+        );
+      }
+    }
+  }
+
+  return (
+    <div style={{ minWidth: 0 }}>
+      <div
+        style={{
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 13,
+          fontWeight: 700,
+          color: "#1a1a1a",
+          marginBottom: 10,
+        }}
+      >
+        {PANEL_TITLE[panelKey]}
+      </div>
+      {panel == null ? (
+        <div
+          style={{
+            padding: "22px 16px",
+            color: "#9ca3af",
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 12.5,
+            border: "1px dashed #d8d8d8",
+            borderRadius: 12,
+            background: "#fafafa",
+            lineHeight: 1.5,
+          }}
+        >
+          {PANEL_PLACEHOLDER}
+        </div>
+      ) : (
+        <>
+          {panel.groups.map((group, gi) => (
+            <PanelGroup
+              key={gi}
+              group={group}
+              resolveDriverAxis={resolveDriverAxis}
+              computeSensitivityCell={computeSensitivityCell}
+              quotesLoading={quotesLoading}
+            />
+          ))}
+          {captionParts.length > 0 && (
+            <div
+              style={{
+                marginTop: 2,
+                fontFamily: "Arial, Helvetica, sans-serif",
+                fontSize: 11,
+                color: "#9095a0",
+                lineHeight: 1.5,
+              }}
+            >
+              Current: {captionParts.join(" · ")}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1271,135 +1509,168 @@ function GridPanel({
   );
 }
 
-// ── The whole sensitivity section for the selected company ────────────────────
+// ── One grid table, mesh fetched LAZILY when it scrolls into view ─────────────
 
-function SensitivitySection({
-  tables,
-  loading,
-  companyName,
-  selectedTicker,
-  y1Label,
-  y2Label,
-  resolveDriverAxis,
-  computeSensitivityCell,
-  isGridTable,
+function GridInView({
+  table,
   getGridModel,
+  ensureGridLoaded,
   gridLoading,
   onSetGridAxis,
   onResetGridAxis,
   onResetGridAll,
   quotesLoading,
 }: {
-  tables: SensitivityTable[];
-  loading: boolean;
-  companyName: string | null;
-  selectedTicker: string | null;
-  y1Label: string;
-  y2Label: string;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
-  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
-  isGridTable: UseStockGuideData["isGridTable"];
+  table: SensitivityTable;
   getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
   gridLoading: boolean;
   onSetGridAxis: UseStockGuideData["setGridAxisValue"];
   onResetGridAxis: UseStockGuideData["resetGridAxis"];
   onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  if (loading) {
-    return (
-      <div style={{ padding: "32px 0" }}>
-        <BarrelLoading />
-      </div>
-    );
-  }
-
-  if (tables.length === 0) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 10,
-          padding: "36px 16px",
-          textAlign: "center",
-          color: "#9ca3af",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          fontSize: 13,
-          border: "1px dashed #d8d8d8",
-          borderRadius: 12,
-          background: "#fafafa",
-        }}
-      >
-        <GridGlyph />
-        <div>
-          No sensitivity tables for{" "}
-          <strong style={{ color: "#6b7280" }}>{companyName ?? "this company"}</strong> yet.
+  // Fire the (idempotent) mesh fetch the first time this block scrolls in.
+  const ref = useInViewOnce<HTMLDivElement>(() => ensureGridLoaded(table.id));
+  const model = getGridModel(table);
+  return (
+    <div ref={ref}>
+      {model ? (
+        <GridPanel
+          table={table}
+          model={model}
+          onSetAxis={onSetGridAxis}
+          onResetAxis={onResetGridAxis}
+          onResetAll={onResetGridAll}
+          quotesLoading={quotesLoading}
+        />
+      ) : (
+        // Mesh not fetched yet / empty → loading spinner or empty card.
+        <div style={{ marginBottom: 28 }}>
+          <div style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14, fontWeight: 700, color: "#1a1a1a", marginBottom: 8 }}>
+            {table.title}
+          </div>
+          {gridLoading ? (
+            <div style={{ padding: "24px 0" }}>
+              <BarrelLoading />
+            </div>
+          ) : (
+            <div
+              style={{
+                padding: "20px 16px",
+                color: "#9ca3af",
+                fontFamily: "Arial, Helvetica, sans-serif",
+                fontSize: 12.5,
+                border: "1px dashed #e0e0e0",
+                borderRadius: 10,
+                background: "#fafafa",
+              }}
+            >
+              No scenario-grid points uploaded for this table yet.
+            </div>
+          )}
         </div>
-      </div>
-    );
-  }
+      )}
+    </div>
+  );
+}
 
+// ── The whole sensitivity section (consolidated, always-visible) ──────────────
+
+function SensitivitySection({
+  panelByKey,
+  unpanneledTables,
+  gridTables,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  getGridModel,
+  ensureGridLoaded,
+  gridLoading,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
+  quotesLoading,
+}: {
+  panelByKey: UseStockGuideData["panelByKey"];
+  unpanneledTables: SensitivityTable[];
+  gridTables: SensitivityTable[];
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
+  gridLoading: boolean;
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
+  quotesLoading: boolean;
+}): React.ReactElement {
   return (
     <div>
-      {tables.map((t) => {
-        if (isGridTable(t)) {
-          const model = getGridModel(t);
-          if (model) {
-            return (
-              <GridPanel
-                key={t.id}
-                table={t}
-                model={model}
-                onSetAxis={onSetGridAxis}
-                onResetAxis={onResetGridAxis}
-                onResetAll={onResetGridAll}
-                quotesLoading={quotesLoading}
-              />
-            );
-          }
-          // Mesh not loaded yet (or empty) → loading spinner / empty card.
-          return (
-            <div key={t.id} style={{ marginBottom: 28 }}>
-              <div style={{ fontFamily: "Arial, Helvetica, sans-serif", fontSize: 14, fontWeight: 700, color: "#1a1a1a", marginBottom: 8 }}>
-                {t.title}
-              </div>
-              {gridLoading ? (
-                <div style={{ padding: "24px 0" }}>
-                  <BarrelLoading />
-                </div>
-              ) : (
-                <div
-                  style={{
-                    padding: "20px 16px",
-                    color: "#9ca3af",
-                    fontFamily: "Arial, Helvetica, sans-serif",
-                    fontSize: 12.5,
-                    border: "1px dashed #e0e0e0",
-                    borderRadius: 10,
-                    background: "#fafafa",
-                  }}
-                >
-                  No scenario-grid points uploaded for this table yet.
-                </div>
-              )}
-            </div>
-          );
-        }
-        return (
-          <SensitivityTableView
-            key={t.id}
-            table={t}
-            selectedTicker={selectedTicker}
-            y1Label={y1Label}
-            y2Label={y2Label}
-            resolveDriverAxis={resolveDriverAxis}
-            computeSensitivityCell={computeSensitivityCell}
-            quotesLoading={quotesLoading}
-          />
-        );
-      })}
+      {/* ── Two always-rendered block frames: Brent (left) · Margin (right) ──── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))",
+          gap: 24,
+          alignItems: "start",
+        }}
+      >
+        <ConsolidatedSensitivityBlock
+          panelKey="brent"
+          panel={panelByKey.brent}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
+        <ConsolidatedSensitivityBlock
+          panelKey="margin"
+          panel={panelByKey.margin}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
+      </div>
+
+      {/* ── Generic fallback: untagged static tables, full-width ─────────────── */}
+      {unpanneledTables.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          {unpanneledTables.map((t) => (
+            <SensitivityTableView
+              key={t.id}
+              table={t}
+              selectedTicker={null}
+              y1Label={y1Label}
+              y2Label={y2Label}
+              resolveDriverAxis={resolveDriverAxis}
+              computeSensitivityCell={computeSensitivityCell}
+              quotesLoading={quotesLoading}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* ── Scenario-grid tables, always visible, lazy mesh on scroll-in ─────── */}
+      {gridTables.length > 0 && (
+        <div style={{ marginTop: 32 }}>
+          {gridTables.map((t) => (
+            <GridInView
+              key={t.id}
+              table={t}
+              getGridModel={getGridModel}
+              ensureGridLoaded={ensureGridLoaded}
+              gridLoading={gridLoading}
+              onSetGridAxis={onSetGridAxis}
+              onResetGridAxis={onResetGridAxis}
+              onResetGridAll={onResetGridAll}
+              quotesLoading={quotesLoading}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1442,13 +1713,13 @@ export default function DesktopView(): React.ReactElement {
     unitMarginNote,
     quotesLoading,
     refreshQuotes,
-    selectedTicker,
-    selectTicker,
-    selectedTables,
+    panelByKey,
+    unpanneledTables,
+    gridTables,
     resolveDriverAxis,
     computeSensitivityCell,
-    isGridTable,
     getGridModel,
+    ensureGridLoaded,
     gridLoading,
     setGridAxisValue,
     resetGridAxis,
@@ -1461,9 +1732,6 @@ export default function DesktopView(): React.ReactElement {
 
   const initialLoading = rpcLoading && rows.length === 0 && rpcError == null;
 
-  const selectedCompanyName =
-    computedRows.find((r) => r.ticker === selectedTicker)?.company_name ?? null;
-
   if (visLoading || !visible) return <></>;
 
   return (
@@ -1473,7 +1741,7 @@ export default function DesktopView(): React.ReactElement {
       <div className="container-fluid g-0 p-4">
         <DashboardHeader
           title="Stock Guide"
-          sub="Coverage comps table and per-company sensitivity"
+          sub="Coverage comps table and key-estimate sensitivity"
           lang="en"
           rightSlot={
             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -1512,8 +1780,6 @@ export default function DesktopView(): React.ReactElement {
                 rows={computedRows}
                 y1Label={config.y1_label}
                 y2Label={config.y2_label}
-                selectedTicker={selectedTicker}
-                onSelect={selectTicker}
                 quotesLoading={quotesLoading}
               />
 
@@ -1550,16 +1816,9 @@ export default function DesktopView(): React.ReactElement {
                 )}
               </div>
 
-              {/* ── Sensitivity tables ──────────────────────────────────────── */}
+              {/* ── Sensitivity (consolidated, always-visible) ──────────────── */}
               <div style={{ marginTop: 32 }}>
-                <div className="section-title">
-                  Sensitivity
-                  {selectedCompanyName && (
-                    <span style={{ color: "#1a1a1a", fontWeight: 600 }}>
-                      {" "}— {selectedCompanyName}
-                    </span>
-                  )}
-                </div>
+                <div className="section-title">Sensitivity</div>
                 <hr className="section-hr" style={{ borderTopColor: "#e0e0e0", margin: "4px 0 10px" }} />
                 <div
                   style={{
@@ -1569,22 +1828,19 @@ export default function DesktopView(): React.ReactElement {
                     marginBottom: 16,
                   }}
                 >
-                  Click a company row above to see the sensitivity tables it
-                  appears in. Static tables highlight the row/column matching the
-                  driver&rsquo;s current value (orange); scenario-grid tables let
-                  you drag Brent to interpolate the target price live.
+                  Sensitivity of our key estimates to Brent and distribution
+                  margins. Orange marks today&rsquo;s value.
                 </div>
                 <SensitivitySection
-                  tables={selectedTables}
-                  loading={rpcLoading && rows.length === 0}
-                  companyName={selectedCompanyName}
-                  selectedTicker={selectedTicker}
+                  panelByKey={panelByKey}
+                  unpanneledTables={unpanneledTables}
+                  gridTables={gridTables}
                   y1Label={config.y1_label}
                   y2Label={config.y2_label}
                   resolveDriverAxis={resolveDriverAxis}
                   computeSensitivityCell={computeSensitivityCell}
-                  isGridTable={isGridTable}
                   getGridModel={getGridModel}
+                  ensureGridLoaded={ensureGridLoaded}
                   gridLoading={gridLoading}
                   onSetGridAxis={setGridAxisValue}
                   onResetGridAxis={resetGridAxis}

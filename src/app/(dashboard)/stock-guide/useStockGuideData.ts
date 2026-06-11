@@ -24,12 +24,15 @@
 //   d. Derive per visible row: livePrice / marketCapBrlMn / upsidePct + the 4
 //      live multiples (null-safe). A `liveByTicker` index exposes livePrice +
 //      marketCapBrlMn per ticker for the sensitivity-cell helper.
-//   e. Sensitivity drill-down (REDESIGNED): expose `drivers` + `sensitivityTables`
-//      and a derived `selectedTables` = tables where `selectedTicker ∈ companies`,
-//      sorted by display_order. `selectedTicker`/`selectTicker` default = first
-//      visible company (NO per-table fetch — tables arrive in the initial batch).
-//      `computeSensitivityCell()` turns a (table,row,col) into a DISPLAY value;
-//      `resolveDriverAxis()` maps a driver axis → { driver, scenarios }.
+//   e. Consolidated sensitivity (REDESIGNED 2026-06-11 — ALWAYS VISIBLE, no
+//      selection): expose `drivers` + `sensitivityTables` and derive `panels`
+//      (tagged single-row static tables merged into the fixed "brent"/"margin"
+//      blocks, grouped by column-scenario signature), `unpanneledTables` (untagged
+//      static → generic full-width fallback) and `gridTables` (scenario grids,
+//      always visible with a lazy mesh fetch). `computeSensitivityCell()` turns a
+//      (table,row,col) into a DISPLAY value; `resolveDriverAxis()` maps a driver
+//      axis → { driver, scenarios, currentValue }. The grid mesh is fetched via
+//      `ensureGridLoaded(tableId)` only when the Views scroll it into view.
 //   f. Optional sectorFilter; `setFilters` merges partials.
 //   g. Desktop-only export (Excel + CSV) of the computed VISIBLE table.
 //
@@ -76,6 +79,7 @@ import type {
   StockGuideDriver,
   SensitivityAxis,
   SensitivityTable,
+  SensitivityPanelKey,
   ScenarioGridPoint,
 } from "@/types/stockGuide";
 
@@ -142,11 +146,24 @@ export interface UseStockGuideData {
   /** All hide-aware sensitivity tables (display_order), straight from the RPC. */
   sensitivityTables: SensitivityTable[];
 
-  // Drill-down: which company's tables are shown.
-  selectedTicker: string | null;
-  selectTicker: (ticker: string) => void;
-  /** Tables involving `selectedTicker`, sorted by display_order. */
-  selectedTables: SensitivityTable[];
+  // ── Consolidated sensitivity (always-visible, selection-independent) ────────
+  /**
+   * The two consolidated panels ("brent" then "margin"), each built from the
+   * single-row static tables tagged `definition.panel`. ONLY non-empty panels
+   * are returned — the Views own the fixed two-block scaffold + the placeholder
+   * for a missing/empty panel. Look one up via `panelByKey`.
+   */
+  panels: SensitivityPanel[];
+  /** Convenience index: panel key → its `SensitivityPanel` (absent if empty). */
+  panelByKey: Partial<Record<SensitivityPanelKey, SensitivityPanel>>;
+  /**
+   * Static, non-grid tables WITHOUT a valid panel tag (or that violate the
+   * single-row company-axis guard) — rendered full-width via the generic
+   * `SensitivityTableView`. In display_order.
+   */
+  unpanneledTables: SensitivityTable[];
+  /** Scenario-grid tables (`isGridTable`), in display_order — always visible, lazy mesh. */
+  gridTables: SensitivityTable[];
 
   /**
    * Pure helper: compute a cell's DISPLAY value for (table, rowIdx, colIdx)
@@ -185,7 +202,14 @@ export interface UseStockGuideData {
    * never per drag. Stable id.
    */
   getGridModel: (table: SensitivityTable) => GridTableModel | null;
-  /** True while a selected grid table's mesh is being fetched. */
+  /**
+   * Idempotently fetch + cache the mesh for ONE grid table (guarded by an
+   * internal fetched-set ref, so repeat calls are no-ops). The Views call this
+   * when the grid panel scrolls into view (`useInViewOnce`) — the ~194k-point
+   * mesh is NEVER fetched on page load. Stable identity.
+   */
+  ensureGridLoaded: (tableId: number) => void;
+  /** True while ANY grid table's mesh is being fetched. */
   gridLoading: boolean;
   /** Set the value of ONE axis slider of a grid table (re-interpolates live). */
   setGridAxisValue: (tableId: number, axisIdx: number, value: number) => void;
@@ -303,6 +327,36 @@ export interface GridTableModel {
   outputs: GridOutputModel[];
   /** True when ANY axis has been dragged away from its live value (drives "Reset all"). */
   anyOverridden: boolean;
+}
+
+// ─── Consolidated sensitivity panels (merged single-row static tables) ─────────
+
+/** One underlying single-row static table merged as a row in a consolidated panel. */
+export interface SensitivityPanelRow {
+  /** The source table (single-company × driver-scenario, value_mode-aware). */
+  table: SensitivityTable;
+  /** Display label for the row (`definition.row_label` ?? `table.title`). */
+  rowLabel: string;
+}
+
+/**
+ * A group of panel rows sharing the SAME column-scenario signature (so they can
+ * share ONE scenario column header). The happy path is a single group; rows whose
+ * driver axis has a different scenario list form separate groups (each with its
+ * own header band).
+ */
+export interface SensitivityPanelGroup {
+  /** The shared column-axis scenario values (e.g. [60,70,…,140]). */
+  colScenarios: number[];
+  /** The rows that share this scenario signature, in display_order. */
+  rows: SensitivityPanelRow[];
+}
+
+/** One consolidated, always-visible sensitivity block ("brent" / "margin"). */
+export interface SensitivityPanel {
+  key: SensitivityPanelKey;
+  /** Scenario-signature groups (≥1 — non-empty panels only). */
+  groups: SensitivityPanelGroup[];
 }
 
 // ─── Formatting helpers (shared by both Views) ───────────────────────────────
@@ -791,35 +845,98 @@ export function useStockGuideData(): UseStockGuideData {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visibleRows, priceByKey]);
 
-  // ── e. Sensitivity drill-down (redesigned: first-class tables) ─────────────
-  const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
+  // ── e. Consolidated sensitivity (always-visible, selection-independent) ─────
+  //
+  // The section no longer drills down per selected company. Instead the tagged
+  // single-row static tables are merged into two fixed blocks (brent / margin),
+  // untagged static tables fall to a generic full-width list, and grid tables
+  // render always-visible below (mesh fetched lazily on scroll-into-view).
 
-  const selectTicker = useCallback((ticker: string) => {
-    setSelectedTicker(ticker);
-  }, []);
+  // A table qualifies for a CONSOLIDATED panel when it is a tagged, NON-grid,
+  // SINGLE-ROW static table: row axis kind "company" with exactly one company.
+  // (The driver scenarios live on the column axis.) Anything failing this guard
+  // — multi-row, wrong axis, or an unknown panel value — falls to the fallback.
+  const isSingleRowPanelTable = useCallback(
+    (t: SensitivityTable): boolean => {
+      if (tableIsGrid(t)) return false;
+      const rowAxis = t.definition.row_axis;
+      return (
+        rowAxis.kind === "company" &&
+        Array.isArray(rowAxis.companies) &&
+        rowAxis.companies.length === 1
+      );
+    },
+    [],
+  );
 
-  // Default selection = first visible company, once comps land. Re-selects only
-  // if the current selection is gone (e.g. the company was hidden between fetches).
-  useEffect(() => {
-    if (visibleRows.length === 0) return;
-    const stillVisible =
-      selectedTicker != null &&
-      visibleRows.some((r) => r.ticker === selectedTicker);
-    if (!stillVisible) {
-      setSelectedTicker(visibleRows[0].ticker);
+  // Build the two panels + the fallback + grid lists from sensitivityTables, all
+  // in display_order. A table tagged "brent"/"margin" that passes the single-row
+  // guard joins that panel (grouped by its column-scenario signature); everything
+  // else static goes to `unpanneledTables`; grids go to `gridTables`.
+  const { panels, panelByKey, unpanneledTables, gridTables } = useMemo(() => {
+    const ordered = [...sensitivityTables].sort(
+      (a, b) => a.display_order - b.display_order,
+    );
+
+    const panelRows: Record<SensitivityPanelKey, SensitivityPanelRow[]> = {
+      brent: [],
+      margin: [],
+    };
+    const fallback: SensitivityTable[] = [];
+    const grids: SensitivityTable[] = [];
+
+    for (const t of ordered) {
+      if (tableIsGrid(t)) {
+        grids.push(t);
+        continue;
+      }
+      const panel = t.definition.panel;
+      if ((panel === "brent" || panel === "margin") && isSingleRowPanelTable(t)) {
+        panelRows[panel].push({
+          table: t,
+          rowLabel: t.definition.row_label?.trim() || t.title,
+        });
+      } else {
+        fallback.push(t);
+      }
     }
-    // we intentionally key on the visible-row identity.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleRows]);
 
-  // Tables involving the selected company, in display_order. The RPC already
-  // sorts by display_order; we re-sort defensively.
-  const selectedTables = useMemo<SensitivityTable[]>(() => {
-    if (selectedTicker == null) return [];
-    return sensitivityTables
-      .filter((t) => t.companies.includes(selectedTicker))
-      .sort((a, b) => a.display_order - b.display_order);
-  }, [sensitivityTables, selectedTicker]);
+    // Group a panel's rows by their column-scenario signature so rows sharing the
+    // same scenarios share one header band (happy path = a single group).
+    const buildGroups = (rows: SensitivityPanelRow[]): SensitivityPanelGroup[] => {
+      const groups: SensitivityPanelGroup[] = [];
+      const bySig = new Map<string, SensitivityPanelGroup>();
+      for (const row of rows) {
+        const scenarios = row.table.definition.col_axis.scenarios ?? [];
+        const sig = scenarios.join(",");
+        let g = bySig.get(sig);
+        if (!g) {
+          g = { colScenarios: scenarios, rows: [] };
+          bySig.set(sig, g);
+          groups.push(g);
+        }
+        g.rows.push(row);
+      }
+      return groups;
+    };
+
+    const built: SensitivityPanel[] = [];
+    const byKey: Partial<Record<SensitivityPanelKey, SensitivityPanel>> = {};
+    for (const key of ["brent", "margin"] as SensitivityPanelKey[]) {
+      const rows = panelRows[key];
+      if (rows.length === 0) continue; // empty panels omitted — Views own the scaffold
+      const panel: SensitivityPanel = { key, groups: buildGroups(rows) };
+      built.push(panel);
+      byKey[key] = panel;
+    }
+
+    return {
+      panels: built,
+      panelByKey: byKey,
+      unpanneledTables: fallback,
+      gridTables: grids,
+    };
+  }, [sensitivityTables, isSingleRowPanelTable]);
 
   // Driver index for resolveDriverAxis (by id).
   const driversById = useMemo(() => {
@@ -927,32 +1044,25 @@ export function useStockGuideData(): UseStockGuideData {
     Record<number, (number | null)[]>
   >({});
 
-  // Fetch the mesh for the selected grid tables (lazy, cached by id).
-  useEffect(() => {
-    if (!supabase) return;
-    const toFetch = selectedTables.filter(
-      (t) => tableIsGrid(t) && !gridFetchedRef.current.has(t.id),
-    );
-    if (toFetch.length === 0) return;
-    for (const t of toFetch) gridFetchedRef.current.add(t.id);
-    setGridLoading(true);
-    Promise.all(
-      toFetch.map((t) =>
-        rpcGetStockGuideScenarioGrid(supabase, t.id)
-          .then((points) => ({ id: t.id, points }))
-          .catch(() => ({ id: t.id, points: [] as ScenarioGridPoint[] })),
-      ),
-    ).then((results) => {
-      setGridMeshById((prev) => {
-        const next = { ...prev };
-        for (const { id, points } of results) next[id] = points;
-        return next;
-      });
-      setGridLoading(false);
-    });
-    // selectedTables drives which meshes we need; the mesh cache + the
-    // fetched-set ref guard re-fetch, so neither needs to be a dep.
-  }, [supabase, selectedTables]);
+  // Idempotently fetch ONE grid table's mesh (cached by id, guarded by the
+  // fetched-set ref). Called by the Views when the grid panel scrolls into view
+  // (`useInViewOnce`) — NEVER on page load, because the mesh is ~194k points.
+  const ensureGridLoaded = useCallback(
+    (tableId: number) => {
+      if (!supabase) return;
+      if (gridFetchedRef.current.has(tableId)) return; // already fetched / fetching
+      gridFetchedRef.current.add(tableId);
+      setGridLoading(true);
+      rpcGetStockGuideScenarioGrid(supabase, tableId)
+        .then((points) => ({ points }))
+        .catch(() => ({ points: [] as ScenarioGridPoint[] }))
+        .then(({ points }) => {
+          setGridMeshById((prev) => ({ ...prev, [tableId]: points }));
+          setGridLoading(false);
+        });
+    },
+    [supabase],
+  );
 
   const setGridAxisValue = useCallback(
     (tableId: number, axisIdx: number, value: number) => {
@@ -1283,13 +1393,15 @@ export function useStockGuideData(): UseStockGuideData {
     marketValues,
     marketDriversLoading,
     sensitivityTables,
-    selectedTicker,
-    selectTicker,
-    selectedTables,
+    panels,
+    panelByKey,
+    unpanneledTables,
+    gridTables,
     computeSensitivityCell,
     resolveDriverAxis,
     isGridTable,
     getGridModel,
+    ensureGridLoaded,
     gridLoading,
     setGridAxisValue,
     resetGridAxis,

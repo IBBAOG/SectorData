@@ -11,16 +11,21 @@
 //      comps table): a sticky Company column on the left + horizontal scroll for
 //      the rest. Columns: Ticker · TP · Recomm · Upside · Mkt cap · then the six
 //      forward groups (EV/EBITDA, P/E, FCFE Yield, Div Yield, EBITDA, Volumes)
-//      for the SELECTED forward year (toggle Y1/Y2). Tap a row → it highlights
-//      (orange left-border) and the sensitivity tables open in a BottomSheet.
+//      for the SELECTED forward year (toggle Y1/Y2).
 //   3. Restricted + assumptions footnote card.
+//   4. Consolidated SENSITIVITY rendered INLINE below the footnote (always
+//      visible, selection-independent): the Brent block then the Margin block
+//      stacked vertically, the generic fallback tables, then the scenario-grid
+//      panel(s) whose ~194k-point mesh is fetched LAZILY on scroll-into-view.
 //
 // [mobile-only] divergences vs. desktop:
 //   • The forward-multiple pairs show ONE year at a time via a Y1/Y2 toggle (the
 //     desktop shows both years side-by-side; 12 numeric columns won't fit a
 //     phone even with horizontal scroll). The toggle preserves every metric and
 //     both years — it just trades width for a tap.
-//   • Sensitivity opens in a BottomSheet on row tap rather than a panel below.
+//   • The two consolidated blocks stack vertically (desktop lays them in a
+//     two-column grid). The per-row marker highlights the NEARER scenario cell
+//     instead of the desktop interpolation triangle.
 //   • No ExportPanel / Refresh-quotes button in the header (quotes still fetch
 //     once on load via the shared hook; manual refresh is a desktop affordance).
 //
@@ -30,7 +35,6 @@
 import { useState, useEffect, type CSSProperties } from "react";
 
 import {
-  BottomSheet,
   FilterDrawer,
   FunnelIcon,
 } from "@/components/dashboard/mobile";
@@ -51,13 +55,18 @@ import {
 import type {
   UseStockGuideData,
   GridTableModel,
+  SensitivityPanel,
+  SensitivityPanelGroup,
 } from "../useStockGuideData";
+import { useInViewOnce } from "../useInViewOnce";
+import { unitForValueMode } from "@/lib/stockGuideSensitivity";
 import type {
   StockGuideComputedRow,
   StockGuideSector,
   StockGuideRecommendation,
   SensitivityTable,
   SensitivityAxis,
+  SensitivityPanelKey,
 } from "@/types/stockGuide";
 
 const MOBILE_ACCENT = "#ff5000";
@@ -173,17 +182,13 @@ function CompsTable({
   yearLabel,
   yearKey,
   quotesLoading,
-  selectedTicker,
-  onSelect,
 }: {
   rows: StockGuideComputedRow[];
   yearLabel: string;
   yearKey: "y1" | "y2";
   quotesLoading: boolean;
-  selectedTicker: string | null;
-  onSelect: (ticker: string) => void;
 }): React.ReactElement {
-  const totalCols = 1 + SINGLE_COLS.length + YEAR_COLS.length + 1; // + chevron col
+  const totalCols = 1 + SINGLE_COLS.length + YEAR_COLS.length; // no chevron col
   return (
     <div
       className="sg-comps-scroll"
@@ -265,8 +270,6 @@ function CompsTable({
                 </div>
               </th>
             ))}
-            {/* Chevron affordance column */}
-            <th style={{ ...thBase, width: 26, minWidth: 26, padding: "7px 4px" }} aria-hidden="true" />
           </tr>
         </thead>
         <tbody>
@@ -287,14 +290,11 @@ function CompsTable({
           ) : (
             rows.map((r, i) => {
               const isExCredit = r.isExTaxCredit === true;
-              const isSel = r.ticker === selectedTicker;
               const rowBg = isExCredit
                 ? "var(--mobile-surface-elevated)"
-                : isSel
-                  ? "var(--mobile-accent-fill)"
-                  : i % 2 === 0
-                    ? "var(--mobile-surface)"
-                    : "var(--mobile-surface-elevated)";
+                : i % 2 === 0
+                  ? "var(--mobile-surface)"
+                  : "var(--mobile-surface-elevated)";
               const upsideColor =
                 r.upsidePct == null
                   ? "var(--mobile-text)"
@@ -306,9 +306,7 @@ function CompsTable({
               return (
                 <tr
                   key={isExCredit ? `${r.ticker}__ex` : r.ticker}
-                  onClick={() => onSelect(r.ticker)}
-                  aria-label={`${r.displayName} — tap for sensitivity`}
-                  style={{ cursor: "pointer", borderBottom: "1px solid var(--mobile-divider)" }}
+                  style={{ borderBottom: "1px solid var(--mobile-divider)" }}
                 >
                   {/* Sticky Company cell */}
                   <th
@@ -323,10 +321,6 @@ function CompsTable({
                       padding: isExCredit ? "8px 10px 8px 18px" : "8px 10px",
                       background: rowBg,
                       borderRight: "1px solid var(--mobile-border)",
-                      borderLeft:
-                        isSel && !isExCredit
-                          ? `3px solid ${MOBILE_ACCENT}`
-                          : "3px solid transparent",
                       boxShadow: STICKY_SHADOW,
                     }}
                   >
@@ -412,19 +406,6 @@ function CompsTable({
                       </td>
                     );
                   })}
-                  {/* Chevron affordance */}
-                  <td
-                    style={{
-                      ...tdBase(rowBg),
-                      padding: "8px 4px",
-                      textAlign: "center",
-                      color: isSel ? MOBILE_ACCENT : "var(--mobile-text-faint)",
-                      fontWeight: 700,
-                    }}
-                    aria-hidden="true"
-                  >
-                    ›
-                  </td>
                 </tr>
               );
             })
@@ -693,6 +674,235 @@ function MobileSensitivityTable({
           {colAxis.caption && <div>{colAxis.caption}</div>}
           {rowAxis.caption && <div>{rowAxis.caption}</div>}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Consolidated sensitivity block (merged single-row static tables) ──────────
+//
+// Same analysis as desktop: a "brent"/"margin" panel renders as ONE merged table
+// per scenario-signature group — a shared scenario header + one row per underlying
+// single-row static table. [mobile-only] simplification: the PER-ROW current-value
+// marker highlights the NEARER bracketing scenario cell (no interpolation triangle).
+
+const MOBILE_PANEL_TITLE: Record<SensitivityPanelKey, string> = {
+  brent: "Brent sensitivity",
+  margin: "EBITDA margin sensitivity",
+};
+
+const MOBILE_PANEL_PLACEHOLDER =
+  "No tables configured yet — tag a sensitivity table to this panel in the Admin Panel.";
+
+/** Unit suffix beside a panel row label, by the table's value_mode. */
+function mobileRowUnitSuffix(table: SensitivityTable): string {
+  const unit = unitForValueMode(table.value_mode, table.unit);
+  return unit ? ` (${unit})` : "";
+}
+
+function mobileFmtScenarioHeader(v: number, unit: string): string {
+  const n = Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return unit ? `${n} ${unit}` : n;
+}
+
+/** One merged scenario-signature group inside a consolidated panel (mobile). */
+function MobilePanelGroup({
+  group,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  group: SensitivityPanelGroup;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  const firstColAxis = group.rows[0]?.table.definition.col_axis;
+  const headerUnit = firstColAxis
+    ? (resolveDriverAxis(firstColAxis).driver?.unit ?? "")
+    : "";
+  const scenarios = group.colScenarios;
+
+  return (
+    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginBottom: 10 }}>
+      <table
+        style={{
+          borderCollapse: "collapse",
+          fontSize: 11.5,
+          fontFamily: "Arial, Helvetica, sans-serif",
+          border: "1px solid var(--mobile-border)",
+          borderRadius: "var(--mobile-radius-md, 12px)",
+          overflow: "hidden",
+          minWidth: "100%",
+        }}
+      >
+        <thead>
+          <tr>
+            <th
+              style={{
+                textAlign: "left",
+                padding: "7px 11px",
+                background: "var(--mobile-surface-elevated)",
+                color: "var(--mobile-text)",
+                fontWeight: 700,
+                fontSize: 10,
+                whiteSpace: "nowrap",
+                borderRight: "1px solid var(--mobile-border)",
+                borderBottom: "1px solid var(--mobile-border)",
+              }}
+            >
+              Estimate
+            </th>
+            {scenarios.map((s, ci) => (
+              <th
+                key={ci}
+                style={{
+                  textAlign: "right",
+                  padding: "7px 11px",
+                  color: "var(--mobile-text-muted)",
+                  fontWeight: 700,
+                  fontSize: 10,
+                  whiteSpace: "nowrap",
+                  background: "var(--mobile-surface-elevated)",
+                  borderRight: "1px solid var(--mobile-divider)",
+                  borderBottom: "1px solid var(--mobile-border)",
+                }}
+              >
+                {mobileFmtScenarioHeader(s, headerUnit)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {group.rows.map((row, ri) => {
+            const table = row.table;
+            const isLive = table.value_mode !== "absolute";
+            const { currentValue } = resolveDriverAxis(table.definition.col_axis);
+            const marker = mobileDriverMarker(scenarios, currentValue);
+            return (
+              <tr key={table.id}>
+                <th
+                  scope="row"
+                  style={{
+                    textAlign: "left",
+                    padding: "7px 11px",
+                    fontWeight: 700,
+                    color: "var(--mobile-text)",
+                    whiteSpace: "nowrap",
+                    background: "var(--mobile-surface-elevated)",
+                    borderRight: "1px solid var(--mobile-border)",
+                    borderBottom: "1px solid var(--mobile-divider)",
+                  }}
+                >
+                  {row.rowLabel}
+                  <span style={{ color: "var(--mobile-text-faint)", fontWeight: 400 }}>
+                    {mobileRowUnitSuffix(table)}
+                  </span>
+                </th>
+                {scenarios.map((_, ci) => {
+                  const hit = marker.highlightIdx === ci;
+                  const { value, unit } = computeSensitivityCell(table, 0, ci);
+                  const text =
+                    isLive && quotesLoading ? "—" : formatSensitivityCell(value, unit);
+                  return (
+                    <td
+                      key={ci}
+                      style={{
+                        textAlign: "right",
+                        padding: "7px 11px",
+                        fontVariantNumeric: "tabular-nums",
+                        color: hit ? MOBILE_ACCENT : "var(--mobile-text)",
+                        fontWeight: hit ? 700 : 400,
+                        background: hit ? "rgba(255,80,0,0.10)" : "var(--mobile-surface)",
+                        borderRight: "1px solid var(--mobile-divider)",
+                        borderBottom: "1px solid var(--mobile-divider)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {text}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** A consolidated, always-visible panel ("brent"/"margin") or its placeholder. */
+function MobileConsolidatedBlock({
+  panelKey,
+  panel,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  quotesLoading,
+}: {
+  panelKey: SensitivityPanelKey;
+  panel: SensitivityPanel | undefined;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  quotesLoading: boolean;
+}): React.ReactElement {
+  // De-duped caption: one "Avg. Brent 2026 = 89.5 USD/bbl" per distinct driver.
+  const captionParts: string[] = [];
+  if (panel) {
+    const seen = new Set<number>();
+    for (const group of panel.groups) {
+      for (const row of group.rows) {
+        const { driver, currentValue } = resolveDriverAxis(
+          row.table.definition.col_axis,
+        );
+        if (driver == null || currentValue == null || seen.has(driver.id)) continue;
+        seen.add(driver.id);
+        const n = Number.isInteger(currentValue)
+          ? String(currentValue)
+          : currentValue.toFixed(1);
+        captionParts.push(
+          `${driver.name} = ${n}${driver.unit ? ` ${driver.unit}` : ""}`,
+        );
+      }
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 10 }}>
+        {MOBILE_PANEL_TITLE[panelKey]}
+      </div>
+      {panel == null ? (
+        <div
+          style={{
+            padding: "16px 14px",
+            color: "var(--mobile-text-muted)",
+            fontSize: 12,
+            border: "1px dashed var(--mobile-border)",
+            borderRadius: "var(--mobile-radius-md, 12px)",
+            background: "var(--mobile-surface-elevated)",
+            lineHeight: 1.5,
+          }}
+        >
+          {MOBILE_PANEL_PLACEHOLDER}
+        </div>
+      ) : (
+        <>
+          {panel.groups.map((group, gi) => (
+            <MobilePanelGroup
+              key={gi}
+              group={group}
+              resolveDriverAxis={resolveDriverAxis}
+              computeSensitivityCell={computeSensitivityCell}
+              quotesLoading={quotesLoading}
+            />
+          ))}
+          {captionParts.length > 0 && (
+            <div style={{ fontSize: 10.5, color: "var(--mobile-text-muted)", lineHeight: 1.5 }}>
+              Current: {captionParts.join(" · ")}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1080,110 +1290,141 @@ function MobileGridPanel({
   );
 }
 
-// ─── Sensitivity tables (inside the BottomSheet) ──────────────────────────────
+// ─── One grid table, mesh fetched LAZILY when it scrolls into view (mobile) ───
 
-function MobileSensitivity({
-  tables,
-  loading,
-  companyName,
-  selectedTicker,
-  y1Label,
-  y2Label,
-  resolveDriverAxis,
-  computeSensitivityCell,
-  isGridTable,
+function MobileGridInView({
+  table,
   getGridModel,
+  ensureGridLoaded,
   gridLoading,
   onSetGridAxis,
   onResetGridAxis,
   onResetGridAll,
   quotesLoading,
 }: {
-  tables: SensitivityTable[];
-  loading: boolean;
-  companyName: string | null;
-  selectedTicker: string | null;
-  y1Label: string;
-  y2Label: string;
-  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
-  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
-  isGridTable: UseStockGuideData["isGridTable"];
+  table: SensitivityTable;
   getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
   gridLoading: boolean;
   onSetGridAxis: UseStockGuideData["setGridAxisValue"];
   onResetGridAxis: UseStockGuideData["resetGridAxis"];
   onResetGridAll: UseStockGuideData["resetGridAll"];
   quotesLoading: boolean;
 }): React.ReactElement {
-  if (loading) {
-    return (
-      <div style={{ padding: "32px 0" }}>
-        <BarrelLoading bare />
-      </div>
-    );
-  }
-  if (tables.length === 0) {
-    return (
-      <div
-        style={{
-          padding: "24px 8px",
-          textAlign: "center",
-          color: "var(--mobile-text-muted)",
-          fontSize: 13,
-        }}
-      >
-        No sensitivity tables for {companyName ?? "this company"} yet.
-      </div>
-    );
-  }
+  const ref = useInViewOnce<HTMLDivElement>(() => ensureGridLoaded(table.id));
+  const model = getGridModel(table);
+  return (
+    <div ref={ref}>
+      {model ? (
+        <MobileGridPanel
+          table={table}
+          model={model}
+          onSetAxis={onSetGridAxis}
+          onResetAxis={onResetGridAxis}
+          onResetAll={onResetGridAll}
+          quotesLoading={quotesLoading}
+        />
+      ) : (
+        <div style={{ marginBottom: 22 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 8 }}>
+            {table.title}
+          </div>
+          {gridLoading ? (
+            <div style={{ padding: "20px 0" }}>
+              <BarrelLoading bare />
+            </div>
+          ) : (
+            <div style={{ padding: "14px 4px", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
+              No scenario-grid points uploaded for this table yet.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sensitivity section (consolidated, always-visible inline) ────────────────
+
+function MobileSensitivity({
+  panelByKey,
+  unpanneledTables,
+  gridTables,
+  selectedTicker,
+  y1Label,
+  y2Label,
+  resolveDriverAxis,
+  computeSensitivityCell,
+  getGridModel,
+  ensureGridLoaded,
+  gridLoading,
+  onSetGridAxis,
+  onResetGridAxis,
+  onResetGridAll,
+  quotesLoading,
+}: {
+  panelByKey: UseStockGuideData["panelByKey"];
+  unpanneledTables: SensitivityTable[];
+  gridTables: SensitivityTable[];
+  selectedTicker: string | null;
+  y1Label: string;
+  y2Label: string;
+  resolveDriverAxis: UseStockGuideData["resolveDriverAxis"];
+  computeSensitivityCell: UseStockGuideData["computeSensitivityCell"];
+  getGridModel: UseStockGuideData["getGridModel"];
+  ensureGridLoaded: UseStockGuideData["ensureGridLoaded"];
+  gridLoading: boolean;
+  onSetGridAxis: UseStockGuideData["setGridAxisValue"];
+  onResetGridAxis: UseStockGuideData["resetGridAxis"];
+  onResetGridAll: UseStockGuideData["resetGridAll"];
+  quotesLoading: boolean;
+}): React.ReactElement {
   return (
     <div>
-      {tables.map((t) => {
-        if (isGridTable(t)) {
-          const model = getGridModel(t);
-          if (model) {
-            return (
-              <MobileGridPanel
-                key={t.id}
-                table={t}
-                model={model}
-                onSetAxis={onSetGridAxis}
-                onResetAxis={onResetGridAxis}
-                onResetAll={onResetGridAll}
-                quotesLoading={quotesLoading}
-              />
-            );
-          }
-          return (
-            <div key={t.id} style={{ marginBottom: 22 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--mobile-text)", marginBottom: 8 }}>
-                {t.title}
-              </div>
-              {gridLoading ? (
-                <div style={{ padding: "20px 0" }}>
-                  <BarrelLoading bare />
-                </div>
-              ) : (
-                <div style={{ padding: "14px 4px", color: "var(--mobile-text-muted)", fontSize: 12.5 }}>
-                  No scenario-grid points uploaded for this table yet.
-                </div>
-              )}
-            </div>
-          );
-        }
-        return (
-          <MobileSensitivityTable
-            key={t.id}
-            table={t}
-            selectedTicker={selectedTicker}
-            y1Label={y1Label}
-            y2Label={y2Label}
-            resolveDriverAxis={resolveDriverAxis}
-            computeSensitivityCell={computeSensitivityCell}
-            quotesLoading={quotesLoading}
-          />
-        );
-      })}
+      {/* Two always-rendered blocks, stacked vertically (Brent then Margin). */}
+      <MobileConsolidatedBlock
+        panelKey="brent"
+        panel={panelByKey.brent}
+        resolveDriverAxis={resolveDriverAxis}
+        computeSensitivityCell={computeSensitivityCell}
+        quotesLoading={quotesLoading}
+      />
+      <MobileConsolidatedBlock
+        panelKey="margin"
+        panel={panelByKey.margin}
+        resolveDriverAxis={resolveDriverAxis}
+        computeSensitivityCell={computeSensitivityCell}
+        quotesLoading={quotesLoading}
+      />
+
+      {/* Generic fallback: untagged static tables. */}
+      {unpanneledTables.map((t) => (
+        <MobileSensitivityTable
+          key={t.id}
+          table={t}
+          selectedTicker={selectedTicker}
+          y1Label={y1Label}
+          y2Label={y2Label}
+          resolveDriverAxis={resolveDriverAxis}
+          computeSensitivityCell={computeSensitivityCell}
+          quotesLoading={quotesLoading}
+        />
+      ))}
+
+      {/* Scenario-grid tables, always visible, lazy mesh on scroll-in. */}
+      {gridTables.map((t) => (
+        <MobileGridInView
+          key={t.id}
+          table={t}
+          getGridModel={getGridModel}
+          ensureGridLoaded={ensureGridLoaded}
+          gridLoading={gridLoading}
+          onSetGridAxis={onSetGridAxis}
+          onResetGridAxis={onResetGridAxis}
+          onResetGridAll={onResetGridAll}
+          quotesLoading={quotesLoading}
+        />
+      ))}
     </div>
   );
 }
@@ -1202,13 +1443,13 @@ export default function MobileView(): React.ReactElement {
     filters,
     setFilters,
     quotesLoading,
-    selectedTicker,
-    selectTicker,
-    selectedTables,
+    panelByKey,
+    unpanneledTables,
+    gridTables,
     resolveDriverAxis,
     computeSensitivityCell,
-    isGridTable,
     getGridModel,
+    ensureGridLoaded,
     gridLoading,
     setGridAxisValue,
     resetGridAxis,
@@ -1216,17 +1457,8 @@ export default function MobileView(): React.ReactElement {
   } = useStockGuideData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [sheetOpen, setSheetOpen] = useState(false);
   // Which forward year the comps table shows (the [mobile-only] Y1/Y2 toggle).
   const [yearKey, setYearKey] = useState<"y1" | "y2">("y1");
-
-  const selectedCompanyName =
-    computedRows.find((r) => r.ticker === selectedTicker)?.company_name ?? null;
-
-  function handleTap(ticker: string) {
-    selectTicker(ticker);
-    setSheetOpen(true);
-  }
 
   if (visLoading || !visible) return <></>;
 
@@ -1250,8 +1482,8 @@ export default function MobileView(): React.ReactElement {
           lineHeight: 1.3,
         }}
       >
-        Coverage comps and per-company sensitivity. Tap a row for its sensitivity
-        tables.
+        Coverage comps and key-estimate sensitivity to Brent and distribution
+        margins.
       </div>
 
       {/* ── Filter chip row: sector ──────────────────────────────────────────── */}
@@ -1384,8 +1616,6 @@ export default function MobileView(): React.ReactElement {
               yearLabel={yearLabel}
               yearKey={yearKey}
               quotesLoading={quotesLoading}
-              selectedTicker={selectedTicker}
-              onSelect={handleTap}
             />
           </div>
 
@@ -1424,33 +1654,50 @@ export default function MobileView(): React.ReactElement {
               </div>
             )}
           </div>
+
+          {/* ── Sensitivity (consolidated, always-visible, inline) ───────────── */}
+          <div style={{ padding: "8px 16px 0" }}>
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 700,
+                color: "var(--mobile-text)",
+                marginBottom: 4,
+              }}
+            >
+              Sensitivity
+            </div>
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "var(--mobile-text-muted)",
+                lineHeight: 1.4,
+                marginBottom: 14,
+              }}
+            >
+              Sensitivity of our key estimates to Brent and distribution margins.
+              Orange marks today&rsquo;s value.
+            </div>
+            <MobileSensitivity
+              panelByKey={panelByKey}
+              unpanneledTables={unpanneledTables}
+              gridTables={gridTables}
+              selectedTicker={null}
+              y1Label={config.y1_label}
+              y2Label={config.y2_label}
+              resolveDriverAxis={resolveDriverAxis}
+              computeSensitivityCell={computeSensitivityCell}
+              getGridModel={getGridModel}
+              ensureGridLoaded={ensureGridLoaded}
+              gridLoading={gridLoading}
+              onSetGridAxis={setGridAxisValue}
+              onResetGridAxis={resetGridAxis}
+              onResetGridAll={resetGridAll}
+              quotesLoading={quotesLoading}
+            />
+          </div>
         </>
       )}
-
-      {/* ── Sensitivity BottomSheet ──────────────────────────────────────────── */}
-      <BottomSheet
-        open={sheetOpen}
-        onClose={() => setSheetOpen(false)}
-        title={selectedCompanyName ? `Sensitivity — ${selectedCompanyName}` : "Sensitivity"}
-      >
-        <MobileSensitivity
-          tables={selectedTables}
-          loading={loading}
-          companyName={selectedCompanyName}
-          selectedTicker={selectedTicker}
-          y1Label={config.y1_label}
-          y2Label={config.y2_label}
-          resolveDriverAxis={resolveDriverAxis}
-          computeSensitivityCell={computeSensitivityCell}
-          isGridTable={isGridTable}
-          getGridModel={getGridModel}
-          gridLoading={gridLoading}
-          onSetGridAxis={setGridAxisValue}
-          onResetGridAxis={resetGridAxis}
-          onResetGridAll={resetGridAll}
-          quotesLoading={quotesLoading}
-        />
-      </BottomSheet>
 
       {/* ── Filter drawer (sector) ───────────────────────────────────────────── */}
       <FilterDrawer

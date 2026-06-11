@@ -99,6 +99,7 @@ import type {
   SensitivityAxis,
   SensitivityTableAdmin,
   SensitivityGridBlock,
+  SensitivityPanelKey,
 } from "../../../types/stockGuide";
 import {
   parseScenarioGridWorkbook,
@@ -466,6 +467,18 @@ export interface SgTableDraft {
   gridDef: SgGridDraft;
   /** Membership tickers for a grid table (multi-select; points uploaded per company). */
   gridCompanies: string[];
+  /**
+   * Optional CONSOLIDATED-PANEL tag for a single-row STATIC table ("" = standalone).
+   * "brent"/"margin" merge this table as one row into the matching always-visible
+   * block on /stock-guide. Round-tripped through `definition.panel`; NEVER written
+   * for a grid table.
+   */
+  panel: "" | SensitivityPanelKey;
+  /**
+   * Optional short row label inside the consolidated panel (e.g. "FCFE yield 2026").
+   * Falls back to the title when empty. Round-tripped through `definition.row_label`.
+   */
+  rowLabel: string;
 }
 
 /** A pristine driver "Add" row (id null). Defaults to STATIC (`source=''`). */
@@ -523,6 +536,8 @@ function blankTableDraft(): SgTableDraft {
     grid: false,
     gridDef: blankGridDraft(),
     gridCompanies: [],
+    panel: "",
+    rowLabel: "",
   };
 }
 
@@ -715,6 +730,11 @@ function tableAdminToDraft(t: SensitivityTableAdmin): SgTableDraft {
     grid: gridBlock != null,
     gridDef: gridBlock != null ? gridToDraft(gridBlock) : blankGridDraft(),
     gridCompanies: gridBlock != null ? [...t.companies] : [],
+    panel:
+      t.definition.panel === "brent" || t.definition.panel === "margin"
+        ? t.definition.panel
+        : "",
+    rowLabel: t.definition.row_label ?? "",
   };
 }
 
@@ -1069,6 +1089,10 @@ export interface UseAdminPanelData {
     value: string,
   ) => void;
   handleChangeSgTableValueMode: (mode: SgValueMode) => void;
+  /** Set the consolidated-panel tag of a static table ("" = standalone). */
+  handleChangeSgTablePanel: (panel: "" | SensitivityPanelKey) => void;
+  /** Set the short row label shown inside the consolidated panel. */
+  handleChangeSgTableRowLabel: (rowLabel: string) => void;
 
   // ── Scenario-grid table builder ─────────────────────────────────────────────
   /** The market-driver catalog (Brent/FX 2026-2028) — kept for legacy axis pickers. */
@@ -2459,6 +2483,19 @@ export function useAdminPanelData(): UseAdminPanelData {
     [syncDraftMatrices],
   );
 
+  /** Set the consolidated-panel tag of a static table ("" / "brent" / "margin"). */
+  const handleChangeSgTablePanel = useCallback(
+    (panel: "" | SensitivityPanelKey) => {
+      setSgTableDraft((d) => (d ? { ...d, panel } : d));
+    },
+    [],
+  );
+
+  /** Set the short row label shown inside the consolidated panel. */
+  const handleChangeSgTableRowLabel = useCallback((rowLabel: string) => {
+    setSgTableDraft((d) => (d ? { ...d, rowLabel } : d));
+  }, []);
+
   // ── Scenario-grid table handlers ────────────────────────────────────────────
   const handleToggleSgGrid = useCallback((on: boolean) => {
     setSgTableDraft((d) => {
@@ -3200,6 +3237,14 @@ export function useAdminPanelData(): UseAdminPanelData {
         if (d.value_mode === "ev_ebitda") {
           definition.cells_secondary = strMatrixToNum(d.cellsSecondary);
         }
+        // Consolidated-panel tag (single-row static tables only). Round-trip the two
+        // keys so editing+saving never silently UNTAGS a panel-tagged table. Only
+        // emit a valid panel + a non-empty trimmed row label.
+        if (d.panel === "brent" || d.panel === "margin") {
+          definition.panel = d.panel;
+        }
+        const rowLabel = d.rowLabel.trim();
+        if (rowLabel) definition.row_label = rowLabel;
       }
       const newId = await rpcAdminUpsertStockGuideSensitivityTable(supabase, d.id, {
         title: d.title.trim(),
@@ -3432,6 +3477,8 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleCancelSgTableEdit,
     handleChangeSgTableField,
     handleChangeSgTableValueMode,
+    handleChangeSgTablePanel,
+    handleChangeSgTableRowLabel,
     handleChangeSgTableSingleCompany,
     handleChangeSgAxisKind,
     handleChangeSgAxisDriver,

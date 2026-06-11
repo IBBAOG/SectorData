@@ -6,6 +6,14 @@ Entries newest first.
 
 ---
 
+## 2026-06-11 — `/stock-guide` sensitivity section redesign (consolidated always-visible panels)
+
+- The sensitivity section is now **ALWAYS VISIBLE and selection-independent** — the comps-row click no longer drives it (`selectedTicker`/`selectTicker`/`selectedTables` removed from the shared hook; desktop drill-down panel + mobile BottomSheet gone).
+- `stock_guide_sensitivities.definition` jsonb gained two OPTIONAL keys — `panel` (`brent`/`margin`) + `row_label` (string). **No schema change** (jsonb-only contract extension): single-row static tables so tagged are merged as rows into one of two consolidated, always-visible static blocks ("Brent sensitivity" / "EBITDA margin sensitivity"; placeholder until the admin fills them). Untagged static tables fall to a generic full-width fallback. Validated client-side at `mapSensitivityTable`; stored/returned verbatim by `admin_upsert_stock_guide_sensitivity_table` / `get_stock_guide_sensitivity_tables`. The Admin Panel sensitivity editor exposes Panel + Row label fields and round-trips them.
+- Scenario-grid slider tables are also always visible; the ~194k-point mesh is fetched **lazily on scroll-into-view** (`useInViewOnce` IntersectionObserver + `ensureGridLoaded`), not on page load. Per-row orange current-value markers (rows may reference different drivers, e.g. Brent 2026 vs 2027).
+- Migration `20260625000000_stock_guide_sensitivity_panels.sql` (DML-only, applied to prod): tags table ids 10-13 with `panel`/`row_label`, seeds 6 static margin drivers ("Vibra/Ultrapar EBITDA margin 2Q26 / 2026E / 2027E", BRL/m³, `current_value` NULL) and deletes the unreferenced junk driver id 4.
+- See `docs/app/stock-guide.md`, `docs/supabase/PRD.md` (stock-guide schema row — `definition` panel/row_label extension).
+
 ## 2026-06-11 — `/stock-guide` scenario-grid RPC paginated (PostgREST 50k truncation fixed)
 
 - `get_stock_guide_scenario_grid` was DROP+CREATEd with pagination params: `(p_sensitivity_id bigint)` → `(p_sensitivity_id bigint, p_limit integer DEFAULT NULL, p_offset integer DEFAULT 0)`. Same `RETURNS TABLE(ticker, metric, x_value, y_value, z_value, primary_value)`, same hide-aware SECURITY DEFINER semantics, same deterministic `ORDER BY (ticker, metric, x_value, y_value, z_value)` — `LIMIT p_limit OFFSET p_offset` appended (`LIMIT NULL` = all rows).
