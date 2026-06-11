@@ -53,6 +53,13 @@ export const NON_LEADER_PALETTE: string[] = PALETTE.filter(
   (c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase(),
 );
 
+/** Color for the i-th series under the leader doctrine: leader (i===0) pops
+ *  BRAND_ORANGE; followers walk the orange-free palette so orange never repeats
+ *  on wrap. Kept identical to bswSeriesColor in src/lib/charts/bsw.ts so the
+ *  history-table swatches match the chart traces exactly (incl. the leader). */
+const bswLeaderColor = (i: number): string =>
+  i === 0 ? BRAND_ORANGE : NON_LEADER_PALETTE[(i - 1) % NON_LEADER_PALETTE.length];
+
 export type ViewMode = "well" | "field";
 export type LineStyle = "markers" | "markers+lines";
 
@@ -345,7 +352,7 @@ export function useAnpCdpBswData(): UseAnpCdpBswData {
   const fieldColor = useCallback(
     (c: string): string => {
       const i = selectedCampos.indexOf(c);
-      return i >= 0 ? PALETTE[i % PALETTE.length] : "#dcdcdc";
+      return i >= 0 ? bswLeaderColor(i) : "#dcdcdc";
     },
     [selectedCampos],
   );
@@ -376,7 +383,7 @@ export function useAnpCdpBswData(): UseAnpCdpBswData {
       }
       const rows: BswTableRow[] = seen.map((poco, i) => ({
         item: poco,
-        color: PALETTE[i % PALETTE.length],
+        color: bswLeaderColor(i),
         values: byPoco.get(poco) ?? {},
       }));
       return { months, rows };
@@ -396,7 +403,7 @@ export function useAnpCdpBswData(): UseAnpCdpBswData {
         const k = ymKey(p.ref_ano, p.ref_mes);
         if (monthSet.has(k)) values[k] = p.bsw;
       }
-      return { item: campo, color: PALETTE[i % PALETTE.length], values };
+      return { item: campo, color: bswLeaderColor(i), values };
     });
     return { months, rows };
   }, [viewMode, wellPoints, fieldPoints, selectedCampos]);

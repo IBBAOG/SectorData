@@ -12,7 +12,7 @@
 //   AnpCdpBswFieldPoint      — re-export from rpc.ts (consumers import from here)
 
 import type { Layout, PlotData } from "plotly.js";
-import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE } from "@/lib/plotlyDefaults";
+import { COMMON_LAYOUT, AXIS_LINE, emptyPlot, PALETTE, BRAND_ORANGE } from "@/lib/plotlyDefaults";
 import { bblDiaToKbpd } from "@/lib/units";
 import type { AnpCdpBswPoint, AnpCdpBswFieldPoint } from "@/lib/rpc";
 
@@ -20,6 +20,22 @@ import type { AnpCdpBswPoint, AnpCdpBswFieldPoint } from "@/lib/rpc";
 export type { AnpCdpBswPoint, AnpCdpBswFieldPoint } from "@/lib/rpc";
 
 export type LineStyle = "markers" | "markers+lines";
+
+// Leader-highlight rotation (parity with the mobile builder in
+// useAnpCdpBswData.ts): the first series pops BRAND_ORANGE, followers walk the
+// PALETTE with orange removed so the leader stays unique AND no follower ever
+// collides with orange on wrap — even when >12 wells/fields are plotted. Walking
+// NON_LEADER_PALETTE (instead of the raw PALETTE) is what prevents the
+// orange-repeats-every-12-series defect on the desktop chart (the leader
+// doctrine, src/lib/plotlyDefaults.ts).
+const NON_LEADER_PALETTE: string[] = PALETTE.filter(
+  (c) => c.toLowerCase() !== BRAND_ORANGE.toLowerCase(),
+);
+
+/** Color for the i-th series: leader (i===0) → orange; followers walk the
+ *  orange-free palette (wrap-safe, orange never repeats). */
+const bswSeriesColor = (i: number): string =>
+  i === 0 ? BRAND_ORANGE : NON_LEADER_PALETTE[(i - 1) % NON_LEADER_PALETTE.length];
 
 // Maps the Plot-style toggle value to Plotly's `mode` string.
 export const plotlyMode = (style: LineStyle): "markers" | "lines+markers" =>
@@ -54,7 +70,7 @@ export function buildPerWellChart(
   const mode = plotlyMode(lineStyle);
   const traces: PlotData[] = seen.map((poco, i) => {
     const subset = wellPoints.filter((p) => p.poco === poco);
-    const color = PALETTE[i % PALETTE.length];
+    const color = bswSeriesColor(i);
     return {
       type: "scattergl",
       mode,
@@ -63,7 +79,7 @@ export function buildPerWellChart(
       y: subset.map((p) => p.bsw),
       customdata: subset.map((p) => [p.poco, p.ano, p.mes] as [string, number, number]),
       marker: { size: 4, opacity: 0.7, color },
-      line: { color, width: 1 },
+      line: { color, width: i === 0 ? 2 : 1 },
       hovertemplate:
         "<b>%{customdata[0]}</b><br>" +
         "Reference month: %{customdata[1]}-%{customdata[2]:02d}<br>" +
@@ -131,7 +147,7 @@ export function buildFieldAverageChart(
     const subset = fieldPoints
       .filter((p) => p.campo === campo)
       .sort((a, b) => a.pct_voip - b.pct_voip);
-    const color = PALETTE[i % PALETTE.length];
+    const color = bswSeriesColor(i);
     if (typeof window !== "undefined" && fieldPoints.length > 0 && subset.length === 0) {
       // Only warn when we actually received points but none for this campo.
       // eslint-disable-next-line no-console
@@ -155,7 +171,7 @@ export function buildFieldAverageChart(
             number,
           ],
       ),
-      line: { color, width: 2 },
+      line: { color, width: i === 0 ? 2.4 : 1.8 },
       marker: { size: 6, color },
       hovertemplate:
         "<b>" + campo + "</b><br>" +

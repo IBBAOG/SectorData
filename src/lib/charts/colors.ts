@@ -58,7 +58,7 @@ export interface SeriesColor {
  * `othersLabel` (if it appears in the list) is always grey (#808080) and is
  * moved to the END of the returned array regardless of its input position.
  *
- * If the palette is exhausted (> 14 distinct non-Others series), throws — the
+ * If the palette is exhausted (> PALETTE.length − 1 (currently 11) distinct non-Others series), throws — the
  * caller must collapse the long tail into "Others" rather than repeat a color.
  *
  * The returned array order is authoritative: use it for BOTH the stack order
