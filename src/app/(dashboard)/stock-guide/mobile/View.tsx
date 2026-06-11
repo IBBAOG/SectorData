@@ -44,6 +44,7 @@ import {
   useStockGuideData,
   formatSensitivityCell,
   formatGridCell,
+  fmtAxisValue,
   fmtNum,
   fmtPct,
   fmtSignedPctWhole,
@@ -941,8 +942,10 @@ function MobileConsolidatedBlock({
 // Same shared brain (the axis values live in the hook), so dragging here mirrors
 // desktop. Resets honor the ≥34px touch target.
 
+// Scenario-grid axis controls render with ZERO decimals (shared with desktop via
+// the hook's fmtAxisValue) — display-only; interpolation keeps full precision.
 function mobileFmtSlider(v: number): string {
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return fmtAxisValue(v);
 }
 
 /**

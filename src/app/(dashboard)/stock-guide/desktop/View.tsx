@@ -32,6 +32,7 @@ import {
   useStockGuideData,
   formatSensitivityCell,
   formatGridCell,
+  fmtAxisValue,
   fmtNum,
   fmtPct,
   fmtSignedPctWhole,
@@ -1225,8 +1226,10 @@ function ConsolidatedSensitivityBlock({
 // Target price / Upside table that interpolates the per-company mesh MULTILINEARLY
 // as the analyst drags. Replaces the static matrix for that table.
 
+// Scenario-grid axis controls render with ZERO decimals (shared with mobile via
+// the hook's fmtAxisValue) — display-only; interpolation keeps full precision.
 function fmtSlider(v: number): string {
-  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  return fmtAxisValue(v);
 }
 
 /**

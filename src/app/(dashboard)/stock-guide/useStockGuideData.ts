@@ -569,6 +569,19 @@ export function formatGridCell(
   return unit ? `${num} ${unit}` : num;
 }
 
+/**
+ * Display formatter for the scenario-grid AXIS controls (stepper input value +
+ * the "live X" chip) — ZERO decimals (analyst request). DISPLAY-ONLY: the
+ * underlying axis value used for multilinear interpolation keeps its precision
+ * (e.g. a live 88.1 still interpolates as 88.1, only its label reads "88").
+ * Shared by both Views so the desktop AxisStepper and the mobile
+ * MobileAxisStepper never drift.
+ */
+export function fmtAxisValue(v: number): string {
+  if (!Number.isFinite(v)) return String(v);
+  return String(Math.round(v));
+}
+
 export function useStockGuideData(): UseStockGuideData {
   const supabase = getSupabaseClient();
 
