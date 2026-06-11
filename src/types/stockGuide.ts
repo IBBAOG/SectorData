@@ -112,6 +112,12 @@ export interface StockGuideCompany {
   /** Forward volumes in `volume_unit` (kbpd or thousand m³). */
   volumes_y1: number | null;
   volumes_y2: number | null;
+  /**
+   * URL to the company's downloadable financial model (externally hosted Excel).
+   * Surfaced as a per-row "Model" download link in the comps table. NULL/empty
+   * (server coerces blank → NULL) → no model available. Migration `20260626000000`.
+   */
+  model_url: string | null;
 }
 
 /**

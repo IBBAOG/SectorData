@@ -4304,6 +4304,10 @@ function mapStockGuideCompany(r: Record<string, unknown>): StockGuideCompany {
     dividends_y2: toNumOrNull(r.dividends_y2),
     volumes_y1: toNumOrNull(r.volumes_y1),
     volumes_y2: toNumOrNull(r.volumes_y2),
+    model_url:
+      r.model_url != null && String(r.model_url).trim() !== ""
+        ? String(r.model_url)
+        : null,
   };
 }
 
@@ -4449,7 +4453,8 @@ export async function rpcAdminGetStockGuideSensitivity(
  * EX-TAX-CREDIT row's P/E denominator + displayed Net Income when filled; empty =
  * the companion uses the reported `net_income_yN`; the normal row always uses
  * reported), `fcfe_y1/y2`, `dividends_y1/y2`,
- * `volumes_y1/y2`. The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
+ * `volumes_y1/y2`, and `model_url` (link to the downloadable financial model;
+ * empty/whitespace coerces to NULL server-side). The 4 price-sensitive multiples (EV/EBITDA, P/E, FCFE Yield,
  * Div Yield) are NOT stored — they are derived live in the dashboard from the
  * Yahoo price + these inputs. Never send `is_visible` (separate toggle RPC).
  * Passed as JSONB; the server coerces numerics and sets `updated_by = auth.uid()`.
