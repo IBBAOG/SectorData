@@ -1664,27 +1664,23 @@ function MobileGlobalPeers({
   y2Label: string;
   quotesLoading: boolean;
 }): React.ReactElement {
+  // Match the comps-table header band (HEADER_BG / HEADER_FG) — the two overrides
+  // per Eduardo review: black main-header band + CENTER-aligned data cells.
   const groupTh: React.CSSProperties = {
+    ...thBase,
     fontSize: 10.5,
-    fontWeight: 700,
-    color: "var(--mobile-text-muted)",
     textAlign: "center",
-    padding: "6px 9px",
-    borderBottom: "1px solid var(--mobile-divider)",
-    whiteSpace: "nowrap",
   };
   const yearTh: React.CSSProperties = {
+    ...thBase,
     fontSize: 10,
     fontWeight: 600,
-    color: "var(--mobile-text-faint)",
-    textAlign: "right",
-    padding: "4px 9px",
-    borderBottom: "1px solid var(--mobile-divider)",
-    whiteSpace: "nowrap",
+    color: HEADER_FG_DIM,
+    textAlign: "center",
   };
   const numTd: React.CSSProperties = {
     fontSize: 12,
-    textAlign: "right",
+    textAlign: "center",
     padding: "8px 9px",
     color: "var(--mobile-text)",
     fontVariantNumeric: "tabular-nums",
@@ -1769,8 +1765,13 @@ function MobileGlobalPeers({
                     verticalAlign: "bottom",
                     position: "sticky",
                     left: 0,
-                    background: "var(--mobile-surface)",
-                    borderRight: "1px solid var(--mobile-divider)",
+                    zIndex: 1,
+                    background: HEADER_BG,
+                    color: HEADER_FG,
+                    letterSpacing: "0.02em",
+                    textTransform: "uppercase",
+                    borderRight: "1px solid rgba(255,255,255,0.18)",
+                    boxShadow: STICKY_SHADOW,
                   }}
                 >
                   Company
@@ -1789,16 +1790,18 @@ function MobileGlobalPeers({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {rows.map((r, i) => {
                 const dash = r.is_live && quotesLoading;
                 const weight = r.is_aggregate ? 700 : 400;
                 const rowBg = r.is_aggregate
                   ? "var(--mobile-surface-elevated)"
-                  : "var(--mobile-surface)";
+                  : i % 2 === 0
+                    ? "var(--mobile-surface)"
+                    : "var(--mobile-surface-elevated)";
                 return (
                   <tr
                     key={r.company}
-                    style={{ borderTop: "1px solid var(--mobile-divider)", background: rowBg }}
+                    style={{ borderBottom: "1px solid var(--mobile-divider)", background: rowBg }}
                   >
                     <th
                       scope="row"
@@ -1811,8 +1814,10 @@ function MobileGlobalPeers({
                         whiteSpace: "nowrap",
                         position: "sticky",
                         left: 0,
+                        zIndex: 2,
                         background: rowBg,
-                        borderRight: "1px solid var(--mobile-divider)",
+                        borderRight: "1px solid var(--mobile-border)",
+                        boxShadow: STICKY_SHADOW,
                       }}
                     >
                       {r.company}

@@ -2102,34 +2102,25 @@ function GlobalPeersTable({
   y2Label: string;
   quotesLoading: boolean;
 }): React.ReactElement {
-  const HEADER_BG = "#f7f7f8";
-  const HEADER_FG = "#6b7280";
+  // Match the comps table's near-black header band (HEADER_BG / HEADER_FG) and
+  // body conventions (TD_BASE), per Eduardo review — the two overrides vs the
+  // comps table are: (1) data cells are CENTER-aligned, (2) explicit black
+  // header band (already the comps default).
   const groupTh: CSSProperties = {
-    background: HEADER_BG,
-    color: HEADER_FG,
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: 0.2,
+    ...TH_BASE,
     textAlign: "center",
-    padding: "7px 10px",
-    borderBottom: "1px solid #ececed",
+    letterSpacing: "0.02em",
   };
   const yearTh: CSSProperties = {
-    background: HEADER_BG,
-    color: HEADER_FG,
-    fontSize: 10.5,
+    ...TH_BASE,
     fontWeight: 600,
-    textAlign: "right",
-    padding: "5px 10px",
-    borderBottom: "1px solid #e0e0e0",
+    fontSize: 10,
+    color: "rgba(245,245,245,0.62)",
+    textAlign: "center",
   };
   const numTd: CSSProperties = {
-    fontSize: 12.5,
-    textAlign: "right",
-    padding: "7px 10px",
-    fontVariantNumeric: "tabular-nums",
-    color: "#374151",
-    whiteSpace: "nowrap",
+    ...TD_BASE,
+    textAlign: "center",
   };
 
   return (
@@ -2193,14 +2184,23 @@ function GlobalPeersTable({
         </div>
       ) : (
         <div
+          className="sg-peers-wrap"
           style={{
             overflowX: "auto",
-            border: "1px solid #ececed",
-            borderRadius: 8,
+            border: "1px solid #e6e6e6",
+            borderRadius: 10,
+            background: "#fff",
+            boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
             fontFamily: "Arial, Helvetica, sans-serif",
           }}
         >
-          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640 }}>
+          {/* Hover affordance — mirrors the comps table (.sg-comps-wrap). */}
+          <style>{`
+            .sg-peers-wrap tbody tr:not([data-agg="1"]):hover > td {
+              background: #f3f6fb !important;
+            }
+          `}</style>
+          <table style={{ borderCollapse: "separate", borderSpacing: 0, width: "100%", minWidth: 640 }}>
             <thead>
               <tr>
                 <th
@@ -2209,52 +2209,54 @@ function GlobalPeersTable({
                     ...groupTh,
                     textAlign: "left",
                     verticalAlign: "bottom",
-                    borderRight: "1px solid #ececed",
+                    borderRight: GROUP_RULE_HEADER,
+                    letterSpacing: "0.02em",
+                    textTransform: "uppercase",
                   }}
                 >
                   Company
                 </th>
-                <th colSpan={2} style={{ ...groupTh, borderRight: "1px solid #ececed" }}>
+                <th colSpan={2} style={{ ...groupTh, borderLeft: GROUP_RULE_HEADER }}>
                   P/E
                 </th>
-                <th colSpan={2} style={{ ...groupTh, borderRight: "1px solid #ececed" }}>
+                <th colSpan={2} style={{ ...groupTh, borderLeft: GROUP_RULE_HEADER }}>
                   EV/EBITDA
                 </th>
-                <th colSpan={2} style={groupTh}>
+                <th colSpan={2} style={{ ...groupTh, borderLeft: GROUP_RULE_HEADER }}>
                   Div. Yield + Buyback
                 </th>
               </tr>
               <tr>
-                <th style={yearTh}>{y1Label}</th>
-                <th style={{ ...yearTh, borderRight: "1px solid #ececed" }}>{y2Label}</th>
-                <th style={yearTh}>{y1Label}</th>
-                <th style={{ ...yearTh, borderRight: "1px solid #ececed" }}>{y2Label}</th>
-                <th style={yearTh}>{y1Label}</th>
+                <th style={{ ...yearTh, borderLeft: GROUP_RULE_HEADER }}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+                <th style={{ ...yearTh, borderLeft: GROUP_RULE_HEADER }}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+                <th style={{ ...yearTh, borderLeft: GROUP_RULE_HEADER }}>{y1Label}</th>
                 <th style={yearTh}>{y2Label}</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {rows.map((r, i) => {
                 const dash = r.is_live && quotesLoading;
-                const rowBg = r.is_aggregate ? "#f7f7f8" : "transparent";
+                const rowBg = r.is_aggregate
+                  ? "#f5f5f5"
+                  : i % 2 === 0
+                    ? "#fff"
+                    : "#fbfbfb";
                 const weight = r.is_aggregate ? 700 : 400;
                 return (
                   <tr
                     key={r.company}
-                    style={{
-                      background: rowBg,
-                      borderTop: r.is_aggregate ? "1px solid #e0e0e0" : "1px solid #f3f3f4",
-                    }}
+                    data-agg={r.is_aggregate ? "1" : "0"}
+                    style={{ background: rowBg }}
                   >
                     <td
                       style={{
-                        fontSize: 12.5,
+                        ...TD_BASE,
                         textAlign: "left",
-                        padding: "7px 10px",
                         fontWeight: weight,
-                        color: "#1f2937",
-                        whiteSpace: "nowrap",
-                        borderRight: "1px solid #f3f3f4",
+                        color: "#111827",
+                        borderRight: GROUP_RULE,
                       }}
                     >
                       {r.company}
@@ -2273,19 +2275,19 @@ function GlobalPeersTable({
                         />
                       )}
                     </td>
-                    <td style={{ ...numTd, fontWeight: weight }}>
+                    <td style={{ ...numTd, fontWeight: weight, borderLeft: GROUP_RULE }}>
                       {dash ? "—" : fmtMultiple(r.pe_y1)}
                     </td>
-                    <td style={{ ...numTd, fontWeight: weight, borderRight: "1px solid #f3f3f4" }}>
+                    <td style={{ ...numTd, fontWeight: weight }}>
                       {dash ? "—" : fmtMultiple(r.pe_y2)}
                     </td>
-                    <td style={{ ...numTd, fontWeight: weight }}>
+                    <td style={{ ...numTd, fontWeight: weight, borderLeft: GROUP_RULE }}>
                       {dash ? "—" : fmtMultiple(r.ev_ebitda_y1)}
                     </td>
-                    <td style={{ ...numTd, fontWeight: weight, borderRight: "1px solid #f3f3f4" }}>
+                    <td style={{ ...numTd, fontWeight: weight }}>
                       {dash ? "—" : fmtMultiple(r.ev_ebitda_y2)}
                     </td>
-                    <td style={{ ...numTd, fontWeight: weight }}>
+                    <td style={{ ...numTd, fontWeight: weight, borderLeft: GROUP_RULE }}>
                       {dash ? "—" : fmtPct(r.div_yield_y1, 1)}
                     </td>
                     <td style={{ ...numTd, fontWeight: weight }}>
