@@ -936,6 +936,21 @@ function DriverSensitivityTable({
   const COMPACT_FONT = 11;
   const compactCellPad = "6px 8px";
 
+  // The live "today" marker is a SINGLE continuous vertical line drawn as an
+  // absolute overlay spanning the FULL table height (header + every band/company
+  // row), positioned proportionally between the bracketing scenario columns. No
+  // per-column background/bold highlight — the line is the only "today" cue.
+  //   • exact hit  → centred on that scenario column
+  //   • interp     → frac of the way from afterIdx → afterIdx+1 (column centres)
+  const scenColCentre = (i: number): number => LABEL_W + i * SCEN_W + SCEN_W / 2;
+  const markerLeftPx: number | null =
+    marker.highlightIdx != null
+      ? scenColCentre(marker.highlightIdx)
+      : marker.interp != null
+        ? scenColCentre(marker.interp.afterIdx) +
+          marker.interp.frac * (scenColCentre(marker.interp.afterIdx + 1) - scenColCentre(marker.interp.afterIdx))
+        : null;
+
   const cellBase: React.CSSProperties = {
     ...TD_BASE,
     fontSize: COMPACT_FONT,
@@ -967,6 +982,7 @@ function DriverSensitivityTable({
 
       <div
         style={{
+          position: "relative",
           overflowX: "auto",
           border: "1px solid #e0e0e0",
           borderRadius: 12,
@@ -974,10 +990,30 @@ function DriverSensitivityTable({
           boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
         }}
       >
+        {/* Continuous live-value marker spanning the full table height. */}
+        {markerLeftPx != null && (
+          <span
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: markerLeftPx,
+              width: 2,
+              transform: "translateX(-1px)",
+              background: BRAND_ORANGE,
+              zIndex: 2,
+              pointerEvents: "none",
+            }}
+          />
+        )}
         <table
           style={{
             borderCollapse: "collapse",
-            width: "100%",
+            // Fixed natural width (sum of the colgroup widths) so the absolute
+            // live-value marker (computed from LABEL_W/SCEN_W) lines up exactly;
+            // width:100% would stretch the columns and desync the overlay.
+            width: LABEL_W + scenarios.length * SCEN_W,
             tableLayout: "fixed",
             fontFamily: "Arial, Helvetica, sans-serif",
           }}
@@ -1004,37 +1040,24 @@ function DriverSensitivityTable({
                   whiteSpace: "nowrap",
                 }}
               />
-              {scenarios.map((s, ci) => {
-                const hit = marker.highlightIdx === ci;
-                const interpLeft =
-                  marker.interp != null && marker.interp.afterIdx + 1 === ci;
-                return (
-                  <th
-                    key={ci}
-                    style={{
-                      ...TH_BASE,
-                      fontSize: COMPACT_FONT,
-                      padding: compactCellPad,
-                      textAlign: "center",
-                      background: hit ? "#2a1206" : HEADER_BG,
-                      color: hit ? BRAND_ORANGE : HEADER_FG,
-                      borderRight: "1px solid rgba(255,255,255,0.12)",
-                      borderBottom: "1px solid rgba(255,255,255,0.18)",
-                      position: "relative",
-                    }}
-                  >
-                    {interpLeft && marker.interp && (
-                      <InterpMarker
-                        orientation="horizontal"
-                        frac={marker.interp.frac}
-                        gapPx={SCEN_W}
-                      />
-                    )}
-                    {/* Number only — the unit lives in the driver-table title. */}
-                    {fmtScenarioHeader(s, "")}
-                  </th>
-                );
-              })}
+              {scenarios.map((s, ci) => (
+                <th
+                  key={ci}
+                  style={{
+                    ...TH_BASE,
+                    fontSize: COMPACT_FONT,
+                    padding: compactCellPad,
+                    textAlign: "center",
+                    background: HEADER_BG,
+                    color: HEADER_FG,
+                    borderRight: "1px solid rgba(255,255,255,0.12)",
+                    borderBottom: "1px solid rgba(255,255,255,0.18)",
+                  }}
+                >
+                  {/* Number only — the unit lives in the driver-table title. */}
+                  {fmtScenarioHeader(s, "")}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -1089,10 +1112,6 @@ function DriverSensitivityTable({
                         {r.companyName}
                       </th>
                       {scenarios.map((_, ci) => {
-                        const hit = marker.highlightIdx === ci;
-                        const interpLeft =
-                          marker.interp != null && marker.interp.afterIdx + 1 === ci;
-                        const highlighted = hit || interpLeft;
                         const { value, unit } = computeSensitivityCell(
                           band.table,
                           r.rowIdx,
@@ -1114,22 +1133,13 @@ function DriverSensitivityTable({
                             key={ci}
                             style={{
                               ...cellBase,
-                              background: highlighted
-                                ? "rgba(255,80,0,0.08)"
-                                : ri % 2 === 0
-                                  ? "#fff"
-                                  : "#fbfbfb",
-                              color: hit ? BRAND_ORANGE : "#1f2937",
-                              fontWeight: highlighted ? 700 : 400,
+                              // Uniform weight — the live "today" cue is the single
+                              // vertical marker overlay, never a per-column highlight.
+                              background: ri % 2 === 0 ? "#fff" : "#fbfbfb",
+                              color: "#1f2937",
+                              fontWeight: 400,
                             }}
                           >
-                            {interpLeft && marker.interp && (
-                              <InterpMarker
-                                orientation="horizontal"
-                                frac={marker.interp.frac}
-                                gapPx={SCEN_W}
-                              />
-                            )}
                             {text}
                           </td>
                         );
