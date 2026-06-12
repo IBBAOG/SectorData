@@ -58,6 +58,7 @@ import type {
   GridTableModel,
   SensitivityPanel,
   SensitivityDriverTable,
+  GlobalPeerRow,
 } from "../useStockGuideData";
 import { useInViewOnce } from "../useInViewOnce";
 import type {
@@ -1639,6 +1640,214 @@ function MobileSensitivity({
 
 // ─── View ──────────────────────────────────────────────────────────────────────
 
+// ─── Global Peers (read-only, horizontal-scroll table) ───────────────────────
+
+/** Multiple → "N.Nx" (1 dp), or "—". */
+function fmtMultipleM(v: number | null | undefined): string {
+  return v != null && Number.isFinite(v) ? `${v.toFixed(1)}x` : "—";
+}
+
+function MobileGlobalPeers({
+  rows,
+  loading,
+  error,
+  retry,
+  y1Label,
+  y2Label,
+  quotesLoading,
+}: {
+  rows: GlobalPeerRow[];
+  loading: boolean;
+  error: Error | null;
+  retry: () => void;
+  y1Label: string;
+  y2Label: string;
+  quotesLoading: boolean;
+}): React.ReactElement {
+  const groupTh: React.CSSProperties = {
+    fontSize: 10.5,
+    fontWeight: 700,
+    color: "var(--mobile-text-muted)",
+    textAlign: "center",
+    padding: "6px 9px",
+    borderBottom: "1px solid var(--mobile-divider)",
+    whiteSpace: "nowrap",
+  };
+  const yearTh: React.CSSProperties = {
+    fontSize: 10,
+    fontWeight: 600,
+    color: "var(--mobile-text-faint)",
+    textAlign: "right",
+    padding: "4px 9px",
+    borderBottom: "1px solid var(--mobile-divider)",
+    whiteSpace: "nowrap",
+  };
+  const numTd: React.CSSProperties = {
+    fontSize: 12,
+    textAlign: "right",
+    padding: "8px 9px",
+    color: "var(--mobile-text)",
+    fontVariantNumeric: "tabular-nums",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div style={{ padding: "8px 16px 0" }}>
+      <div
+        style={{
+          fontSize: 15,
+          fontWeight: 700,
+          color: "var(--mobile-text)",
+          marginBottom: 4,
+        }}
+      >
+        Global Peers
+      </div>
+      <div
+        style={{
+          fontSize: 11.5,
+          color: "var(--mobile-text-muted)",
+          lineHeight: 1.4,
+          marginBottom: 14,
+        }}
+      >
+        Trading multiples for the global integrated oil majors. Petrobras is
+        computed live from our coverage.
+      </div>
+
+      {error ? (
+        <div
+          style={{
+            fontSize: 12.5,
+            color: "#b91c1c",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <span>Could not load Global Peers.</span>
+          <button
+            type="button"
+            onClick={retry}
+            style={{
+              border: "1px solid var(--mobile-accent)",
+              color: "var(--mobile-accent)",
+              background: "transparent",
+              borderRadius: 6,
+              padding: "4px 14px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading && rows.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "var(--mobile-text-muted)" }}>Loading…</div>
+      ) : rows.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: "var(--mobile-text-muted)" }}>
+          No peer data available.
+        </div>
+      ) : (
+        <div
+          style={{
+            overflowX: "auto",
+            WebkitOverflowScrolling: "touch",
+            border: "1px solid var(--mobile-divider)",
+            borderRadius: 10,
+            background: "var(--mobile-surface)",
+          }}
+        >
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 460 }}>
+            <thead>
+              <tr>
+                <th
+                  rowSpan={2}
+                  style={{
+                    ...groupTh,
+                    textAlign: "left",
+                    verticalAlign: "bottom",
+                    position: "sticky",
+                    left: 0,
+                    background: "var(--mobile-surface)",
+                    borderRight: "1px solid var(--mobile-divider)",
+                  }}
+                >
+                  Company
+                </th>
+                <th colSpan={2} style={groupTh}>P/E</th>
+                <th colSpan={2} style={groupTh}>EV/EBITDA</th>
+                <th colSpan={2} style={groupTh}>Div. Yld + BB</th>
+              </tr>
+              <tr>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const dash = r.is_live && quotesLoading;
+                const weight = r.is_aggregate ? 700 : 400;
+                const rowBg = r.is_aggregate
+                  ? "var(--mobile-surface-elevated)"
+                  : "var(--mobile-surface)";
+                return (
+                  <tr
+                    key={r.company}
+                    style={{ borderTop: "1px solid var(--mobile-divider)", background: rowBg }}
+                  >
+                    <th
+                      scope="row"
+                      style={{
+                        fontSize: 12,
+                        fontWeight: weight === 700 ? 700 : 600,
+                        textAlign: "left",
+                        padding: "8px 9px",
+                        color: "var(--mobile-text)",
+                        whiteSpace: "nowrap",
+                        position: "sticky",
+                        left: 0,
+                        background: rowBg,
+                        borderRight: "1px solid var(--mobile-divider)",
+                      }}
+                    >
+                      {r.company}
+                      {r.is_live && (
+                        <span
+                          title="Live"
+                          style={{
+                            display: "inline-block",
+                            width: 6,
+                            height: 6,
+                            marginLeft: 6,
+                            borderRadius: "50%",
+                            background: "var(--mobile-accent)",
+                            verticalAlign: "middle",
+                          }}
+                        />
+                      )}
+                    </th>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtMultipleM(r.pe_y1)}</td>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtMultipleM(r.pe_y2)}</td>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtMultipleM(r.ev_ebitda_y1)}</td>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtMultipleM(r.ev_ebitda_y2)}</td>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtPct(r.div_yield_y1, 1)}</td>
+                    <td style={{ ...numTd, fontWeight: weight }}>{dash ? "—" : fmtPct(r.div_yield_y2, 1)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MobileView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("stock-guide");
   const {
@@ -1665,6 +1874,10 @@ export default function MobileView(): React.ReactElement {
     setGridAxisValue,
     resetGridAxis,
     resetGridAll,
+    globalPeers,
+    globalPeersLoading,
+    globalPeersError,
+    refetchGlobalPeers,
   } = useStockGuideData();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -1907,6 +2120,19 @@ export default function MobileView(): React.ReactElement {
               onSetGridAxis={setGridAxisValue}
               onResetGridAxis={resetGridAxis}
               onResetGridAll={resetGridAll}
+              quotesLoading={quotesLoading}
+            />
+          </div>
+
+          {/* ── Global Peers (read-only, bottom-most section) ─────────────────── */}
+          <div style={{ marginTop: 24 }}>
+            <MobileGlobalPeers
+              rows={globalPeers}
+              loading={globalPeersLoading}
+              error={globalPeersError}
+              retry={refetchGlobalPeers}
+              y1Label={config.y1_label}
+              y2Label={config.y2_label}
               quotesLoading={quotesLoading}
             />
           </div>

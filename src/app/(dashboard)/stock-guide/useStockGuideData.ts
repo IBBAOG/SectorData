@@ -62,6 +62,7 @@ import {
   rpcGetStockGuideDrivers,
   rpcGetStockGuideSensitivityTables,
   rpcGetStockGuideScenarioGrid,
+  rpcGetStockGuideGlobalPeers,
 } from "@/lib/rpc";
 import { downloadGenericExcel } from "@/lib/exportExcel";
 import { downloadCsv } from "@/lib/exportCsv";
@@ -84,6 +85,7 @@ import type {
   SensitivityTable,
   SensitivityPanelKey,
   ScenarioGridPoint,
+  StockGuideGlobalPeer,
 } from "@/types/stockGuide";
 
 // ─── Filters ───────────────────────────────────────────────────────────────
@@ -259,11 +261,47 @@ export interface UseStockGuideData {
   /** Reset ALL axis sliders of a grid table back to their live "today" values. */
   resetGridAll: (tableId: number) => void;
 
+  // ── Global Peers (read-only oil-major peer multiples) ───────────────────────
+  /**
+   * Resolved Global Peers rows in display_order. The `is_live` row (Petrobras)
+   * has its six values filled LIVE from the PETR4 comps (same derivations as the
+   * comps table — raw live market cap). All other rows pass the stored numerics
+   * through (div yields ×100 into percent points here for display parity with the
+   * other yield cells). Per-section load/error/retry like the sensitivity blocks.
+   */
+  globalPeers: GlobalPeerRow[];
+  globalPeersLoading: boolean;
+  globalPeersError: Error | null;
+  /** One-shot re-fetch of the Global Peers table (per-section retry). */
+  refetchGlobalPeers: () => void;
+
   // Desktop-only export — hook owns the busy state.
   exportExcel: () => Promise<void>;
   exportCsv: () => void;
   excelLoading: boolean;
   csvLoading: boolean;
+}
+
+// ─── Global Peers (resolved row for the Views) ───────────────────────────────
+
+/**
+ * A Global Peers row resolved for rendering. Numerics are display-ready:
+ * `pe_*` / `ev_ebitda_*` are multiples (format "N.Nx"); `div_yield_*` are in
+ * PERCENT POINTS (e.g. 5.54 → "5.5%") — the hook ×100s the stored fractions. The
+ * `is_live` row's six values are computed from the PETR4 comps. Any value may be
+ * null → render "—".
+ */
+export interface GlobalPeerRow {
+  company: string;
+  pe_y1: number | null;
+  pe_y2: number | null;
+  ev_ebitda_y1: number | null;
+  ev_ebitda_y2: number | null;
+  /** Percent points (stored fraction ×100). */
+  div_yield_y1: number | null;
+  div_yield_y2: number | null;
+  is_aggregate: boolean;
+  is_live: boolean;
 }
 
 /** Result of `computeSensitivityCell`: the display value + the unit to format with. */
@@ -594,6 +632,14 @@ export function useStockGuideData(): UseStockGuideData {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
 
+  // Global Peers — its own per-section load/error/retry (a tiny ~14-row table,
+  // fetched on mount but independently of the comps Promise.all so a failure here
+  // never blocks the whole dashboard, mirroring the sensitivity blocks).
+  const [globalPeersRaw, setGlobalPeersRaw] = useState<StockGuideGlobalPeer[]>([]);
+  const [globalPeersLoading, setGlobalPeersLoading] = useState(true);
+  const [globalPeersError, setGlobalPeersError] = useState<Error | null>(null);
+  const globalPeersFetchIdRef = useRef(0);
+
   const [filters, setFiltersState] = useState<StockGuideFilters>(DEFAULT_FILTERS);
   const [excelLoading, setExcelLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
@@ -638,6 +684,32 @@ export function useStockGuideData(): UseStockGuideData {
     fetchedRef.current = true;
     fetchData();
   }, [supabase, fetchData]);
+
+  // ── Global Peers fetch (independent per-section state, retryable) ───────────
+  const refetchGlobalPeers = useCallback(() => {
+    if (!supabase) return;
+    const myId = ++globalPeersFetchIdRef.current;
+    setGlobalPeersLoading(true);
+    setGlobalPeersError(null);
+    rpcGetStockGuideGlobalPeers(supabase)
+      .then((data) => {
+        if (myId !== globalPeersFetchIdRef.current) return;
+        setGlobalPeersRaw(data);
+        setGlobalPeersLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (myId !== globalPeersFetchIdRef.current) return;
+        setGlobalPeersError(err instanceof Error ? err : new Error(String(err)));
+        setGlobalPeersLoading(false);
+      });
+  }, [supabase]);
+
+  const globalPeersFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!supabase || globalPeersFetchedRef.current) return;
+    globalPeersFetchedRef.current = true;
+    refetchGlobalPeers();
+  }, [supabase, refetchGlobalPeers]);
 
   // Stable partial-merge setter.
   const setFilters = useCallback((next: Partial<StockGuideFilters>) => {
@@ -1515,6 +1587,49 @@ export function useStockGuideData(): UseStockGuideData {
     ],
   );
 
+  // ── Global Peers — resolve display rows (live-fill the Petrobras row) ───────
+  //
+  // Non-live rows pass their stored numerics through, ×100ing the div-yield
+  // FRACTIONS into percent points (display parity with the comps yield cells).
+  // The `is_live` row (Petrobras) fills its six values from the PETR4 computed
+  // row — the SAME live derivations the comps table uses (P/E, EV/EBITDA, div
+  // yield in percent points; raw live market cap basis). If the PETR4 quote /
+  // comps are unavailable, those six values stay null → "—".
+  const globalPeers = useMemo<GlobalPeerRow[]>(() => {
+    // PETR4 normal (non-ex-tax-credit) computed row, if present + quoted.
+    const petr = computedRows.find(
+      (r) => r.ticker === "PETR4" && !r.isExTaxCredit,
+    );
+    return globalPeersRaw.map((p) => {
+      if (p.is_live) {
+        return {
+          company: p.company,
+          pe_y1: petr?.peY1 ?? null,
+          pe_y2: petr?.peY2 ?? null,
+          ev_ebitda_y1: petr?.evEbitdaY1 ?? null,
+          ev_ebitda_y2: petr?.evEbitdaY2 ?? null,
+          // divYieldY1/Y2 are already percent points in computedRows.
+          div_yield_y1: petr?.divYieldY1 ?? null,
+          div_yield_y2: petr?.divYieldY2 ?? null,
+          is_aggregate: p.is_aggregate,
+          is_live: true,
+        };
+      }
+      const pct = (v: number | null): number | null => (v != null ? v * 100 : null);
+      return {
+        company: p.company,
+        pe_y1: p.pe_y1,
+        pe_y2: p.pe_y2,
+        ev_ebitda_y1: p.ev_ebitda_y1,
+        ev_ebitda_y2: p.ev_ebitda_y2,
+        div_yield_y1: pct(p.div_yield_y1),
+        div_yield_y2: pct(p.div_yield_y2),
+        is_aggregate: p.is_aggregate,
+        is_live: false,
+      };
+    });
+  }, [globalPeersRaw, computedRows]);
+
   // ── g. Desktop-only export of the computed visible table ──────────────────
   const exportExcel = useCallback(async () => {
     if (computedRows.length === 0) return;
@@ -1648,6 +1763,10 @@ export function useStockGuideData(): UseStockGuideData {
     setGridAxisValue,
     resetGridAxis,
     resetGridAll,
+    globalPeers,
+    globalPeersLoading,
+    globalPeersError,
+    refetchGlobalPeers,
     exportExcel,
     exportCsv,
     excelLoading,

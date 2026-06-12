@@ -29,6 +29,7 @@ import {
   type SgTableDraft,
   type SgGridBaseMetric,
   type SgUploadState,
+  type SgPeersUploadState,
   sgGridOutputKey,
 } from "../useAdminPanelData";
 import type {
@@ -43,6 +44,7 @@ import {
 } from "../../../../hooks/useMarketDrivers";
 import type { BaseInputMeta } from "../../../../lib/stockGuideSensitivity";
 import type { GridUploadResult } from "../../../../lib/stockGuideGridUpload";
+import type { GlobalPeersUploadResult } from "../../../../lib/stockGuideGlobalPeersUpload";
 
 const ORANGE = "#FF5000";
 const BG = "#f5f5f5";
@@ -302,6 +304,11 @@ export default function DesktopView(): React.ReactElement | null {
     handleSelectSgGridUploadFile,
     handleConfirmSgGridUpload,
     handleResetSgGridUpload,
+    sgPeersUpload,
+    sgPeersCount,
+    handleSelectSgPeersUploadFile,
+    handleConfirmSgPeersUpload,
+    handleResetSgPeersUpload,
     handleSaveSgTable,
     handleDeleteSgTable,
     handleConfirmDeleteSgTable,
@@ -2293,6 +2300,15 @@ export default function DesktopView(): React.ReactElement | null {
                   </div>
                 )}
               </div>
+
+              {/* ── Global Peers re-upload ────────────────────────────────────── */}
+              <GlobalPeersUploadCard
+                upload={sgPeersUpload}
+                count={sgPeersCount}
+                onSelectFile={handleSelectSgPeersUploadFile}
+                onConfirm={handleConfirmSgPeersUpload}
+                onReset={handleResetSgPeersUpload}
+              />
               </>
               )}
 
@@ -2630,6 +2646,217 @@ export default function DesktopView(): React.ReactElement | null {
 // terminal. All state lives in the hook (`upload`); this is pure presentation.
 // Errors (red) block the Confirm; warnings (amber) allow proceeding; a summary
 // line previews the point count before the chunked replace-total.
+// ── Global Peers re-upload card ───────────────────────────────────────────────
+//
+// Standalone card in the Stock Guide → Companies sub-tab. Mirrors GridUploadPanel:
+// pick the analyst's `majors_table.xlsx` ("Live" sheet) → parse + validate in the
+// browser (ExcelJS) → confirm an unchunked replace-total. No DB writes until
+// confirm; errors block, warnings allow.
+function GlobalPeersUploadCard({
+  upload,
+  count,
+  onSelectFile,
+  onConfirm,
+  onReset,
+}: {
+  upload: SgPeersUploadState;
+  count: number | null;
+  onSelectFile: (file: File) => void;
+  onConfirm: () => void;
+  onReset: () => void;
+}): React.ReactElement {
+  const reportCard: React.CSSProperties = {
+    marginTop: 10, padding: "10px 12px", borderRadius: 8,
+    fontSize: 11.5, lineHeight: 1.5, fontFamily: "Arial, sans-serif",
+  };
+
+  const renderReport = (
+    result: GlobalPeersUploadResult,
+    opts: { showConfirm: boolean },
+  ): React.ReactElement => {
+    const { errors, warnings, summary } = result;
+    const summaryLine =
+      `${summary.rowCount.toLocaleString("en-US")} compan${summary.rowCount === 1 ? "y" : "ies"} ` +
+      `(${summary.aggregateCount} average row${summary.aggregateCount === 1 ? "" : "s"}, ` +
+      `${summary.liveCount} live row${summary.liveCount === 1 ? "" : "s"})`;
+    return (
+      <>
+        <div style={{ ...reportCard, background: "#f7f7f7", border: "1px solid #e3e3e3", color: "#1a1a1a", fontWeight: 700 }}>
+          {summaryLine}
+        </div>
+        {errors.length > 0 && (
+          <div style={{ ...reportCard, background: "#fef2f2", border: "1px solid rgba(220,38,38,0.4)", color: "#991b1b" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              {errors.length} error{errors.length === 1 ? "" : "s"} — fix these before uploading:
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {errors.map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+          </div>
+        )}
+        {warnings.length > 0 && (
+          <div style={{ ...reportCard, background: "#fff7ed", border: "1px solid rgba(255,80,0,0.35)", color: "#9a3412" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>
+              {warnings.length} warning{warnings.length === 1 ? "" : "s"} (you can still proceed):
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </div>
+        )}
+        <div style={{ marginTop: 12, display: "flex", gap: 10 }}>
+          {opts.showConfirm && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={errors.length > 0 || summary.rowCount === 0}
+              style={{
+                padding: "8px 16px", borderRadius: 8, border: "none",
+                background: errors.length > 0 || summary.rowCount === 0 ? "#f3f3f3" : ORANGE,
+                color: errors.length > 0 || summary.rowCount === 0 ? "#aaa" : "#fff",
+                fontSize: 12.5, fontWeight: 700,
+                cursor: errors.length > 0 || summary.rowCount === 0 ? "not-allowed" : "pointer",
+                fontFamily: "Arial, sans-serif",
+              }}
+            >
+              Confirm upload (replaces all peers)
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onReset}
+            style={{
+              padding: "8px 16px", borderRadius: 8, border: "1px solid #d0d0d0",
+              background: "#fff", color: "#555", fontSize: 12.5, fontWeight: 600,
+              cursor: "pointer", fontFamily: "Arial, sans-serif",
+            }}
+          >
+            {opts.showConfirm ? "Cancel" : "Choose another file"}
+          </button>
+        </div>
+      </>
+    );
+  };
+
+  return (
+    <div className="settings-card" style={{ marginTop: 18 }}>
+      <h2 style={{ fontSize: "1rem", fontWeight: 700, color: "#1a1a1a", margin: "0 0 4px" }}>
+        Global Peers
+      </h2>
+      <p style={{ fontSize: 13, color: "#888", margin: "0 0 16px" }}>
+        Read-only oil-major peer multiples shown at the bottom of the dashboard.
+        Re-upload the analyst Excel (<code>majors_table.xlsx</code>, sheet
+        &ldquo;Live&rdquo;) to replace the whole table.
+        {count != null && (
+          <> Currently <strong>{count.toLocaleString("en-US")}</strong> compan{count === 1 ? "y" : "ies"}.</>
+        )}
+      </p>
+
+      {(upload.phase === "idle" || upload.phase === "parsing") && (
+        <>
+          <label
+            style={{
+              display: "inline-block", padding: "8px 16px", borderRadius: 8,
+              border: `1px solid ${ORANGE}`, background: "#fff", color: ORANGE,
+              fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+              fontFamily: "Arial, sans-serif",
+            }}
+          >
+            {upload.phase === "parsing" ? "Reading workbook…" : "⬆ Upload Global Peers (.xlsx)"}
+            <input
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              disabled={upload.phase === "parsing"}
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) onSelectFile(f);
+                e.target.value = ""; // allow re-selecting the same file
+              }}
+            />
+          </label>
+          <div style={{ marginTop: 6, fontSize: 11.5, color: "#888", lineHeight: 1.45 }}>
+            Parsed + validated in your browser; nothing is written until you confirm.
+            A company name ending in &ldquo;Avg.&rdquo; is an average row; a row whose six
+            cells are the literal &lsquo;x&rsquo; is filled live from our coverage (Petrobras).
+          </div>
+        </>
+      )}
+
+      {upload.phase === "report" && (
+        <>
+          <div style={{ fontSize: 11.5, color: "#666" }}>
+            <strong>{upload.fileName}</strong>
+          </div>
+          {renderReport(upload.result, { showConfirm: true })}
+        </>
+      )}
+
+      {upload.phase === "uploading" && (
+        <div style={{ ...reportCard, background: "#f7f7f7", border: "1px solid #e3e3e3", color: "#1a1a1a", fontWeight: 700 }}>
+          Uploading…
+        </div>
+      )}
+
+      {upload.phase === "done" && (
+        <>
+          <div style={{ ...reportCard, background: "#f0fdf4", border: "1px solid rgba(22,163,74,0.4)", color: "#166534", fontWeight: 700 }}>
+            ✓ {upload.count.toLocaleString("en-US")} compan{upload.count === 1 ? "y" : "ies"} replaced
+          </div>
+          <div style={{ marginTop: 10 }}>
+            <button
+              type="button"
+              onClick={onReset}
+              style={{
+                padding: "8px 16px", borderRadius: 8, border: "1px solid #d0d0d0",
+                background: "#fff", color: "#555", fontSize: 12.5, fontWeight: 600,
+                cursor: "pointer", fontFamily: "Arial, sans-serif",
+              }}
+            >
+              Upload another file
+            </button>
+          </div>
+        </>
+      )}
+
+      {upload.phase === "error" && (
+        <>
+          <div style={{ ...reportCard, background: "#fef2f2", border: "1px solid rgba(220,38,38,0.4)", color: "#991b1b" }}>
+            <div style={{ fontWeight: 700, marginBottom: 4 }}>Upload failed</div>
+            {upload.message}
+          </div>
+          <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
+            {upload.result && upload.result.errors.length === 0 && upload.result.rows.length > 0 && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                style={{
+                  padding: "8px 16px", borderRadius: 8, border: "none", background: ORANGE,
+                  color: "#fff", fontSize: 12.5, fontWeight: 700, cursor: "pointer",
+                  fontFamily: "Arial, sans-serif",
+                }}
+              >
+                Retry upload (re-runs the whole replace)
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onReset}
+              style={{
+                padding: "8px 16px", borderRadius: 8, border: "1px solid #d0d0d0",
+                background: "#fff", color: "#555", fontSize: 12.5, fontWeight: 600,
+                cursor: "pointer", fontFamily: "Arial, sans-serif",
+              }}
+            >
+              Start over
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function GridUploadPanel({
   disabled,
   upload,

@@ -402,6 +402,42 @@ Always-visible, selection-independent (2026-06-11). See "Consolidated sensitivit
 - Single brain `useStockGuideData.ts` — both Views consume it; neither calls Supabase or fetches quotes directly.
 - Binding sync rule: any new filter / column / KPI in one View must land in the other in the same commit, or carry a `[desktop-only]` / `[mobile-only]` tag. Known intentional divergences: the comps forward-multiple pairs show both years side-by-side on desktop vs. a Y1/Y2 toggle on mobile; the two consolidated sensitivity blocks sit in a two-column grid on desktop vs. stacked vertically on mobile; the per-row sensitivity marker is an interpolation triangle on desktop vs. a nearer-cell highlight on mobile; the Refresh-quotes button + ExportPanel are desktop-only.
 
+## Global Peers (read-only oil-major peer multiples)
+
+A **read-only** table rendered as the **bottom-most section** of `/stock-guide`, after all sensitivity blocks (both Views). It shows trading multiples for the global integrated oil majors (Visible Alpha consensus) so the coverage names can be benchmarked against the international peer set.
+
+**Table shape** — two-tier header, one row per company in `display_order`:
+
+| Group | Sub-columns |
+|---|---|
+| P/E | `config.y1_label` · `config.y2_label` |
+| EV/EBITDA | `config.y1_label` · `config.y2_label` |
+| Div. Yield + Buyback | `config.y1_label` · `config.y2_label` |
+
+- **Formatting:** P/E + EV/EBITDA → 1 decimal with an `x` suffix (e.g. `7.8x`); Div. Yield + Buyback → percent 1 decimal (e.g. `5.5%`). NULL → `—`.
+- **`is_aggregate` rows** (company name ends in "Avg.", e.g. *Majors Avg.* / *Others Avg.*) render visually distinct — bold + a subtle row background, like an averages divider.
+- **The `is_live` row (Petrobras)** carries NULL numerics in the DB; the dashboard fills its six values **live in the browser from the PETR4 comps** using the SAME derivations the comps table uses (raw live market cap basis — NOT the ex-tax-credit basis): `P/E(year) = market cap ÷ net_income_yN`, `EV/EBITDA(year) = (market cap + net_debt_yN) ÷ ebitda_yN`, `Div yield(year) = dividends_yN ÷ market cap`. It is marked with a small brand-orange live dot. If the PETR4 quote / comps are unavailable the six values render `—`.
+- **Per-section load/error/retry** like the sensitivity blocks (own RPC, own loading/error state, a Retry button on failure). Fetched on page load (the table is tiny — no lazy gate).
+- **Mobile:** a horizontal-scroll table with a sticky Company column (the established mobile table pattern); same content, same two-tier header. No export (mobile has no export by design).
+
+**Excel contract** — analyst Excel `data/majors_table.xlsx`, sheet **"Live"**, range A1:G15:
+
+- **Row 1** — metric GROUP headers ("P/E" over B:C, "EV/EBITDA" over D:E, "Div. Yield + Buyback" over F:G; merged cells). Read positionally — header text is not validated.
+- **Row 2** — the forward-year labels (e.g. 2026E, 2027E ×3). Skipped (the dashboard uses the global config labels).
+- **Rows 3+** — company name in col A + six values. A row is either a **numeric row** (all six cells numeric; an "Avg." suffix on the company name → `is_aggregate=true`) or a **live row** (all six cells the literal `'x'` → `is_live=true`, numerics stored NULL — filled live from PETR4). A row mixing `'x'` and numeric cells is rejected. `display_order` = sheet order.
+- **Div yields are stored as FRACTIONS** (e.g. `0.0554` = 5.54%) and the dashboard ×100s them for display.
+
+**Admin re-upload flow** (Admin Panel → Stock Guide → **Companies** sub-tab → "Global Peers" card, desktop-only). Mirrors the scenario-grid upload: pick the filled `.xlsx` → parsed + validated **client-side via ExcelJS** (`src/lib/stockGuideGlobalPeersUpload.ts` → `parseGlobalPeersWorkbook`: sheet "Live" exists; ≥1 data row; col A non-empty per row; each cell numeric or the literal `'x'`; a row is all-`'x'` or all-numeric — mixed rejected; duplicate company names rejected; "Avg." suffix → `is_aggregate`) → a validation report (errors block, warnings allow, summary line) → Confirm → an **unchunked replace-total** via `rpcAdminReplaceStockGuideGlobalPeers` (`admin_replace_stock_guide_global_peers(p_rows jsonb)`, `is_admin()`-guarded: DELETE all rows then INSERT) → a success summary ("N companies replaced") + a read-only current-count refresh. Nothing is written until Confirm; a failed upload is retryable (the replace is idempotent).
+
+### RPC contract + wrappers (locked — live)
+
+| RPC | Returns / access |
+|---|---|
+| `get_stock_guide_global_peers()` | `TABLE(company text, pe_y1, pe_y2, ev_ebitda_y1, ev_ebitda_y2, div_yield_y1, div_yield_y2 numeric, is_aggregate, is_live boolean, display_order int)` — public (anon + authenticated), NOT hide-aware (global peers carry no restriction) |
+| `admin_replace_stock_guide_global_peers(p_rows jsonb)` | `integer` (inserted count) — `is_admin()`-guarded replace-total |
+
+Migration: `supabase/migrations/20260712000000_stock_guide_global_peers.sql` (owner: `worker_supabase`). Table `stock_guide_global_peers` (PK `company`) — RLS-enabled with **no policies**, reads via the SECURITY DEFINER RPC. rpc.ts wrappers (single writer, § Stock Guide): `rpcGetStockGuideGlobalPeers`, `rpcAdminReplaceStockGuideGlobalPeers` (+ `StockGuideGlobalPeerUploadRow`). Type `StockGuideGlobalPeer` in `src/types/stockGuide.ts`; the hook exposes the resolved `GlobalPeerRow[]` (live-filled Petrobras, div yields ×100) + `globalPeersLoading` / `globalPeersError` / `refetchGlobalPeers`.
+
 ## Export
 
 Tier 1 (direct download, no size precount), **desktop only**. Excel (`downloadGenericExcel`) + CSV (`downloadCsv`, UTF-8 BOM) of the computed **visible** table — includes live price, upside %, market cap (BRL mn), and the Y1/Y2 multiple pairs with the config labels in the headers. Mobile has no export by design.
@@ -416,10 +452,13 @@ src/app/(dashboard)/stock-guide/
 ├── desktop/View.tsx          # wide sticky comps table + always-visible consolidated sensitivity + footnotes
 └── mobile/View.tsx           # comps summary table + inline consolidated sensitivity + FilterDrawer + footnote card
 src/types/stockGuide.ts       # shared types (consumed by the dashboard + the admin-panel pass)
-src/lib/rpc.ts                # § "MODULE: Stock Guide" — all 10 wrappers (single writer)
+src/lib/rpc.ts                # § "MODULE: Stock Guide" — all wrappers (single writer)
+src/lib/stockGuideGlobalPeersUpload.ts  # browser ExcelJS parser/validator for the Global Peers "Live" sheet
 ```
 
 ## History
+
+- **2026-07-12** — **Global Peers read-only table + admin re-upload.** New bottom-most section of `/stock-guide` (after all sensitivity blocks, both Views) showing trading multiples for the global oil majors (Visible Alpha), with an `is_live` Petrobras row computed live from the PETR4 comps and `is_aggregate` ("Avg.") divider rows. DB pre-shipped by `worker_supabase` (migration `20260712000000_stock_guide_global_peers.sql`, applied live): table `stock_guide_global_peers` (PK `company`, RLS-on no-policy), `get_stock_guide_global_peers()` (public) + `admin_replace_stock_guide_global_peers(p_rows jsonb)` (replace-total, `is_admin()`-guarded) + a 13-row seed. Frontend (this pass): (1) **Types** — `StockGuideGlobalPeer` (`src/types/stockGuide.ts`). (2) **rpc.ts** § Stock Guide — `rpcGetStockGuideGlobalPeers` + `rpcAdminReplaceStockGuideGlobalPeers` (+ `StockGuideGlobalPeerUploadRow`), numerics coerced. (3) **New pure parser** `src/lib/stockGuideGlobalPeersUpload.ts` — `parseGlobalPeersWorkbook(workbook)` validates the "Live" sheet (sheet exists, ≥1 data row, col A non-empty, each cell numeric or literal `'x'`, all-`'x'`/all-numeric per row, no dup company) → `{ rows, errors, warnings, summary }`. (4) **Hook** (`useStockGuideData.ts`) — a `globalPeers` slice fetched on load with its own load/error/retry; resolves the live Petrobras row from the PETR4 computed row (raw market-cap basis) and ×100s the stored div-yield fractions into percent points; exposes `globalPeers` / `globalPeersLoading` / `globalPeersError` / `refetchGlobalPeers`. (5) **Views** — `GlobalPeersTable` (desktop two-tier table) + `MobileGlobalPeers` (horizontal-scroll table, sticky Company column), rendered at the end of both Views, same commit (dual-view binding honored). (6) **Admin** (desktop-only) — `SgPeersUploadState` machine + `handleSelectSgPeersUploadFile` / `handleConfirmSgPeersUpload` / `handleResetSgPeersUpload` + a read-only count in `useAdminPanelData.ts`; a `GlobalPeersUploadCard` in the Companies sub-tab (file → parse → report → confirm unchunked replace-total → success summary + count refresh). Touched: `src/types/stockGuide.ts`, `src/lib/rpc.ts`, `src/lib/stockGuideGlobalPeersUpload.ts` (new), `useStockGuideData.ts`, both `desktop/View.tsx` + `mobile/View.tsx`, `admin-panel/useAdminPanelData.ts` + `admin-panel/desktop/View.tsx`, this PRD. `npx tsc --noEmit` → 0 errors.
 
 - **2026-06-11** — **Removed the orange value-mode badge from sensitivity table titles** (both Views, classic sensitivity tables AND scenario-grid tables, same commit). The `{metric · unit}` / `Scenario grid · …` chip next to each title was dropped; titles, the "Current: …" caption, tables and all logic are unchanged. Cleaned up the now-dead `VALUE_MODE_BADGE` / `MOBILE_VALUE_MODE_BADGE` constants + `unitForBadge`/`badge` locals. Touched: `desktop/View.tsx`, `mobile/View.tsx`, this PRD. `npx tsc --noEmit` → 0 errors. Dual-view binding honored.
 

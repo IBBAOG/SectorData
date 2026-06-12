@@ -47,6 +47,7 @@ import type {
   GridTableModel,
   SensitivityPanel,
   SensitivityDriverTable,
+  GlobalPeerRow,
 } from "../useStockGuideData";
 import { useInViewOnce } from "../useInViewOnce";
 import type {
@@ -2077,6 +2078,230 @@ function RefreshQuotesButton({
 
 // ─── View ──────────────────────────────────────────────────────────────────────
 
+// ─── Global Peers (read-only oil-major peer multiples) ───────────────────────
+
+/** Multiple → "N.Nx" (1 dp), or "—". */
+function fmtMultiple(v: number | null | undefined): string {
+  return v != null && Number.isFinite(v) ? `${v.toFixed(1)}x` : "—";
+}
+
+function GlobalPeersTable({
+  rows,
+  loading,
+  error,
+  retry,
+  y1Label,
+  y2Label,
+  quotesLoading,
+}: {
+  rows: GlobalPeerRow[];
+  loading: boolean;
+  error: Error | null;
+  retry: () => void;
+  y1Label: string;
+  y2Label: string;
+  quotesLoading: boolean;
+}): React.ReactElement {
+  const HEADER_BG = "#f7f7f8";
+  const HEADER_FG = "#6b7280";
+  const groupTh: CSSProperties = {
+    background: HEADER_BG,
+    color: HEADER_FG,
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: 0.2,
+    textAlign: "center",
+    padding: "7px 10px",
+    borderBottom: "1px solid #ececed",
+  };
+  const yearTh: CSSProperties = {
+    background: HEADER_BG,
+    color: HEADER_FG,
+    fontSize: 10.5,
+    fontWeight: 600,
+    textAlign: "right",
+    padding: "5px 10px",
+    borderBottom: "1px solid #e0e0e0",
+  };
+  const numTd: CSSProperties = {
+    fontSize: 12.5,
+    textAlign: "right",
+    padding: "7px 10px",
+    fontVariantNumeric: "tabular-nums",
+    color: "#374151",
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div className="section-title">Global Peers</div>
+      <hr
+        className="section-hr"
+        style={{ borderTopColor: "#e0e0e0", margin: "4px 0 10px" }}
+      />
+      <div
+        style={{
+          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: 11.5,
+          color: "#9ca3af",
+          marginBottom: 16,
+        }}
+      >
+        Trading multiples for the global integrated oil majors (Visible Alpha
+        consensus). Petrobras is computed live from our coverage.
+      </div>
+
+      {error ? (
+        <div
+          style={{
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 12.5,
+            color: "#b91c1c",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <span>Could not load Global Peers.</span>
+          <button
+            type="button"
+            onClick={retry}
+            style={{
+              border: `1px solid ${BRAND_ORANGE}`,
+              color: BRAND_ORANGE,
+              background: "transparent",
+              borderRadius: 6,
+              padding: "3px 12px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      ) : loading && rows.length === 0 ? (
+        <BarrelLoading />
+      ) : rows.length === 0 ? (
+        <div
+          style={{
+            fontFamily: "Arial, Helvetica, sans-serif",
+            fontSize: 12.5,
+            color: "#9ca3af",
+          }}
+        >
+          No peer data available.
+        </div>
+      ) : (
+        <div
+          style={{
+            overflowX: "auto",
+            border: "1px solid #ececed",
+            borderRadius: 8,
+            fontFamily: "Arial, Helvetica, sans-serif",
+          }}
+        >
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640 }}>
+            <thead>
+              <tr>
+                <th
+                  rowSpan={2}
+                  style={{
+                    ...groupTh,
+                    textAlign: "left",
+                    verticalAlign: "bottom",
+                    borderRight: "1px solid #ececed",
+                  }}
+                >
+                  Company
+                </th>
+                <th colSpan={2} style={{ ...groupTh, borderRight: "1px solid #ececed" }}>
+                  P/E
+                </th>
+                <th colSpan={2} style={{ ...groupTh, borderRight: "1px solid #ececed" }}>
+                  EV/EBITDA
+                </th>
+                <th colSpan={2} style={groupTh}>
+                  Div. Yield + Buyback
+                </th>
+              </tr>
+              <tr>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={{ ...yearTh, borderRight: "1px solid #ececed" }}>{y2Label}</th>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={{ ...yearTh, borderRight: "1px solid #ececed" }}>{y2Label}</th>
+                <th style={yearTh}>{y1Label}</th>
+                <th style={yearTh}>{y2Label}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const dash = r.is_live && quotesLoading;
+                const rowBg = r.is_aggregate ? "#f7f7f8" : "transparent";
+                const weight = r.is_aggregate ? 700 : 400;
+                return (
+                  <tr
+                    key={r.company}
+                    style={{
+                      background: rowBg,
+                      borderTop: r.is_aggregate ? "1px solid #e0e0e0" : "1px solid #f3f3f4",
+                    }}
+                  >
+                    <td
+                      style={{
+                        fontSize: 12.5,
+                        textAlign: "left",
+                        padding: "7px 10px",
+                        fontWeight: weight,
+                        color: "#1f2937",
+                        whiteSpace: "nowrap",
+                        borderRight: "1px solid #f3f3f4",
+                      }}
+                    >
+                      {r.company}
+                      {r.is_live && (
+                        <span
+                          title="Computed live from our coverage"
+                          style={{
+                            display: "inline-block",
+                            width: 7,
+                            height: 7,
+                            marginLeft: 7,
+                            borderRadius: "50%",
+                            background: BRAND_ORANGE,
+                            verticalAlign: "middle",
+                          }}
+                        />
+                      )}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight }}>
+                      {dash ? "—" : fmtMultiple(r.pe_y1)}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight, borderRight: "1px solid #f3f3f4" }}>
+                      {dash ? "—" : fmtMultiple(r.pe_y2)}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight }}>
+                      {dash ? "—" : fmtMultiple(r.ev_ebitda_y1)}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight, borderRight: "1px solid #f3f3f4" }}>
+                      {dash ? "—" : fmtMultiple(r.ev_ebitda_y2)}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight }}>
+                      {dash ? "—" : fmtPct(r.div_yield_y1, 1)}
+                    </td>
+                    <td style={{ ...numTd, fontWeight: weight }}>
+                      {dash ? "—" : fmtPct(r.div_yield_y2, 1)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DesktopView(): React.ReactElement {
   const { visible, loading: visLoading } = useModuleVisibilityGuard("stock-guide");
   const {
@@ -2104,6 +2329,10 @@ export default function DesktopView(): React.ReactElement {
     setGridAxisValue,
     resetGridAxis,
     resetGridAll,
+    globalPeers,
+    globalPeersLoading,
+    globalPeersError,
+    refetchGlobalPeers,
     exportExcel,
     exportCsv,
     excelLoading,
@@ -2231,6 +2460,17 @@ export default function DesktopView(): React.ReactElement {
                   quotesLoading={quotesLoading}
                 />
               </div>
+
+              {/* ── Global Peers (read-only, bottom-most section) ───────────── */}
+              <GlobalPeersTable
+                rows={globalPeers}
+                loading={globalPeersLoading}
+                error={globalPeersError}
+                retry={refetchGlobalPeers}
+                y1Label={config.y1_label}
+                y2Label={config.y2_label}
+                quotesLoading={quotesLoading}
+              />
             </>
           )}
         </DataErrorBoundary>

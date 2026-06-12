@@ -921,6 +921,32 @@ A regulatory change effective **2026-06-01** turned the fuel subsidy into a **fl
 
 **`module_visibility('alerts')`** setado para `public=false, clients=true` (preserva o invariante `public ⇒ clients`).
 
+### Stock Guide Global Peers (added 2026-06-12)
+
+`20260712000000_stock_guide_global_peers.sql`. Read-only "Global Peers" table rendered at the bottom of `/stock-guide` — global oil-major peer multiples sourced from the analyst Excel `data/majors_table.xlsx` sheet "Live" (Visible Alpha), re-uploaded from the Admin Panel (browser-parsed via ExcelJS, unchunked — ~14 rows).
+
+**Table `stock_guide_global_peers`** (PK `company`):
+
+| Column | Type | Notes |
+|---|---|---|
+| `company` | `text` PRIMARY KEY | Peer name (or aggregate / live-placeholder label). |
+| `pe_y1` / `pe_y2` | `numeric` (nullable) | P/E 2026E / 2027E. |
+| `ev_ebitda_y1` / `ev_ebitda_y2` | `numeric` (nullable) | EV/EBITDA 2026E / 2027E. |
+| `div_yield_y1` / `div_yield_y2` | `numeric` (nullable) | "Div. Yield + Buyback" 2026E / 2027E, stored as **fractions** (0.0554 = 5.54%). |
+| `is_aggregate` | `boolean NOT NULL DEFAULT false` | `true` for "Majors Avg." / "Others Avg." — frontend styles them differently. |
+| `is_live` | `boolean NOT NULL DEFAULT false` | `true` for the Petrobras placeholder row (numeric cols NULL) — frontend fills values live from PETR4 comps. |
+| `display_order` | `int NOT NULL` | Preserves sheet row order. |
+| `updated_at` | `timestamptz NOT NULL DEFAULT now()` | |
+
+RLS ENABLED, **no policies** (same as other `stock_guide_*` tables — all reads via SECURITY DEFINER RPC). Seeded with the current 13-row snapshot (6 majors + "Majors Avg." + 4 others + "Others Avg." + Petrobras live placeholder).
+
+**RPCs** (both SECURITY DEFINER + `SET search_path = public, pg_temp`):
+
+| RPC | Grant | Papel |
+|---|---|---|
+| `get_stock_guide_global_peers()` → all columns | anon + authenticated | Read all rows ordered by `display_order`. No hide-aware logic (global peers, not coverage companies). |
+| `admin_replace_stock_guide_global_peers(p_rows jsonb)` → int | authenticated (gated `is_admin()`) | Replace-total (unchunked): DELETE all + INSERT from a jsonb array of `{company, pe_y1, pe_y2, ev_ebitda_y1, ev_ebitda_y2, div_yield_y1, div_yield_y2, is_aggregate, is_live, display_order}`. Validates non-empty company / non-empty array, rejects NaN; numerics nullable. |
+
 ### Materialized views
 
 | MV | Função de refresh | Índices |

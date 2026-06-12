@@ -4308,6 +4308,7 @@ import type {
   SensitivityGridAxis,
   SensitivityGridOutput,
   ScenarioGridPoint,
+  StockGuideGlobalPeer,
 } from "../types/stockGuide";
 
 /** Coerce a PostgREST numeric (string | number | null | undefined) → number | null. */
@@ -5125,6 +5126,72 @@ export async function rpcAdminCountStockGuideScenarioGrid(
     }
   }
   return { total: toNumOrNull(row?.total) ?? 0, byMetric };
+}
+
+// ── Global Peers (read-only oil-major peer multiples) ─────────────────────────
+//
+// Source: analyst Excel `data/majors_table.xlsx`, sheet "Live" (Visible Alpha),
+// re-uploaded periodically from the Admin Panel (browser-parsed via ExcelJS).
+// Public read is NOT hide-aware (these are global peers, no restriction); the
+// admin replace-total is `is_admin()`-guarded.
+// Migration: `supabase/migrations/20260712000000_stock_guide_global_peers.sql`.
+
+/**
+ * Read every Global Peers row in `display_order`. Numerics coerced to
+ * `number | null` (PostgREST serializes Postgres `numeric` as a string). Div
+ * yields stay as FRACTIONS (e.g. 0.0554) — the View ×100s them for display.
+ */
+export async function rpcGetStockGuideGlobalPeers(
+  supabase: SupabaseClient,
+): Promise<StockGuideGlobalPeer[]> {
+  const { data, error } = await supabase.rpc("get_stock_guide_global_peers");
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    company: String(r.company ?? ""),
+    pe_y1: toNumOrNull(r.pe_y1),
+    pe_y2: toNumOrNull(r.pe_y2),
+    ev_ebitda_y1: toNumOrNull(r.ev_ebitda_y1),
+    ev_ebitda_y2: toNumOrNull(r.ev_ebitda_y2),
+    div_yield_y1: toNumOrNull(r.div_yield_y1),
+    div_yield_y2: toNumOrNull(r.div_yield_y2),
+    is_aggregate: Boolean(r.is_aggregate),
+    is_live: Boolean(r.is_live),
+    display_order: Number(r.display_order ?? 0),
+  }));
+}
+
+/** One row for the Global Peers replace-total admin write. */
+export interface StockGuideGlobalPeerUploadRow {
+  company: string;
+  pe_y1: number | null;
+  pe_y2: number | null;
+  ev_ebitda_y1: number | null;
+  ev_ebitda_y2: number | null;
+  div_yield_y1: number | null;
+  div_yield_y2: number | null;
+  is_aggregate: boolean;
+  is_live: boolean;
+  display_order: number;
+}
+
+/**
+ * Replace-total of the Global Peers table from a parsed Excel re-upload.
+ * `is_admin()`-guarded server-side. The array is sent verbatim as a JSONB param
+ * (no JSON.stringify); the RPC DELETEs all rows then re-inserts. Returns the
+ * inserted row count.
+ *
+ * Backed by SECURITY DEFINER RPC `admin_replace_stock_guide_global_peers`.
+ */
+export async function rpcAdminReplaceStockGuideGlobalPeers(
+  supabase: SupabaseClient,
+  rows: StockGuideGlobalPeerUploadRow[],
+): Promise<number> {
+  const { data, error } = await supabase.rpc(
+    "admin_replace_stock_guide_global_peers",
+    { p_rows: rows },
+  );
+  if (error) throw error;
+  return Number(data ?? 0);
 }
 
 // ─── MODULE: Home — Data Sources freshness ────────────────────────────────────

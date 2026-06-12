@@ -482,3 +482,38 @@ export interface StockGuideAdminCompany extends StockGuideCompany {
   /** auth.users id of the last editor (uuid string) or null. */
   updated_by: string | null;
 }
+
+// ─── Global Peers (read-only oil-major peer multiples) ───────────────────────
+//
+// Source: analyst Excel `data/majors_table.xlsx`, sheet "Live" (Visible Alpha),
+// re-uploaded periodically from the Admin Panel. One read RPC
+// (`get_stock_guide_global_peers`) + one admin replace-total RPC
+// (`admin_replace_stock_guide_global_peers`). Migration:
+// `supabase/migrations/20260712000000_stock_guide_global_peers.sql`.
+//
+// Rendered as the bottom-most section of `/stock-guide` — a two-tier-header
+// table with P/E, EV/EBITDA and Div. Yield + Buyback (each split y1/y2). Div
+// yields are stored as FRACTIONS (e.g. 0.0554 = 5.54%). The `is_live` row
+// (Petrobras) carries NULL numerics; the dashboard fills its six values live
+// from the PETR4 comps.
+
+/** One Global Peers row from `get_stock_guide_global_peers()` (numerics coerced). */
+export interface StockGuideGlobalPeer {
+  /** Company display name (PK). For `is_live` rows this matches a covered name. */
+  company: string;
+  /** P/E for the first / second forward year. Null → render "—". */
+  pe_y1: number | null;
+  pe_y2: number | null;
+  /** EV/EBITDA for the first / second forward year. */
+  ev_ebitda_y1: number | null;
+  ev_ebitda_y2: number | null;
+  /** Div. Yield + Buyback as a FRACTION (e.g. 0.0554 = 5.54%). */
+  div_yield_y1: number | null;
+  div_yield_y2: number | null;
+  /** Averages/divider row (company name ends in "Avg.") — visually distinct. */
+  is_aggregate: boolean;
+  /** Live-fill placeholder row (Petrobras): numerics NULL, filled from PETR4. */
+  is_live: boolean;
+  /** Sort key (sheet order). */
+  display_order: number;
+}

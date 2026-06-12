@@ -72,6 +72,8 @@ import {
   rpcAdminDeleteStockGuideSensitivityTable,
   rpcAdminReplaceStockGuideScenarioGrid,
   rpcAdminCountStockGuideScenarioGrid,
+  rpcGetStockGuideGlobalPeers,
+  rpcAdminReplaceStockGuideGlobalPeers,
   rpcListSubscribableBases,
   rpcAdminAlertsStats,
   rpcAdminAlertsListSubscribers,
@@ -106,6 +108,28 @@ import {
   chunkUploadRows,
   type GridUploadResult,
 } from "../../../lib/stockGuideGridUpload";
+import {
+  parseGlobalPeersWorkbook,
+  type GlobalPeersUploadResult,
+} from "../../../lib/stockGuideGlobalPeersUpload";
+
+/**
+ * State machine for the in-admin "Global Peers" Excel re-upload (parse → report →
+ * upload → done / error). Unchunked (~14 rows). Exported so the desktop View can
+ * type its editor props.
+ */
+export type SgPeersUploadState =
+  | { phase: "idle" }
+  | { phase: "parsing"; fileName: string }
+  | { phase: "report"; fileName: string; result: GlobalPeersUploadResult }
+  | { phase: "uploading"; fileName: string; result: GlobalPeersUploadResult }
+  | { phase: "done"; fileName: string; count: number }
+  | {
+      phase: "error";
+      fileName: string;
+      message: string;
+      result: GlobalPeersUploadResult | null;
+    };
 
 /**
  * State machine for the in-admin filled-template upload widget (parse → report →
@@ -1153,6 +1177,19 @@ export interface UseAdminPanelData {
   handleConfirmSgGridUpload: () => Promise<void>;
   /** Dismiss the upload widget (back to idle). */
   handleResetSgGridUpload: () => void;
+  /**
+   * "Global Peers" Excel re-upload widget state (parse → report → upload → done /
+   * error). `idle` until the admin picks a file.
+   */
+  sgPeersUpload: SgPeersUploadState;
+  /** Current Global Peers row count (read-only, refreshed after each upload). */
+  sgPeersCount: number | null;
+  /** Parse + validate a chosen Global Peers .xlsx ("Live" sheet) — no network. */
+  handleSelectSgPeersUploadFile: (file: File) => Promise<void>;
+  /** Confirm the validated re-upload — unchunked replace-total. */
+  handleConfirmSgPeersUpload: () => Promise<void>;
+  /** Dismiss the Global Peers upload widget (back to idle). */
+  handleResetSgPeersUpload: () => void;
   handleChangeSgTableSingleCompany: (ticker: string) => void;
   handleChangeSgAxisKind: (axis: "row" | "col", kind: SensitivityAxis["kind"]) => void;
   handleChangeSgAxisDriver: (axis: "row" | "col", driverId: string) => void;
@@ -2858,6 +2895,84 @@ export function useAdminPanelData(): UseAdminPanelData {
     }
   }, [supabase, sgTableDraft, sgUpload]);
 
+  // ── Global Peers re-upload (browser parse → validate → replace-total) ───────
+  //
+  // Independent of the scenario-grid upload. The analyst's `majors_table.xlsx`
+  // ("Live" sheet) is parsed client-side, validated, and pushed as ONE unchunked
+  // replace-total via `rpcAdminReplaceStockGuideGlobalPeers`. A post-upload read
+  // confirms the new row count. Read-only current count surfaces the table state.
+  const [sgPeersUpload, setSgPeersUpload] = useState<SgPeersUploadState>({
+    phase: "idle",
+  });
+  const [sgPeersCount, setSgPeersCount] = useState<number | null>(null);
+  const [sgPeersCountNonce, setSgPeersCountNonce] = useState(0);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let cancelled = false;
+    rpcGetStockGuideGlobalPeers(supabase)
+      .then((rows) => {
+        if (!cancelled) setSgPeersCount(rows.length);
+      })
+      .catch(() => {
+        if (!cancelled) setSgPeersCount(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, sgPeersCountNonce]);
+
+  const handleResetSgPeersUpload = useCallback(() => {
+    setSgPeersUpload({ phase: "idle" });
+  }, []);
+
+  /** Parse + validate a chosen .xlsx against the "Live" sheet contract (no network). */
+  const handleSelectSgPeersUploadFile = useCallback(async (file: File) => {
+    setSgPeersUpload({ phase: "parsing", fileName: file.name });
+    try {
+      const ExcelJS = (await import("exceljs")).default;
+      const wb = new ExcelJS.Workbook();
+      const buf = await file.arrayBuffer();
+      await wb.xlsx.load(buf);
+      const result = parseGlobalPeersWorkbook(wb);
+      setSgPeersUpload({ phase: "report", fileName: file.name, result });
+    } catch (e: unknown) {
+      const message =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Could not read the workbook.")
+          : "Could not read the workbook.";
+      setSgPeersUpload({ phase: "error", fileName: file.name, message, result: null });
+    }
+  }, []);
+
+  /** Confirm the replace-total against the Global Peers table. */
+  const handleConfirmSgPeersUpload = useCallback(async () => {
+    const sb = supabase;
+    const cur = sgPeersUpload;
+    if (cur.phase !== "report" && cur.phase !== "error") return;
+    const result = cur.result;
+    if (!sb || !result || result.rows.length === 0) return;
+    if (result.errors.length > 0) return; // blocked
+    const fileName = cur.fileName;
+    setSgPeersUpload({ phase: "uploading", fileName, result });
+    try {
+      const inserted = await rpcAdminReplaceStockGuideGlobalPeers(sb, result.rows);
+      setSgPeersUpload({ phase: "done", fileName, count: inserted });
+      setSgPeersCountNonce((n) => n + 1); // refresh the read-only count
+    } catch (e: unknown) {
+      const base =
+        e && typeof e === "object" && "message" in e
+          ? String((e as { message?: unknown }).message ?? "Upload failed.")
+          : "Upload failed.";
+      setSgPeersUpload({
+        phase: "error",
+        fileName,
+        message: `${base} (retry re-runs the whole replace, which is idempotent.)`,
+        result,
+      });
+    }
+  }, [supabase, sgPeersUpload]);
+
   const handleChangeSgTableSingleCompany = useCallback((ticker: string) => {
     setSgTableDraft((d) => (d ? { ...d, singleCompany: ticker } : d));
   }, []);
@@ -3519,6 +3634,12 @@ export function useAdminPanelData(): UseAdminPanelData {
     handleSelectSgGridUploadFile,
     handleConfirmSgGridUpload,
     handleResetSgGridUpload,
+    // global peers re-upload
+    sgPeersUpload,
+    sgPeersCount,
+    handleSelectSgPeersUploadFile,
+    handleConfirmSgPeersUpload,
+    handleResetSgPeersUpload,
     handleSaveSgTable,
     handleDeleteSgTable,
     handleConfirmDeleteSgTable,
